@@ -1,0 +1,11 @@
+{
+  "name": "@platform/control-plane",
+  "version": "0.0.1",
+  "scripts": {
+    "test": "bun test",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  }
+}

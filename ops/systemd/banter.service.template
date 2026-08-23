@@ -1,0 +1,15 @@
+[Unit]
+Description=Banter Control Plane
+After=network.target
+
+[Service]
+Type=simple
+Environment=BANTER_PROD=__PROD__
+Environment=BANTER_UNIT=__UNIT__
+ExecStart=__PROD__/scripts/control-runner.sh
+ExecStopPost=__PROD__/scripts/control-serve-off.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

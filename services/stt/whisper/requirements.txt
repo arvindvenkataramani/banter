@@ -1,0 +1,4 @@
+mlx-whisper==0.4.3
+fastapi==0.135.3
+pydantic==2.13.1
+uvicorn==0.44.0

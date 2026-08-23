@@ -1,0 +1,223 @@
+/* Design tokens: palette, type, radii, spacing, and the Tailwind theme
+   mapping that exposes them as utility classes. Imported first by
+   index.css — everything else resolves against these. */
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --font-serif: 'Literata', Georgia, serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+
+  --color-card-muted: var(--card-muted);
+  --color-dock-fill: var(--dock-fill);
+
+  /* status palette tokens */
+  --color-status-healthy-bg: var(--status-healthy-bg);
+  --color-status-healthy-fg: var(--status-healthy-fg);
+  --color-status-healthy-border: var(--status-healthy-border);
+  --color-status-down-bg: var(--status-down-bg);
+  --color-status-down-fg: var(--status-down-fg);
+  --color-status-down-border: var(--status-down-border);
+  --color-status-warn-bg: var(--status-warn-bg);
+  --color-status-warn-fg: var(--status-warn-fg);
+  --color-status-warn-border: var(--status-warn-border);
+  --color-status-muted-bg: var(--status-muted-bg);
+  --color-status-muted-fg: var(--status-muted-fg);
+  --color-status-muted-border: var(--status-muted-border);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(0.895 0 0);
+  --foreground: oklch(0.16 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0 0);
+  --card-muted: oklch(0.986 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0 0);
+  --muted: oklch(0.963 0 0);
+  --muted-foreground: oklch(0.55 0 0);
+  --secondary: oklch(0.963 0 0);
+  --secondary-foreground: oklch(0.16 0 0);
+  --accent: oklch(0.963 0 0);
+  --accent-foreground: oklch(0.16 0 0);
+  --border: oklch(0.829 0 0);
+  --input: oklch(0.829 0 0);
+  --primary: oklch(0.35 0 0);
+  --primary-foreground: oklch(0.99 0 0);
+  --primary-intense: oklch(0.35 0 0);
+  --ring: oklch(0.35 0 0);
+  --destructive: oklch(0.52 0.16 25);
+  --radius: 0.75rem;
+
+  /* voice-dock tokens — light (unaffected by the neutral-chrome reskin) */
+  /* Recessed well, not an elevated card — must stay darker than --background
+     (0.895) or the dock panel/textarea pop lighter than the page around them. */
+  --dock-fill: oklch(0.869 0 0);
+  /* Focused composer must read as MORE distinct from the page, never less.
+     Kept as its own token rather than reusing --card: the mobile --dock-fill
+     override below lifts the resting fill past --card in dark, which inverted
+     the relationship (focus made the box darker and closer to the page). */
+  --dock-fill-focus: oklch(1 0 0);
+  /* User bubble. Opaque rather than a foreground tint over the page: as a
+     color-mix against transparent it tracked --background, so it sank with the
+     page instead of holding its own contrast.
+
+     The near-zero chroma is a perceptual correction, not an accent. The
+     surrounding warm elements (--glow-hearing, --warning, --sec-pressed-bg,
+     all hue ~72) make a truly achromatic surface read cool by simultaneous
+     contrast, so hue 72 at 0.004 is what makes the bubble look neutral in
+     context. It should not be legible as a colour — if it reads as tinted,
+     it is too high. */
+  --msg-user-bg: oklch(0.828 0.004 72);
+  --neutral-fill: color-mix(in oklch, var(--foreground) 7%, transparent);
+  /* Primary mic: same resting fill as its neighbours. Rank is carried by the
+     68px button and its proportionally larger icon, not by colour — the icons
+     were silently clamped to 16px until recently, which is what made the
+     button look under-weighted and prompted a stronger fill. */
+  --mic-fill: var(--neutral-fill);
+  /* Muted states are red, not the orange they used to be, so "stopped" reads
+     as distinct from the gold that means listening. Hue 38 sits between the
+     wash palette's red (20) and amber (45) — red enough to mean stopped,
+     warm enough not to read as an error, and desaturated so it recedes
+     rather than alarms. Both tokens are used only by the voice controls. */
+  --warning-subtle: oklch(0.88 0.04 38);
+  --warning-subtle-fg: oklch(0.32 0.08 38);
+  --warning: oklch(0.55 0.13 38);
+  --warning-fg: oklch(0.98 0.01 38);
+  /* --warning is tuned as a fill behind light text; as an icon/text colour on
+     the page it needs more contrast. Same hue, darker. */
+  --warning-strong: oklch(0.50 0.15 38);
+  --sec-pressed-bg: oklch(0.66 0.09 38);
+  --sec-pressed-fg: oklch(0.20 0.05 38);
+
+  --status-healthy-bg: oklch(0.93 0.055 145);
+  --status-healthy-fg: oklch(0.36 0.055 145);
+  --status-healthy-border: oklch(0.82 0.07 145);
+  --status-warn-bg: oklch(0.94 0.065 80);
+  --status-warn-fg: oklch(0.47 0.085 70);
+  --status-warn-border: oklch(0.85 0.08 78);
+  --status-down-bg: oklch(0.94 0.05 25);
+  --status-down-fg: oklch(0.48 0.13 25);
+  --status-down-border: oklch(0.85 0.07 25);
+  --status-muted-bg: oklch(0.965 0 0);
+  --status-muted-fg: oklch(0.62 0 0);
+  --status-muted-border: oklch(0.91 0 0);
+
+  --glow-hearing: oklch(0.500 0.115 72 / 0.36);
+  --glow-playing: oklch(0.450 0.125 130 / 0.36);
+
+  /* Top-of-page ambient wash. Neutral because --primary carries no chroma
+     in this skin — oklch(primary-L + 0.05, primary-C * 0.5, primary-H)
+     collapses to pure gray once primary-C is 0. Static, not time-of-day. */
+  --wash-top: oklch(0.40 0 0);
+}
+
+.dark {
+  --background: oklch(0.16 0 0);
+  --foreground: oklch(0.85 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.85 0 0);
+  --card-muted: oklch(0.19 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.85 0 0);
+  --muted: oklch(0.255 0 0);
+  --muted-foreground: oklch(0.68 0 0);
+  --secondary: oklch(0.255 0 0);
+  --secondary-foreground: oklch(0.85 0 0);
+  --accent: oklch(0.255 0 0);
+  --accent-foreground: oklch(0.85 0 0);
+  --border: oklch(1 0 0 / 16%);
+  --input: oklch(1 0 0 / 16%);
+  --primary: oklch(0.81 0 0);
+  --primary-foreground: oklch(0.17 0 0);
+  --primary-intense: oklch(0.81 0 0);
+  --ring: oklch(0.81 0 0);
+  --destructive: oklch(0.68 0.15 25);
+
+  /* voice-dock tokens — dark (unaffected by the neutral-chrome reskin) */
+  --dock-fill: oklch(0.19 0 0);
+  /* Above the mobile --dock-fill override (0.225), not just desktop's 0.19,
+     so focus brightens on both. */
+  --dock-fill-focus: oklch(0.26 0 0);
+  --msg-user-bg: oklch(0.235 0.005 72);
+  --neutral-fill: color-mix(in oklch, var(--foreground) 12%, transparent);
+  --mic-fill: var(--neutral-fill);
+  --warning-subtle: oklch(0.28 0.05 38);
+  --warning-subtle-fg: oklch(0.82 0.07 38);
+  --warning: oklch(0.40 0.11 38);
+  --warning-fg: oklch(0.96 0.02 38);
+  --warning-strong: oklch(0.72 0.14 38);
+  --sec-pressed-bg: oklch(0.33 0.08 38);
+  --sec-pressed-fg: oklch(0.88 0.04 38);
+
+  --status-healthy-bg: oklch(0.26 0.045 145);
+  --status-healthy-fg: oklch(0.76 0.075 145);
+  --status-healthy-border: oklch(0.36 0.055 145);
+  --status-warn-bg: oklch(0.27 0.05 78);
+  --status-warn-fg: oklch(0.80 0.085 80);
+  --status-warn-border: oklch(0.37 0.06 78);
+  --status-down-bg: oklch(0.26 0.05 25);
+  --status-down-fg: oklch(0.74 0.12 25);
+  --status-down-border: oklch(0.36 0.06 25);
+  --status-muted-bg: oklch(0.235 0 0);
+  --status-muted-fg: oklch(0.62 0 0);
+  --status-muted-border: oklch(0.32 0 0);
+
+  --glow-hearing: oklch(0.492 0.125 72 / 0.30);
+  --glow-playing: oklch(0.652 0.170 130 / 0.30);
+
+  --wash-top: oklch(0.86 0 0);
+}
+
+/* The composer/voice-dock block is a proportionally larger share of a
+   narrow screen than of desktop, so the same --dock-fill-vs-background
+   contrast reads as much darker/heavier there. Lift it further on mobile
+   rather than brightening desktop past where it already looks right. */
+@media (max-width: 640px) {
+  .dark {
+    --dock-fill: oklch(0.225 0 0);
+  }
+}
+
+/* Light mode's --neutral-fill (foreground 7%) resolves to only ~0.05 of
+   separation from the page, so the mobile voice-control buttons read as
+   barely-there ghosts. Dark mode gets ~0.12 from its own 12% and looks right,
+   so lift light to match. Scoped rather than raising the shared token, which
+   also feeds the composer and desktop voice surfaces.
+
+   Scoped :root:not(.dark) — :root and .dark have equal specificity, so a bare
+   :root here would override dark mode's 12% too. Breakpoint is 767px, not the
+   640px above, because VoiceControlsMobile swaps in at Tailwind's md:hidden
+   (768px); at 640px the 641–767px band would render the mobile controls with
+   the unfixed fill. */
+@media (max-width: 767px) {
+  :root:not(.dark) {
+    --neutral-fill: color-mix(in oklch, var(--foreground) 13%, transparent);
+  }
+}

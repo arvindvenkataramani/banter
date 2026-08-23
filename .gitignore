@@ -1,0 +1,66 @@
+# Editor / tooling
+*.code-workspace
+CLAUDE.md
+.claude/
+.vscode/
+
+# Dependencies and build output
+node_modules/
+dashboard/dist/
+tsconfig.tsbuildinfo
+control/**/*.js
+shared/**/*.js
+
+# Compiled shard supervisor (built by shard-deploy.sh)
+control/control-shard/ops/shard-runner
+control/control-shard/ops/_CodeSignature/
+
+# macOS
+.DS_Store
+
+# Screenshots — local debugging only
+*.jpeg
+*.png
+
+# Superseded by the live-config model (the dev server now reads the deployed
+# config), but a local copy may linger from before the change — never track it.
+control/control-plane/data/config.dev.json
+
+control/control-plane/data/events.dev.jsonl
+# The event log defaults inside the tree it runs from, so a run out of the repo
+# writes here rather than into a deployment.
+/logs/
+
+# gateway probe — captures may contain conversation content, and
+# identity.json is the probe's paired device credential
+control/probe/captures/
+control/probe/identity.json
+*.capture.jsonl
+
+# Throwaway investigation scratch space — repro scripts, extracted capture
+# frames. May contain real conversation content; never meant to be committed.
+scratchpad/
+
+# Run artifacts from the banter extraction (execution record, not source)
+.review/
+
+# Per-machine deploy settings — deploy.conf.example ships instead
+scripts/deploy.conf
+
+# Live data files — examples ship instead (see data/*.example.json)
+dashboard/public/models/*
+control/control-plane/data/registry.json
+control/control-plane/data/config.json
+control/control-shard/data/registry.json
+
+# Event log written by a local (non-deployed) control plane run
+logs/
+
+# Build-process working docs (design, plans, test logs) — process scratch, not source
+plans/
+
+# Rendered from ops/com.banter.control-shard.plist.template at deploy time.
+control/control-shard/ops/com.banter.control-shard.plist
+
+# Playwright MCP browser session logs/artifacts
+.playwright-mcp/

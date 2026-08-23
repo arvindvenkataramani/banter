@@ -1,0 +1,18 @@
+# Per-machine deploy settings. Copy to deploy.conf and edit; deploy.conf is
+# untracked, so your paths stay out of the repository and survive every deploy.
+#
+#   cp scripts/deploy.conf.example scripts/deploy.conf
+#
+# Everything here is optional — the defaults describe an ordinary install. An
+# environment variable of the same name still wins, for one-off deploys.
+
+# Where the control plane installs, and what its systemd unit is called.
+# Set both together: a second deployment on one machine needs its own directory
+# *and* its own unit name, or `systemctl --user restart banter` acts on
+# whichever install happens to hold that name.
+#BANTER_PROD="$HOME/services/banter"
+#BANTER_UNIT="banter"
+
+# The shard's equivalent, on a worker machine.
+#BANTER_SHARD_PROD="$HOME/services/banter"
+#BANTER_SHARD_SERVICES_DEST="$HOME/services"

@@ -1,0 +1,14 @@
+{
+  "name": "@platform/control",
+  "version": "0.0.1",
+  "scripts": {
+    "test": "bun test --cwd shared",
+    "start": "bun run control-plane/src/index.ts"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "^1.3.0",
+    "hono": "^4.6.0",
+    "yaml": "2.8.3",
+    "zod": "^4.3.6"
+  }
+}

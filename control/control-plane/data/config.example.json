@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "runtime": {
+    "host": "localhost",
+    "eventsPath": "~/services/banter/logs/events.jsonl",
+    "healthIntervalMs": 900000,
+    "shardPollIntervalMs": 900000
+  },
+  "integrations": {
+    "openclaw": {
+      "gateway": {
+        "url": "wss://your-gateway.example.com",
+        "token": "your-gateway-token"
+      },
+      "defaultAgent": "your-agent-id"
+    }
+  },
+  "voice": {
+    "enabled": true,
+    "tts": {
+      "providers": [
+        {
+          "serviceId": "tts-kokoro",
+          "name": "Kokoro",
+          "models": [
+            {
+              "id": "hexgrad/Kokoro-82M",
+              "name": "Kokoro 82M",
+              "voices": [
+                {
+                  "id": "af_heart",
+                  "name": "Heart"
+                },
+                {
+                  "id": "af_bella",
+                  "name": "Bella"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "selection": {
+        "serviceId": "tts-kokoro",
+        "model": "hexgrad/Kokoro-82M",
+        "voice": "af_heart",
+        "speed": 1
+      },
+      "options": {
+        "chunkStrategy": "greedy",
+        "minChunkWords": 15,
+        "maxChunkWords": 60
+      },
+      "settingsScope": "global",
+      "modelPrefs": {}
+    },
+    "stt": {
+      "serviceId": "stt-parakeet",
+      "maxRecordingMs": 300000,
+      "vad": {
+        "minSpeechDurationS": 0.75,
+        "minSpeechProb": 0.9
+      },
+      "turnTaking": {
+        "pauseThresholdMs": 300,
+        "commitMinDelayMs": 300,
+        "commitMaxDelayMs": 1400,
+        "smartTurnThreshold": 0.9,
+        "smartTurnLowCutoff": 0.15,
+        "curve": {
+          "type": "power",
+          "exponent": 2
+        },
+        "interruptionMinRemainingS": 0.5
+      }
+    }
+  }
+}

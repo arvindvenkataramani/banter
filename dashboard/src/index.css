@@ -1,0 +1,364 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource/literata/400.css";
+@import "@fontsource/literata/400-italic.css";
+@import "@fontsource/literata/500.css";
+@import "@fontsource/literata/500-italic.css";
+@import "./styles/tokens.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground overflow-hidden h-dvh;
+  }
+
+  html {
+    @apply font-sans overflow-hidden;
+    /* Safari tab: dvh tracks chrome show/hide so the sticky-free header
+       can't get scrolled off. Installed PWA has no chrome and mis-latches
+       dvh on first paint (bottom pushed up), so it keeps the stable lvh. */
+    height: 100dvh;
+    /* Geist Variable interpolates, so this is a real weight, not just a
+       fallback pick. */
+    font-weight: 480;
+  }
+
+  @media (display-mode: standalone) {
+    html {
+      height: 100lvh;
+    }
+  }
+
+  #root {
+    @apply h-dvh;
+  }
+
+  /* ── Chat message styles ────────────────────────────────────────── */
+  /* Assistant — serif reading layout, left-aligned, no bubble. */
+  .msg-assistant {
+    font-size: 15px;
+    line-height: 1.55;
+    font-family: var(--font-serif);
+    text-wrap: pretty;
+  }
+
+  .msg-assistant p {
+    margin: 0 0 0.85em;
+  }
+
+  .msg-assistant p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Mixes toward --muted-foreground rather than transparent: on the serif
+     reading surface a slight hue shift reads better than a wash-out. */
+  .msg-assistant em {
+    font-style: italic;
+    color: color-mix(in oklch, var(--foreground) 75%, var(--muted-foreground));
+  }
+
+  .msg-assistant strong {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .msg-assistant ul {
+    padding-left: 1.25rem;
+    list-style-type: disc;
+  }
+
+  .msg-assistant ol {
+    padding-left: 1.25rem;
+    list-style-type: decimal;
+  }
+
+  .msg-assistant li {
+    margin: 0.375em 0;
+  }
+
+  .msg-assistant a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    opacity: 0.85;
+  }
+
+  .msg-assistant a:hover {
+    opacity: 1;
+  }
+
+  .msg-assistant h1 {
+    font-size: 1.35em;
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 1.1em 0 0.4em;
+  }
+
+  .msg-assistant h2 {
+    font-size: 1.15em;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 1em 0 0.35em;
+  }
+
+  .msg-assistant h3 {
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.4;
+    margin: 0.9em 0 0.3em;
+  }
+
+  .msg-assistant h1:first-child,
+  .msg-assistant h2:first-child,
+  .msg-assistant h3:first-child {
+    margin-top: 0;
+  }
+
+  .msg-assistant blockquote {
+    border-left: 2px solid color-mix(in oklch, var(--foreground) 20%, transparent);
+    padding-left: 1rem;
+    margin: 0.75em 0;
+    color: color-mix(in oklch, var(--foreground) 70%, var(--muted-foreground));
+    font-style: italic;
+  }
+
+  .msg-assistant table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin: 0.75em 0;
+  }
+
+  .msg-assistant th {
+    text-align: left;
+    font-weight: 600;
+    padding: 0.35em 0.75em;
+    border-bottom: 2px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  }
+
+  .msg-assistant td {
+    padding: 0.35em 0.75em;
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  }
+
+  .msg-assistant tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* User — sans, right-aligned, neutral wash */
+  .msg-user {
+    font-size: 15px;
+    align-self: flex-end;
+    max-width: 32rem;
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    color: var(--foreground);
+    padding: 0.625rem 0.875rem;
+    background: var(--msg-user-bg);
+    border-radius: 0.875rem;
+  }
+
+  .msg-user p {
+    margin: 0;
+  }
+
+  .msg-user p+p {
+    margin-top: 0.5em;
+  }
+
+  .msg-user a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    opacity: 0.85;
+  }
+
+  .msg-user a:hover {
+    opacity: 1;
+  }
+
+  @media (min-width: 768px) {
+    .msg-assistant {
+      font-weight: 300;
+    }
+
+    .msg-user {
+      padding: 0.75rem 1rem;
+    }
+  }
+
+  /* ── Ambient wash ────────────────────────────────────────────── */
+  /* Static top-of-page accent, not tied to time-of-day or app state — just
+     var(--wash-top), which is neutral because --primary carries no chroma in
+     this skin. Scrolls with content, unlike the glow overlay below (which is
+     fixed since it reflects live voice state).
+
+     Mobile only. On desktop the ramp spans enough pixels that Safari's 8-bit
+     gradient quantisation read as visible bands at every intensity worth
+     having — and lowering the intensity widens the steps rather than removing
+     them, so there was no setting that both showed and stayed clean. The
+     shorter mobile ramp does not have the room to band.
+
+     Linear, not radial: a radial ramp puts its quantisation steps on curved
+     iso-lines that read as concentric arcs, which the eye catches far more
+     readily than the straight horizontal edges of a vertical ramp. Being
+     uniform across the width, it also needs no mask to soften its sides. */
+  @media (max-width: 640px) {
+    .chat-ambient-wash {
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 13rem;
+      pointer-events: none;
+      z-index: 0;
+      background: linear-gradient(to bottom,
+        color-mix(in oklch, var(--wash-top) 3.5%, transparent) 0%,
+        color-mix(in oklch, var(--wash-top) 2.4%, transparent) 22%,
+        color-mix(in oklch, var(--wash-top) 1.5%, transparent) 42%,
+        color-mix(in oklch, var(--wash-top) 0.9%, transparent) 62%,
+        color-mix(in oklch, var(--wash-top) 0.4%, transparent) 80%,
+        transparent 100%);
+    }
+
+    .dark .chat-ambient-wash {
+      background: linear-gradient(to bottom,
+        color-mix(in oklch, var(--wash-top) 4.2%, transparent) 0%,
+        color-mix(in oklch, var(--wash-top) 2.9%, transparent) 22%,
+        color-mix(in oklch, var(--wash-top) 1.8%, transparent) 42%,
+        color-mix(in oklch, var(--wash-top) 1.1%, transparent) 62%,
+        color-mix(in oklch, var(--wash-top) 0.4%, transparent) 80%,
+        transparent 100%);
+    }
+  }
+
+  /* ── Mobile voice-controls backdrop ─────────────────────────── */
+  /* The mobile voice-on control block has no fill of its own, so the
+     transcript scrolling up behind it visually collides with the buttons
+     instead of dissolving away underneath them. Blur-only, no color, so it
+     doesn't reintroduce the hard-edged panel look the fill would bring
+     back. Browsers without backdrop-filter get a soft top-to-bottom fade
+     to the page background instead, so there's still some separation.
+
+     The mask ramps the blur's own intensity in from the top edge rather
+     than switching it on at full strength all at once — inset:0 alone
+     gives backdrop-filter a hard rectangular boundary that reads as a
+     visible seam above the button row.
+
+     Every stop must stay in rem, never %. The element spans a 4rem
+     overhang above the block plus the block itself, and the block's
+     height changes with fieldOpen — % stops resolve against that whole
+     varying height, which drags the ramp down past the overhang and
+     leaves the button row sitting at partial mask alpha (partial alpha
+     cross-fades the sharp original back in, so text reads straight
+     through the buttons). rem stops keep the ramp confined to the
+     overhang and full blur from the block's top edge down. */
+  .voice-controls-mobile-backdrop {
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    /* Blur only, no tint. An earlier version painted a gradient ramping to 62%
+       --background over the blurred result to help the last transcript line
+       dissolve — but that gradient also dimmed the voice glow beneath it, in a
+       band whose top edge landed on this element's overhang and read as a hard
+       seam across the glow. The blur alone is enough: it is the tint, not the
+       blur, that the glow could not survive. */
+    -webkit-mask-image: linear-gradient(to bottom,
+      transparent 0, rgba(0,0,0,0.05) 1rem, rgba(0,0,0,0.15) 2rem,
+      rgba(0,0,0,0.35) 3rem, rgba(0,0,0,0.6) 4rem, rgba(0,0,0,0.85) 5rem, black 6rem);
+    mask-image: linear-gradient(to bottom,
+      transparent 0, rgba(0,0,0,0.05) 1rem, rgba(0,0,0,0.15) 2rem,
+      rgba(0,0,0,0.35) 3rem, rgba(0,0,0,0.6) 4rem, rgba(0,0,0,0.85) 5rem, black 6rem);
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .voice-controls-mobile-backdrop {
+      background: linear-gradient(to bottom,
+        transparent 0,
+        color-mix(in oklch, var(--background) 35%, transparent) 3rem,
+        var(--background) 6rem);
+    }
+  }
+
+  /* ── Chat glow overlay ───────────────────────────────────────── */
+  /* Warm = hearing (user speaking), cool = playing (agent speaking).
+     Driven by data-glow-state on .chat-page. */
+  .chat-glow-overlay {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .chat-glow-overlay::before,
+  .chat-glow-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+
+  /* Deliberately three overlapping radials per state, not one linear ramp.
+     Their iso-lines cross at different angles, so each gradient's 8-bit
+     quantisation steps fall on a different curve and interfere where they
+     overlap instead of reinforcing — the composite self-dithers. A single
+     vertical ramp bands far more visibly here despite being simpler, which is
+     the opposite of the ambient wash's case (one gradient, nothing to
+     interfere with, so linear won there).
+
+     The corner anchoring also keeps the glow low: these reach roughly a third
+     of the viewport, where a bottom-to-top linear ramp covering the same
+     visual weight climbs most of the screen. */
+  .chat-glow-overlay::before {
+    background:
+      radial-gradient(ellipse 100% 80% at 0% 100%, var(--glow-hearing) 0%, transparent 65%),
+      radial-gradient(ellipse 100% 80% at 100% 100%, var(--glow-hearing) 0%, transparent 65%),
+      radial-gradient(ellipse 120% 70% at 50% 105%, var(--glow-hearing) 0%, transparent 60%);
+  }
+
+  .chat-glow-overlay::after {
+    background:
+      radial-gradient(ellipse 100% 80% at 0% 100%, var(--glow-playing) 0%, transparent 65%),
+      radial-gradient(ellipse 100% 80% at 100% 100%, var(--glow-playing) 0%, transparent 65%),
+      radial-gradient(ellipse 120% 70% at 50% 105%, var(--glow-playing) 0%, transparent 60%);
+  }
+
+  .chat-glow-overlay[data-glow-state="hearing"]::before {
+    opacity: 1;
+  }
+
+  .chat-glow-overlay[data-glow-state="playing"]::after {
+    opacity: 1;
+  }
+}
+
+/* ── Dashboard chrome ─────────────────────────────────────────
+   shadcn Button / Textarea shells wearing dashboard styling. Rules that have
+   to beat a Tailwind utility need !important — no layer below @layer utilities
+   outranks it. */
+@layer components {
+  /* A shadcn component wearing dashboard styling, as opposed to block content
+     (.action-*) or stock shadcn chrome in dialogs and nav. Hover moves toward
+     the foreground rather than shadcn's bg-primary/80, which is alpha: that
+     would let content show through a button floating over the chat scroll, and
+     it reverses direction between light and dark.
+     !important because Tailwind's utilities sit in @layer utilities, which
+     outranks every layer below it whatever the specificity. */
+  .dashboard-chrome:hover {
+    background: color-mix(in oklch, var(--primary) 88%, var(--foreground)) !important;
+  }
+}
+
+/* View Transitions: smoothly reorder thread rows when filter changes. */
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 220ms;
+  animation-timing-function: ease-out;
+}

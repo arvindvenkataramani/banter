@@ -1,0 +1,11 @@
+{
+  "name": "@platform/control-shared",
+  "version": "0.0.1",
+  "main": "./src/api.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  }
+}

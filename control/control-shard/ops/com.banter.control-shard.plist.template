@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Template. `__HOME__` is substituted with the deploying user's home
+     directory by scripts/render-plist.sh; shard-deploy.sh renders and installs
+     the result. launchd has no equivalent of systemd's %h and will not expand ~
+     or $HOME, so the installed file must carry absolute paths — but the tracked
+     one does not have to. Do not install this file directly. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.banter.control-shard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/services/banter/control/control-shard/ops/shard-runner</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__HOME__/services/banter/control/control-shard</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/control-shard.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/control-shard.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__HOME__/.bun/bin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin</string>
+    <!-- Outside the deployed tree deliberately: the deploy removes and rebuilds
+         that tree, and the live registry is not tracked — only an example is. -->
+    <key>BANTER_SHARD_REGISTRY_PATH</key>
+    <string>__HOME__/services/shard/registry.json</string>
+  </dict>
+</dict>
+</plist>

@@ -1,0 +1,6 @@
+default_voice: example
+ref_dir: ./voices
+voices:
+  example:
+    ref_audio: example.wav
+    ref_text: example.txt

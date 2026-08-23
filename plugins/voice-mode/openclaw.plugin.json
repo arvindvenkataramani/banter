@@ -1,0 +1,16 @@
+{
+  "id": "voice-mode",
+  "name": "Voice Mode",
+  "description": "Injects voice-mode guidance into the system prompt for voice sessions",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "sessionKeyPrefix": {
+        "type": "string",
+        "description": "Session key prefix to match. Only sessions whose key starts with this value receive voice-mode guidance.",
+        "default": "agent:voice:main"
+      }
+    },
+    "additionalProperties": false
+  }
+}

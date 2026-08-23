@@ -1,0 +1,37 @@
+diff --git a/Package.swift b/Package.swift
+index 3873711..448e3cd 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -16,8 +16,15 @@ let package = Package(
+             name: "fluidaudiocli",
+             targets: ["FluidAudioCLI"]
+         ),
++        .executable(
++            name: "fluidserver",
++            targets: ["FluidServer"]
++        ),
++    ],
++    dependencies: [
++        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
++        .package(url: "https://github.com/vapor/multipart-kit.git", from: "4.0.0"),
+     ],
+-    dependencies: [],
+     targets: [
+         .target(
+             name: "FluidAudio",
+@@ -51,6 +58,15 @@ let package = Package(
+                 .process("Utils/english.json")
+             ]
+         ),
++        .executableTarget(
++            name: "FluidServer",
++            dependencies: [
++                "FluidAudio",
++                .product(name: "Hummingbird", package: "hummingbird"),
++                .product(name: "MultipartKit", package: "multipart-kit"),
++            ],
++            path: "Sources/FluidServer"
++        ),
+         .testTarget(
+             name: "FluidAudioTests",
+             dependencies: [

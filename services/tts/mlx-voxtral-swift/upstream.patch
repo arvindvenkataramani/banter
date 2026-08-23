@@ -1,0 +1,63 @@
+diff --git a/Package.swift b/Package.swift
+index 46183a2..b55ecd9 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -36,13 +36,19 @@ let package = Package(
+             name: "VoxtralTTSStreamingDemo",
+             targets: ["VoxtralTTSStreamingDemo"]
+         ),
++        // OpenAI-compatible HTTP TTS server
++        .executable(
++            name: "VoxtralHTTPServer",
++            targets: ["VoxtralHTTPServer"]
++        ),
+     ],
+     dependencies: [
+         // Aligned with flux-2-swift-mlx dependency versions
+         .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.6"),
+         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.7.1"),
+         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
+-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "2.30.6")
++        .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "2.30.6"),
++        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0")
+     ],
+     targets: [
+         // Core library containing all Voxtral model implementations
+@@ -92,6 +98,15 @@ let package = Package(
+                 "VoxtralCore"
+             ]
+         ),
++        // OpenAI-compatible HTTP TTS server
++        .executableTarget(
++            name: "VoxtralHTTPServer",
++            dependencies: [
++                "VoxtralCore",
++                .product(name: "Hummingbird", package: "hummingbird"),
++                .product(name: "ArgumentParser", package: "swift-argument-parser")
++            ]
++        ),
+         // Unit tests
+         .testTarget(
+             name: "VoxtralCoreTests",
+diff --git a/Sources/VoxtralCore/TTS/Pipeline/VoxtralTTSPipeline.swift b/Sources/VoxtralCore/TTS/Pipeline/VoxtralTTSPipeline.swift
+index c7ec87f..06a1bf3 100644
+--- a/Sources/VoxtralCore/TTS/Pipeline/VoxtralTTSPipeline.swift
++++ b/Sources/VoxtralCore/TTS/Pipeline/VoxtralTTSPipeline.swift
+@@ -142,7 +142,7 @@ public class VoxtralTTSPipeline: @unchecked Sendable {
+ 
+         do {
+             // Generate audio codes
+-            let (codes, numFrames) = model.generate(
++            let (codes, numFrames, _) = model.generate(
+                 text: text,
+                 voiceEmbedding: voiceEmb,
+                 tokenizer: tokenizer,
+@@ -212,7 +212,7 @@ public class VoxtralTTSPipeline: @unchecked Sendable {
+         let startTime = Date()
+ 
+         do {
+-            let (codes, numFrames) = model.generate(
++            let (codes, numFrames, _) = model.generate(
+                 text: text,
+                 voiceEmbedding: voiceEmbedding,
+                 tokenizer: tokenizer,

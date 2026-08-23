@@ -1,0 +1,17 @@
+{
+  "name": "Banter",
+  "short_name": "Banter",
+  "description": "Voice chat platform for OpenClaw",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#efefef",
+  "theme_color": "#efefef",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

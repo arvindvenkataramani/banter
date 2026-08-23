@@ -1,0 +1,198 @@
+{
+  "version": 2,
+  "type": "shard",
+  "servicesRoot": "~/Services",
+  "defaults": {
+    "permissions": {
+      "protected": false
+    },
+    "lifecycle": {
+      "loadStrategy": "startup",
+      "idleUnload": false,
+      "idleTimeout": 300000
+    },
+    "network": {
+      "scheme": "https"
+    }
+  },
+  "hosts": [
+    {
+      "id": "gpu-machine",
+      "name": "gpu-machine",
+      "hostname": "gpu-machine.your-tailnet.ts.net",
+      "role": "worker"
+    },
+    {
+      "id": "home-server",
+      "name": "home-server",
+      "hostname": "home-server.your-tailnet.ts.net",
+      "role": "control"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "control",
+      "name": "Control Shard"
+    },
+    {
+      "id": "dashboard",
+      "name": "Dashboard"
+    },
+    {
+      "id": "embedding",
+      "name": "Embedding"
+    },
+    {
+      "id": "tts",
+      "name": "Text-to-Speech"
+    },
+    {
+      "id": "stt",
+      "name": "Speech-to-Text"
+    },
+    {
+      "id": "llm",
+      "name": "Large Language Model"
+    },
+    {
+      "id": "research",
+      "name": "Research"
+    }
+  ],
+  "services": [
+    {
+      "id": "control-shard",
+      "name": "Control Shard",
+      "capabilityId": "control",
+      "hostId": "gpu-machine",
+      "permissions": {
+        "enabled": true,
+        "protected": true
+      },
+      "runner": {
+        "type": "launchd",
+        "label": "com.banter.control-shard",
+        "plist": "control/control-shard/ops/com.banter.control-shard.plist"
+      },
+      "network": {
+        "port": 4200,
+        "healthPath": "/api/health",
+        "tailscaleServe": true
+      },
+      "lifecycle": {
+        "loadStrategy": "startup",
+        "idleUnload": false
+      }
+    },
+    {
+      "id": "tts-kokoro",
+      "name": "Kokoro",
+      "capabilityId": "tts",
+      "hostId": "gpu-machine",
+      "permissions": {
+        "enabled": true,
+        "protected": false
+      },
+      "runner": {
+        "type": "process",
+        "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/Services/tts/kokoro",
+          "variables": {
+            "HF_HUB_OFFLINE": "1"
+          }
+        }
+      },
+      "network": {
+        "port": 8002,
+        "healthPath": "/health",
+        "tailscaleServe": true
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
+      }
+    },
+    {
+      "id": "stt-parakeet",
+      "name": "Parakeet",
+      "capabilityId": "stt",
+      "hostId": "gpu-machine",
+      "permissions": {
+        "enabled": true,
+        "protected": false
+      },
+      "runner": {
+        "type": "process",
+        "main": ".venv/bin/parakeet-server --model mlx-community/parakeet-tdt-0.6b-v3 --host 127.0.0.1 --port 8765"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/Services/stt/parakeet",
+          "variables": {
+            "HF_HUB_OFFLINE": "1",
+            "PARAKEET_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
+          }
+        }
+      },
+      "network": {
+        "port": 8765,
+        "healthPath": "/healthz",
+        "tailscaleServe": true
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
+      }
+    },
+    {
+      "id": "stt-whisper",
+      "name": "Whisper",
+      "capabilityId": "stt",
+      "hostId": "gpu-machine",
+      "permissions": {
+        "enabled": true,
+        "protected": false
+      },
+      "runner": {
+        "type": "process",
+        "main": ".venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/Services/stt/whisper",
+          "variables": {
+            "HF_HUB_OFFLINE": "1",
+            "WHISPER_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
+          }
+        }
+      },
+      "network": {
+        "port": 8766,
+        "healthPath": "/healthz",
+        "tailscaleServe": true
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
+      }
+    }
+  ]
+}

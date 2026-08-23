@@ -1,0 +1,20 @@
+{
+  "name": "@banter/openclaw-voice-mode",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp voice-guidance.md dist/"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "runtimeExtensions": ["./dist/index.js"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.3.24-beta.2"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.0",
+    "typescript": "^6.0.3"
+  }
+}
