@@ -178,7 +178,15 @@ Once you have picked, [services/README.md](services/README.md) covers building t
 
 Add each one to `registry.json` as you go — [docs/configuration.md](docs/configuration.md) has the shape of a service entry — then restart to pick it up: `registry.json` is only read at startup, so `control-stop.sh` + `control-start.sh` (or `shard-stop.sh` + `shard-start.sh` on a shard, or Ctrl+C and rerun `control-runner.sh` on the macOS fallback path) on whichever machine you edited. Add a TTS provider and model to `config.json`'s `voice.tts.providers` the same way; that one reloads live via `POST /api/config/reload` instead, no restart needed.
 
+## iOS / mobile use
 
+Voice works on iPhone and iPad, but iOS Safari's autoplay restrictions can make playback silently fail to start in a way that's easy to mistake for a bug.
+
+
+- **Playback is iOS gated by iOS on user interaction**, and it isn't satisfied by just turning on voice mode or granting mic access.
+- **What resolves it is interacting with something else on the page** — tapping a button, sending a message via text, etc. — after voice mode is on. That interaction is what convinces Safari to let audio playback through. It should work fine after that. I haven't figured out any clear rules on how long-lived this permission is, so it may reset between sessions.
+- If replies seem to arrive with no audio, interact with some other part of the UI once; that's not a workaround, it's expected behavior on iOS Safari.
+- I don't have an Android or Windows device so I can't tell you what will be like.
 
 ## Adding shards (optional)
 
