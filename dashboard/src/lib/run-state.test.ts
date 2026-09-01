@@ -196,7 +196,7 @@ describe('normalizeAgentEvent', () => {
 
   test('thinking', () => {
     const e = normalizeAgentEvent(thinkingFrame, 400)
-    expect(e).toEqual({ kind: 'thinking', runId: RUN_A, at: 400 })
+    expect(e).toEqual({ kind: 'thinking', runId: RUN_A, text: 'The user is asking', at: 400 })
   })
 
   test('compaction start', () => {
@@ -510,5 +510,76 @@ describe('reducer: marks', () => {
     s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
     s = reduceRunEvent(s, normalizeAgentEvent(toolResultError, 3) as RunEvent)
     expect(s.marks[0].status).toBe('error')
+  })
+})
+
+// 2026.8.1 added two run-preparation signals that arrive before any content:
+// the `run_status` agent stream and a `status` chat state. Fixtures below are
+// lifted from control/probe/captures/2026-09-01T01-22-46.jsonl (scenario
+// text-slow-tool-text), in the order that capture recorded them: both status
+// signals precede lifecycle:start, and the model then went silent for 113s
+// before its first token.
+describe('run preparation signals (2026.8.1)', () => {
+  const RUN_B = 'probe-1788225778555-4bwd217mgqm'
+
+  const runStatus = (phase: string) => ({
+    runId: RUN_B,
+    sessionKey: SESSION_KEY,
+    stream: 'run_status',
+    data: { phase },
+  })
+
+  const chatStatus: ChatEventPayload = { runId: RUN_B, state: 'status', message: '' } as ChatEventPayload
+
+  test('run_status normalizes rather than falling through to unknown', () => {
+    const e = normalizeAgentEvent(runStatus('preparing_workspace'), 1)
+    expect(e).toEqual({ kind: 'run-status', runId: RUN_B, phase: 'preparing_workspace', at: 1 })
+  })
+
+  // The regression: `status` was grouped with the terminal chat states, so a
+  // run ended on its own first event and the indicator went dark for the rest
+  // of it.
+  test('a chat status event does not end the run', () => {
+    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
+    s = reduceRunEvent(s, chatToRunEvent(chatStatus, 2))
+    expect(s.runActive).toBe(true)
+    expect(s.activity).not.toBe('idle')
+  })
+
+  test('a chat status event carries no text and must not clear assembled text', () => {
+    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
+    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_B, state: 'delta', message: 'partial' } as ChatEventPayload, 2))
+    s = reduceRunEvent(s, chatToRunEvent(chatStatus, 3))
+    expect(s.text).toBe('partial')
+  })
+
+  // Both signals arrive before lifecycle:start, so neither can rely on a run
+  // already being open.
+  test('either preparation signal opens a run on its own', () => {
+    const fromChat = reduceRunEvent(initialRunState, chatToRunEvent(chatStatus, 1))
+    expect(fromChat.runActive).toBe(true)
+
+    const fromStream = reduceRunEvent(initialRunState, normalizeAgentEvent(runStatus('preparing_workspace'), 1) as RunEvent)
+    expect(fromStream.runActive).toBe(true)
+  })
+
+  // The captured phases all fired inside 1.1s, then nothing for 113s while the
+  // model loaded. Activity has to survive that silence — no event arrives to
+  // re-assert it.
+  test('activity persists through the silent gap after the last phase', () => {
+    let s = reduceRunEvent(initialRunState, chatToRunEvent(chatStatus, 1))
+    for (const [i, phase] of ['preparing_workspace', 'preparing_context', 'starting_model'].entries()) {
+      s = reduceRunEvent(s, normalizeAgentEvent(runStatus(phase), 2 + i) as RunEvent)
+    }
+    expect(s.runActive).toBe(true)
+    expect(s.activity).not.toBe('idle')
+  })
+
+  test('the run still ends on lifecycle end after preparation signals', () => {
+    let s = reduceRunEvent(initialRunState, chatToRunEvent(chatStatus, 1))
+    s = reduceRunEvent(s, normalizeAgentEvent(runStatus('starting_model'), 2) as RunEvent)
+    s = reduceRunEvent(s, normalizeAgentEvent({ ...lifecycleEnd, runId: RUN_B }, 3) as RunEvent)
+    expect(s.runActive).toBe(false)
+    expect(s.activity).toBe('idle')
   })
 })

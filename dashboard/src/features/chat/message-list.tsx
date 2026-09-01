@@ -1,6 +1,7 @@
 import { MessageBubble } from './message-bubble'
 import { ToolRunGroup } from './tool-run-group'
 import { ActivityIndicator } from './activity-indicator'
+import { ReasoningRow } from './reasoning-row'
 import type { ConversationItem } from '@/lib/conversation-store'
 
 interface Props {
@@ -50,6 +51,8 @@ export function MessageList({ items, runActive, onResend }: Props) {
         )
       case 'assistant-text':
         return <MessageBubble key={item.id} role="assistant" text={item.text} isStreaming={item.isStreaming} />
+      case 'thinking':
+        return <ReasoningRow key={item.id} text={item.text} running={item.isStreaming === true} />
       case 'tool-card':
         // Unreachable directly — tool-card items are always consumed via
         // groupIntoToolRuns/ToolRunGroup below, even a run of one.
@@ -72,10 +75,10 @@ export function MessageList({ items, runActive, onResend }: Props) {
 
   // "Processing" is a placeholder for the gap before any content exists for
   // the active run — not a running commentary on what kind of work is
-  // happening. Once the first delta or tool-card shows up, the stream itself
-  // is the evidence something's happening; showing/hiding this line based on
-  // which event kind last arrived (thinking vs. tool vs. an unmapped stream)
-  // caused a visible flicker as those interleaved (found live 2026-08-09).
+  // happening. Once the first reasoning line, delta or tool-card shows up,
+  // that content is itself the evidence something's happening, and the
+  // reasoning row takes over the job of showing the model at work. Driving
+  // this off which event kind last arrived flickers as they interleave.
   // Only one run is ever active at a time, so any live: item's presence
   // means the active run already has visible content.
   const activeRunHasContent = items.some((i) => i.id.startsWith('live:'))

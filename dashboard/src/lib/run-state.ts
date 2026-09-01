@@ -1,11 +1,14 @@
 import type { ChatEventPayload } from './gateway-types'
 
 export type RunEvent =
-  | { kind: 'chat'; runId: string; state: 'delta' | 'final' | 'aborted' | 'error'; text: string; errorMessage?: string; at: number }
+  | { kind: 'chat'; runId: string; state: 'delta' | 'final' | 'status' | 'aborted' | 'error'; text: string; errorMessage?: string; at: number }
+  | { kind: 'run-status'; runId: string; phase: string; at: number }
   | { kind: 'tool'; runId: string; phase: 'start' | 'update' | 'result'; toolCallId: string; name: string; isError?: boolean; at: number }
   | { kind: 'item'; runId: string; toolCallId: string; title: string; at: number }
   | { kind: 'lifecycle'; runId: string; phase: 'start' | 'finishing' | 'end' | 'error'; aborted?: boolean; stopReason?: string; at: number }
-  | { kind: 'thinking'; runId: string; at: number }
+  // `text` is the reasoning assembled so far, not the increment — the gateway
+  // sends both and the cumulative form is what a block holds.
+  | { kind: 'thinking'; runId: string; text: string; at: number }
   | { kind: 'compaction'; phase: 'start' | 'end'; completed?: boolean; willRetry?: boolean; at: number }
   | { kind: 'unknown'; runId: string | null; stream: string; raw: unknown; at: number }
 
@@ -19,6 +22,15 @@ export interface ToolMark {
   status: 'running' | 'done' | 'interrupted' | 'error'
 }
 
+// One reasoning block. `markCount` is how many tool marks existed when the
+// block opened, which is what orders it against them: a block that opened
+// before any tool call renders above the cards, one that opened after two
+// renders below them.
+export interface ThinkingBlock {
+  text: string
+  markCount: number
+}
+
 export interface RunState {
   runActive: boolean
   runId: string | null
@@ -26,6 +38,7 @@ export interface RunState {
   openTools: ReadonlyMap<string, ToolMark>
   marks: ReadonlyArray<ToolMark>
   text: string
+  thinking: ReadonlyArray<ThinkingBlock>
   seenToolPhases: ReadonlySet<string>
 }
 
@@ -36,6 +49,7 @@ export const initialRunState: RunState = {
   openTools: new Map(),
   marks: [],
   text: '',
+  thinking: [],
   seenToolPhases: new Set(),
 }
 
@@ -95,7 +109,17 @@ export function normalizeAgentEvent(payload: unknown, at: number): RunEvent | nu
         break
       }
       case 'thinking': {
-        if (runId) return { kind: 'thinking', runId, at }
+        if (runId) return { kind: 'thinking', runId, text: typeof data.text === 'string' ? data.text : '', at }
+        break
+      }
+      // 2026.8.1: a run announces its preparation before generating anything —
+      // preparing_workspace, preparing_context, starting_model. On a cold
+      // local model this is the longest silent stretch of a run, so it is the
+      // stretch the activity indicator most needs to cover.
+      case 'run_status': {
+        if (runId && typeof data.phase === 'string') {
+          return { kind: 'run-status', runId, phase: data.phase, at }
+        }
         break
       }
       case 'compaction': {
@@ -170,7 +194,16 @@ function endRun(state: RunState): RunState {
 export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
   if (event.kind === 'compaction') return state
 
-  const isStartTrigger = (event.kind === 'lifecycle' && event.phase === 'start') || (event.kind === 'chat' && event.state === 'delta')
+  // run-status and chat:status are a run's first events, arriving before
+  // lifecycle:start — so they have to be able to open a run, or the activity
+  // they exist to signal is dropped for want of one.
+  const isStartTrigger =
+    (event.kind === 'lifecycle' && event.phase === 'start') ||
+    (event.kind === 'chat' && (event.state === 'delta' || event.state === 'status')) ||
+    event.kind === 'run-status' ||
+    // Reasoning can be a run's first visible output — a row is owed the moment
+    // the first delta lands, which needs an open run to hold it.
+    (event.kind === 'thinking' && event.text !== '')
   const eventRunId = 'runId' in event ? event.runId : null
 
   let working = state
@@ -217,15 +250,35 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
       return { ...working, activity: computeActivity(working, event) }
     }
     case 'thinking': {
-      return { ...working, activity: computeActivity(working, event) }
+      if (event.text === '') return { ...working, activity: computeActivity(working, event) }
+      const blocks = [...working.thinking]
+      const open = blocks[blocks.length - 1]
+      // The gateway sends reasoning cumulatively, so a shorter text means the
+      // model started a fresh block rather than continuing this one. A block
+      // opened under a different tool-mark count is likewise a new one.
+      if (open === undefined || event.text.length < open.text.length || open.markCount !== working.marks.length) {
+        blocks.push({ text: event.text, markCount: working.marks.length })
+      } else {
+        blocks[blocks.length - 1] = { ...open, text: event.text }
+      }
+      const next = { ...working, thinking: blocks }
+      return { ...next, activity: computeActivity(next, event) }
     }
     case 'chat': {
       if (event.state === 'delta') {
         const next = { ...working, text: event.text }
         return { ...next, activity: computeActivity(next, event) }
       }
+      // Progress, not an outcome: it carries no text, so it must neither end
+      // the run nor overwrite what has been assembled so far.
+      if (event.state === 'status') {
+        return { ...working, activity: computeActivity(working, event) }
+      }
       const withText = { ...working, text: event.text || working.text }
       return endRun(withText)
+    }
+    case 'run-status': {
+      return { ...working, activity: computeActivity(working, event) }
     }
     case 'unknown': {
       return { ...working, activity: computeActivity(working, event) }

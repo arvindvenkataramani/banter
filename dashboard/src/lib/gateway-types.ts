@@ -94,7 +94,10 @@ export interface ChatAbortParams {
   runId?: string
 }
 
-export type ChatEventState = 'delta' | 'final' | 'aborted' | 'error'
+// `status` (2026.8.1) is run progress, not an outcome: it carries no content
+// and arrives before the first delta. Grouping it with the terminal states
+// ended the run on its own first event.
+export type ChatEventState = 'delta' | 'final' | 'status' | 'aborted' | 'error'
 
 export interface ChatEventPayload {
   runId: string

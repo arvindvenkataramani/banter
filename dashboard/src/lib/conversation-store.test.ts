@@ -343,3 +343,48 @@ describe('Conversation: waitForRunEnd', () => {
     expect(result).toBe('ended')
   })
 })
+
+// A run's items are rebuilt from scratch on every event it receives. Rebuilding
+// them at the tail moved a finished reply below anything the user had sent
+// since — which is what a reader sees as their own message jumping upward.
+describe('Conversation: a run holds its position', () => {
+  const RUN_2 = 'run-2'
+  const texts = (c: Conversation) =>
+    c.getSnapshot().items.map((i) => (i.kind === 'user-message' || i.kind === 'assistant-text' ? i.text : i.kind))
+
+  test('a reply stays above a message sent after it, when its run gets another event', () => {
+    const c = new Conversation()
+    c.addUserMessage('first question')
+    c.ingest(delta('first answer'))
+    c.ingest(final('first answer'))
+    c.addUserMessage('second question')
+    expect(texts(c)).toEqual(['first question', 'first answer', 'second question'])
+
+    // A trailing event for the run that already finished. Before the fix this
+    // rebuilt 'first answer' at the tail, below 'second question'.
+    c.ingest(final('first answer', 3))
+    expect(texts(c)).toEqual(['first question', 'first answer', 'second question'])
+  })
+
+  test('a new run appends at the tail, having nothing on screen to hold', () => {
+    const c = new Conversation()
+    c.addUserMessage('first question')
+    c.ingest(delta('first answer'))
+    c.ingest(final('first answer'))
+    c.addUserMessage('second question')
+    c.ingest(chatToRunEvent({ runId: RUN_2, sessionKey: SESSION_KEY, seq: 4, state: 'delta', message: 'second answer' }, 4))
+    expect(texts(c)).toEqual(['first question', 'first answer', 'second question', 'second answer'])
+  })
+
+  // The 2026.8.1 signal that provoked the reordering: it reaches a finished
+  // run as an ordinary chat event.
+  test('a status event for a finished run moves nothing', () => {
+    const c = new Conversation()
+    c.addUserMessage('first question')
+    c.ingest(delta('first answer'))
+    c.ingest(final('first answer'))
+    c.addUserMessage('second question')
+    c.ingest(chatToRunEvent({ runId: RUN_ID, sessionKey: SESSION_KEY, seq: 5, state: 'status', message: '' }, 5))
+    expect(texts(c)).toEqual(['first question', 'first answer', 'second question'])
+  })
+})

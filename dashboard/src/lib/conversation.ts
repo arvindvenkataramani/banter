@@ -6,6 +6,11 @@ export type DeliveryStatus = 'pending' | 'confirmed' | 'failed'
 export type ConversationItem =
   | { id: string; kind: 'user-message'; text: string; senderAgentId?: string; delivery?: DeliveryStatus }
   | { id: string; kind: 'assistant-text'; runId?: string; text: string; isStreaming?: boolean }
+  // Reasoning is a sibling of assistant-text in the ordering, never spliced
+  // into it: the ordering is what tells the reader the model thought, spoke,
+  // thought again. A reasoning model that uses tools produces several of
+  // these in one turn, before and after its tool calls.
+  | { id: string; kind: 'thinking'; runId?: string; text: string; isStreaming?: boolean }
   | { id: string; kind: 'tool-card'; title: string; status: 'running' | 'done' | 'interrupted' | 'error' | 'unknown' }
   | { id: string; kind: 'error'; message: string }
   | { id: string; kind: 'compaction'; phase: 'active' | 'retrying' | 'complete' }
@@ -78,14 +83,40 @@ export function seedFromHistory(rows: unknown[], offset = 0): ConversationItem[]
     if (!isRecord(row)) return
     const role = row.role
 
+    // A turn carrying commentary before a tool call is served as two rows
+    // sharing one __openclaw.id: a openclawStreamFallback row holding the
+    // text, and the real row holding the thinking and toolCall blocks. They
+    // are one displayed turn, so the fallback row takes a distinct id derived
+    // from its own itemId rather than colliding with its parent's.
+    const fallback = isRecord(row.openclawStreamFallback) ? row.openclawStreamFallback : null
+    const rowId = fallback && typeof fallback.itemId === 'string'
+      ? `${historyId(row, offset + i)}:${fallback.itemId}`
+      : historyId(row, offset + i)
+
+    // Reasoning that precedes the row's first tool call. Blocks falling
+    // between or after tool calls are emitted by the content loop below, in
+    // their stored position — a reasoning model reasons, acts, then reasons
+    // about the result, and that ordering is what the reader is being told.
+    if (role === 'assistant' && Array.isArray(row.content)) {
+      const firstCall = row.content.findIndex(
+        (b) => isRecord(b) && (b.type === 'toolCall' || b.type === 'tool_use')
+      )
+      row.content.forEach((b, bi) => {
+        if (!isRecord(b) || b.type !== 'thinking') return
+        if (firstCall !== -1 && bi >= firstCall) return
+        const text = typeof b.thinking === 'string' ? b.thinking : typeof b.text === 'string' ? b.text : ''
+        if (text) items.push({ id: `${rowId}:thinking:${bi}`, kind: 'thinking', text })
+      })
+    }
+
     if (role === 'user' || role === 'assistant') {
       const text = extractMessageText(row)
       if (text) {
         const senderAgentId = extractSenderAgentId(row)
         items.push(
           role === 'user'
-            ? { id: historyId(row, offset + i), kind: 'user-message', text, senderAgentId }
-            : { id: historyId(row, offset + i), kind: 'assistant-text', text }
+            ? { id: rowId, kind: 'user-message', text, senderAgentId }
+            : { id: rowId, kind: 'assistant-text', text }
         )
       }
     }
@@ -117,9 +148,17 @@ export function seedFromHistory(rows: unknown[], offset = 0): ConversationItem[]
     const content = row.content
     if (!Array.isArray(content)) return
 
-    for (const b of content) {
+    const firstCallIndex = content.findIndex(
+      (b) => isRecord(b) && (b.type === 'toolCall' || b.type === 'tool_use')
+    )
+
+    for (const [bi, b] of content.entries()) {
       if (!isRecord(b)) continue
-      if (b.type === 'tool_use' || b.type === 'toolCall') {
+      if (b.type === 'thinking') {
+        if (firstCallIndex === -1 || bi < firstCallIndex) continue
+        const text = typeof b.thinking === 'string' ? b.thinking : typeof b.text === 'string' ? b.text : ''
+        if (text) items.push({ id: `${rowId}:thinking:${bi}`, kind: 'thinking', text })
+      } else if (b.type === 'tool_use' || b.type === 'toolCall') {
         const toolCallId = blockToolCallId(b)
         if (!toolCallId) continue
         // Outcome unknown until a matching result row (or block) says
@@ -154,13 +193,33 @@ function buildRunSegments(run: RunState): ConversationItem[] {
   let cursor = 0
   let segIdx = 0
 
-  for (const mark of marks) {
+  // Reasoning blocks are placed by how many tool marks preceded them, so a
+  // block that opened after two tool calls lands below both cards. Only the
+  // final block of an active run is still being written.
+  const lastThinking = run.thinking.length - 1
+  const emitThinkingBefore = (markCount: number) => {
+    run.thinking.forEach((block, i) => {
+      if (block.markCount !== markCount) return
+      out.push({
+        id: `live:${run.runId}:thinking:${i}`,
+        kind: 'thinking',
+        runId: run.runId ?? undefined,
+        text: block.text,
+        isStreaming: run.runActive && i === lastThinking,
+      })
+    })
+  }
+
+  emitThinkingBefore(0)
+
+  for (const [markIndex, mark] of marks.entries()) {
     const segText = run.text.slice(cursor, mark.textOffset)
     if (segText.length > 0) {
       out.push({ id: `live:${run.runId}:text:${segIdx++}`, kind: 'assistant-text', runId: run.runId, text: segText, isStreaming: run.runActive })
     }
     out.push({ id: `live:${run.runId}:tool:${mark.toolCallId}`, kind: 'tool-card', title: mark.title ?? mark.name, status: mark.status })
     cursor = mark.textOffset
+    emitThinkingBefore(markIndex + 1)
   }
 
   const tail = run.text.slice(cursor)
@@ -171,11 +230,19 @@ function buildRunSegments(run: RunState): ConversationItem[] {
   return out
 }
 
+// A run's segments are rebuilt from scratch on every event, so they must be
+// put back where they were rather than appended: anything the user added
+// after the run began (a message sent while it was still streaming) sits
+// later in the list, and re-appending would slide the run's own output below
+// it. Only a run with nothing on screen yet belongs at the tail.
 export function applyLiveRun(items: ConversationItem[], run: RunState): ConversationItem[] {
   if (!run.runId) return items
   const prefix = `live:${run.runId}:`
+  const at = items.findIndex((i) => i.id.startsWith(prefix))
   const base = items.filter((i) => !i.id.startsWith(prefix))
-  return [...base, ...buildRunSegments(run)]
+  const segments = buildRunSegments(run)
+  if (at === -1) return [...base, ...segments]
+  return [...base.slice(0, at), ...segments, ...base.slice(at)]
 }
 
 export function finalizeRun(items: ConversationItem[], run: RunState): ConversationItem[] {
