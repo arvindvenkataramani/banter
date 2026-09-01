@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 
 /**
  * Where the shard reads and writes, and the three numbers that govern its loops.
@@ -34,7 +34,22 @@ export function shardRoot(env: Env, home: string): string {
 
   const lower = join(home, "services");
   const legacy = join(home, "Services");
-  if (!existsSync(lower) && existsSync(legacy)) return legacy;
+
+  // existsSync cannot answer this on a case-insensitive filesystem (macOS's
+  // default): it reports "services" as present when only "Services" exists,
+  // because to the OS they are the same directory. Read the parent and look at
+  // the names actually on disk, so the two spellings stay distinguishable
+  // everywhere. Falling back to existsSync if home is unreadable keeps the
+  // previous behaviour rather than throwing from a path resolver.
+  let names: string[];
+  try {
+    names = readdirSync(home);
+  } catch {
+    if (!existsSync(lower) && existsSync(legacy)) return legacy;
+    return lower;
+  }
+
+  if (!names.includes("services") && names.includes("Services")) return legacy;
   return lower;
 }
 
