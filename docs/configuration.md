@@ -127,17 +127,19 @@ If most of your services are https, set it once for the whole registry:
 
 ### CORS
 
-The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin. Most adapters read a comma-separated environment variable:
+The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
+
+The TTS adapters here (`tts/kokoro`, `tts/neutts-air`) are permissive and need no configuration. The STT ones read a comma-separated environment variable — `WHISPER_CORS_ORIGINS` for `stt/whisper`, `FLUID_CORS_ORIGINS` for `stt/fluid-audio`, `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`:
 
 ```json
 "ops": {
   "env": {
-    "variables": { "KOKORO_CORS_ORIGINS": "https://box.local:4200" }
+    "variables": { "WHISPER_CORS_ORIGINS": "https://box.local:4200" }
   }
 }
 ```
 
-A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these.
+A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Note that Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
 
 ---
 

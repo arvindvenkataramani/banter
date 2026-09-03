@@ -54,7 +54,7 @@ Then add this to `config.json`'s `voice.tts` block:
 }
 ```
 
-The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. Unlike the other services below, NeuTTS Air's CORS is wide open by default (`allow_origins=["*"]`) — there's no environment variable to set.
+The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. NeuTTS Air's CORS is wide open by default (`allow_origins=["*"]`), as Kokoro's is — there's no environment variable to set for either.
 
 ---
 
