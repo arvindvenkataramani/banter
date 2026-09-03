@@ -1,24 +1,12 @@
 {
-  "_comment": "Ports appear twice per process service: in runner.main (what the service binds) and network.port (what we health-check and route to). They must agree unless the service sits behind a local proxy \u2014 the control plane warns on load if they differ. The CORS origins under ops.env.variables embed the dashboard's host and port a third time; update those too if either changes.",
+  "_comment": "Minimal starting registry: this machine, the control plane, and one entry each for your speech-to-text and text-to-speech servers. Replace the placeholder ids, ports and health paths with your own — see the README's \"Connect your speech servers\". runner.type \"external\" means the platform only health-checks a service and never starts or stops it; switch to a \"process\" runner (with runner.main and ops.env.workingDirectory) if you want it started on demand and unloaded when idle. Add more hosts, capabilities and shards as you need them; docs/configuration.md covers every field.",
   "version": 2,
   "type": "control",
-  "servicesRoot": "~/services",
-  "defaults": {
-    "network": {
-      "scheme": "https"
-    }
-  },
   "hosts": [
     {
-      "id": "gpu-machine",
-      "name": "gpu-machine",
-      "hostname": "gpu-machine.your-tailnet.ts.net",
-      "role": "worker"
-    },
-    {
-      "id": "home-server",
-      "name": "home-server",
-      "hostname": "home-server.your-tailnet.ts.net",
+      "id": "this-machine",
+      "name": "this-machine",
+      "hostname": "localhost",
       "role": "control"
     }
   ],
@@ -28,36 +16,12 @@
       "name": "Control Plane"
     },
     {
-      "id": "dashboard",
-      "name": "Dashboard"
-    },
-    {
-      "id": "embedding",
-      "name": "Embedding"
-    },
-    {
-      "id": "tts",
-      "name": "Text-to-Speech"
-    },
-    {
       "id": "stt",
       "name": "Speech-to-Text"
     },
     {
-      "id": "llm",
-      "name": "Large Language Model"
-    },
-    {
-      "id": "voice",
-      "name": "Voice Interface"
-    },
-    {
-      "id": "documents",
-      "name": "Documents"
-    },
-    {
-      "id": "agents",
-      "name": "Agent Orchestration"
+      "id": "tts",
+      "name": "Text-to-Speech"
     }
   ],
   "services": [
@@ -65,7 +29,7 @@
       "id": "control",
       "name": "Control Plane",
       "capabilityId": "control",
-      "hostId": "home-server",
+      "hostId": "this-machine",
       "permissions": {
         "enabled": true,
         "protected": true
@@ -77,8 +41,7 @@
       },
       "network": {
         "port": 4200,
-        "healthPath": "/api/health",
-        "tailscaleServe": true
+        "healthPath": "/api/health"
       },
       "lifecycle": {
         "loadStrategy": "startup",
@@ -86,122 +49,38 @@
       }
     },
     {
-      "id": "tts-kokoro",
-      "name": "Kokoro",
-      "capabilityId": "tts",
-      "hostId": "home-server",
-      "permissions": {
-        "enabled": true,
-        "protected": false
-      },
-      "runner": {
-        "type": "process",
-        "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002"
-      },
-      "ops": {
-        "env": {
-          "workingDirectory": "~/services/tts/kokoro",
-          "variables": {
-            "HF_HUB_OFFLINE": "1"
-          }
-        }
-      },
-      "network": {
-        "port": 8002,
-        "healthPath": "/health",
-        "tailscaleServe": true
-      },
-      "lifecycle": {
-        "loadStrategy": "demand",
-        "autoStart": false,
-        "shutdown": true,
-        "idleUnload": true,
-        "idleTimeout": 1800000,
-        "restartOnCrash": true,
-        "maxRestarts": 3
-      }
-    },
-    {
-      "id": "stt-parakeet",
-      "name": "Parakeet",
+      "id": "stt-yours",
+      "name": "Your STT",
       "capabilityId": "stt",
-      "hostId": "home-server",
+      "hostId": "this-machine",
       "permissions": {
         "enabled": true,
         "protected": false
       },
       "runner": {
-        "type": "process",
-        "main": ".venv/bin/parakeet-server --model mlx-community/parakeet-tdt-0.6b-v3 --host 127.0.0.1 --port 8765"
-      },
-      "ops": {
-        "env": {
-          "workingDirectory": "~/services/stt/parakeet",
-          "variables": {
-            "HF_HUB_OFFLINE": "1",
-            "PARAKEET_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
-          }
-        }
+        "type": "external"
       },
       "network": {
         "port": 8765,
-        "healthPath": "/healthz",
-        "tailscaleServe": true
-      },
-      "lifecycle": {
-        "loadStrategy": "demand",
-        "autoStart": false,
-        "shutdown": true,
-        "idleUnload": true,
-        "idleTimeout": 1800000,
-        "restartOnCrash": true,
-        "maxRestarts": 3
+        "healthPath": "/healthz"
       }
     },
     {
-      "id": "stt-whisper",
-      "name": "Whisper",
-      "capabilityId": "stt",
-      "hostId": "home-server",
+      "id": "tts-yours",
+      "name": "Your TTS",
+      "capabilityId": "tts",
+      "hostId": "this-machine",
       "permissions": {
         "enabled": true,
         "protected": false
       },
       "runner": {
-        "type": "process",
-        "main": ".venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766"
-      },
-      "ops": {
-        "env": {
-          "workingDirectory": "~/services/stt/whisper",
-          "variables": {
-            "HF_HUB_OFFLINE": "1",
-            "WHISPER_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
-          }
-        }
+        "type": "external"
       },
       "network": {
-        "port": 8766,
-        "healthPath": "/healthz",
-        "tailscaleServe": true
-      },
-      "lifecycle": {
-        "loadStrategy": "demand",
-        "autoStart": false,
-        "shutdown": true,
-        "idleUnload": true,
-        "idleTimeout": 1800000,
-        "restartOnCrash": true,
-        "maxRestarts": 3
+        "port": 8002,
+        "healthPath": "/health"
       }
-    }
-  ],
-  "shards": [
-    {
-      "hostId": "gpu-machine",
-      "port": 4200,
-      "scheme": "https",
-      "tailscaleServe": true
     }
   ]
 }

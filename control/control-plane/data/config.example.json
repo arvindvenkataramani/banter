@@ -20,32 +20,22 @@
     "tts": {
       "providers": [
         {
-          "serviceId": "tts-kokoro",
-          "name": "Kokoro",
+          "serviceId": "tts-yours",
+          "name": "Your TTS",
           "models": [
             {
-              "id": "hexgrad/Kokoro-82M",
-              "name": "Kokoro 82M",
+              "id": "YOUR-MODEL-ID",
+              "name": "Your Model",
               "voices": [
                 {
-                  "id": "af_heart",
-                  "name": "Heart"
-                },
-                {
-                  "id": "af_bella",
-                  "name": "Bella"
+                  "id": "YOUR-VOICE-ID",
+                  "name": "Your Voice"
                 }
               ]
             }
           ]
         }
       ],
-      "selection": {
-        "serviceId": "tts-kokoro",
-        "model": "hexgrad/Kokoro-82M",
-        "voice": "af_heart",
-        "speed": 1
-      },
       "options": {
         "chunkStrategy": "greedy",
         "minChunkWords": 15,
@@ -55,7 +45,7 @@
       "modelPrefs": {}
     },
     "stt": {
-      "serviceId": "stt-parakeet",
+      "serviceId": "stt-yours",
       "maxRecordingMs": 300000,
       "vad": {
         "minSpeechDurationS": 0.75,
