@@ -47,11 +47,11 @@ If you want the dashboard on your phone while away from home, you need some way 
 
 ## Install
 
-Banter is one machine, plus as many more as you want. The **control plane** serves the API and dashboard and is always needed. **Shards** are optional: each runs model services on another machine, and the control plane polls all of them and presents their services as one pool. Nothing caps the number — the registry takes a list of hosts.
+**The easiest way to get this working is to tell your LLM or agent to read this file and ask it to follow the steps in this section.**
 
-Running everything on one machine is fine. Shards exist so each service can run on whatever hardware suits it while the control plane runs elsewhere, most likely on the same machine as your agent harness.
 
 The steps below are shared by every OS; the only part that differs is how the control plane is kept running, which is the **Install as a service** section.
+
 
 ### Prerequisites
 
@@ -61,7 +61,7 @@ The steps below are shared by every OS; the only part that differs is how the co
 - A way to reach the dashboard from your phone when you are **away from your home network**, if you want that. Banter only needs endpoints it can reach, however you arrange that; [Tailscale](https://tailscale.com) is the one it has built-in support for — see **Networking** above. On your own network a LAN address is enough.
 - An **[OpenClaw](https://github.com/openclaw/openclaw) gateway** to talk to.
 
-Speech models bring their own prerequisites — Python 3 with `venv` for the Python adapters, a Swift toolchain only if you build the Swift ones — covered in **Choose and install speech models** below, since nothing up to that point needs either.
+Your speech servers bring their own prerequisites, whatever those happen to be — Banter needs none of them, and nothing here installs them. See **Connect your speech servers** below.
 
 ### Clone it
 
@@ -69,6 +69,10 @@ Speech models bring their own prerequisites — Python 3 with `venv` for the Pyt
 git clone https://github.com/arvindvenkataramani/banter.git
 cd banter
 ```
+
+
+
+## Install script
 
 ### Fast path: `scripts/install.sh`
 
@@ -78,7 +82,9 @@ Everything from here through a running, reachable control plane — dependencies
 scripts/install.sh
 ```
 
-When it finishes, skip ahead to **Choose and install speech models** below. The rest of this section is the same steps by hand, for anything the script doesn't cover for your setup or if something goes wrong and you want to see where.
+When it finishes, skip ahead to **Connect your speech servers** below. The rest of this section is the same steps by hand, for anything the script doesn't cover for your setup or if something goes wrong and you want to see where.
+
+## Manual setup
 
 ### Set up the control plane
 
@@ -168,22 +174,22 @@ Reverses exactly what `control-deploy.sh` installed: tears down the Tailscale Se
 
 ## Connect your speech servers
 
-**Voice needs two servers you provide yourself:** one speech-to-text, one
-text-to-speech. Banter never installs, builds, or downloads them — it reads your
-config, checks they are healthy, and sends them audio and text. Until both are
-connected, the dashboard works for typing but voice does nothing.
+**Voice needs two servers you provide yourself:** one speech-to-text, one text-to-speech. Banter never installs, builds, or downloads them — it reads your config, checks they are healthy, and sends them audio and text. Until both are connected, the dashboard works for typing but voice does nothing.
 
-Run them however you like: Docker, a venv, a systemd unit, another machine on
-your network. Banter only needs a URL and a health path. Any server works if it
-meets the contract in step 1 — [docs/models.md](docs/models.md) has known-working
-options if you don't already have a preference.
+Run them however you like: Docker, a venv, a systemd unit, another machine on your network. Banter only needs a URL and a health path. Any server works if it meets the contract in step 1 — [docs/models.md](docs/models.md) has known-working options if you don't already have a preference.
+
+> **Which files to edit.** Steps 2 and 3 edit the two files in your *deployed* tree, not the repo you cloned:
+>
+> ```
+> ~/services/banter/control/control-plane/data/registry.json
+> ~/services/banter/control/control-plane/data/config.json
+> ```
+>
+> That tree is what runs; the repo is only its source. Editing the repo's copies changes nothing until you deploy, and a deploy preserves the deployed files rather than overwriting them. If you set `BANTER_PROD` in `scripts/deploy.conf`, use that path instead. If a server runs on a shard machine, its entry goes in that shard's own registry — see [docs/shard-setup.md](docs/shard-setup.md).
 
 ### 1. Check your servers qualify
 
-Any OpenAI-compatible speech server works: `POST /v1/audio/transcriptions` for
-STT, `POST /v1/audio/speech` plus `POST`/`DELETE /v1/models` for TTS, and a
-health path on each. They also need CORS, since the browser calls them directly
-— that is the usual reason a healthy-looking server fails. Check with:
+Any OpenAI-compatible speech server works: `POST /v1/audio/transcriptions` for STT, `POST /v1/audio/speech` plus `POST`/`DELETE /v1/models` for TTS, and a health path on each. They also need CORS, since the browser calls them directly — that is the usual reason a healthy-looking server fails. Check with:
 
 ```bash
 curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
@@ -191,95 +197,103 @@ curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
   -H 'Access-Control-Request-Method: POST' | grep -i allow-origin
 ```
 
-An `access-control-allow-origin` line back means you are set. Nothing back means
-the browser will refuse the server even though `curl` reaches it — set the
-allowed origin on the server itself, using whatever address you open the
-dashboard at.
+An `access-control-allow-origin` line back means you are set. Nothing back means the browser will refuse the server even though `curl` reaches it.
+
+Fixing that is per-server: most take an origins list as a flag or environment variable — `WHISPER_CORS_ORIGINS` and `FLUID_CORS_ORIGINS` for the adapters in [services/](services/), `--allowed-origins` for `mlx-audio` — and some allow every origin with no setting at all. Check your server's own docs for the name. The value is the address you open the dashboard at, so if that is a tailnet name, use that rather than `localhost`.
 
 ### 2. Add them to `registry.json`
 
-Both entries go in the `services` array. `"runner": { "type": "external" }` means
-Banter only watches the service — it never tries to start, stop, or restart it.
-That is the simplest setup and the one to use unless you want Banter managing
-the process.
+Both entries go in the `services` array. Every `<ANGLE-BRACKETED>` value is one you replace; everything else is copied as-is.
 
 ```json
 "services": [
   {
-    "id": "stt-mine",
-    "name": "My STT",
+    "id": "<YOUR-STT-ID>",
+    "name": "<Your STT>",
     "capabilityId": "stt",
-    "hostId": "box",
+    "hostId": "<YOUR-HOST-ID>",
     "permissions": { "enabled": true, "protected": false },
     "runner": { "type": "external" },
-    "network": { "port": 8765, "healthPath": "/healthz" }
+    "network": { "port": <YOUR-STT-PORT>, "healthPath": "<YOUR-STT-HEALTH-PATH>" }
   },
   {
-    "id": "tts-mine",
-    "name": "My TTS",
+    "id": "<YOUR-TTS-ID>",
+    "name": "<Your TTS>",
     "capabilityId": "tts",
-    "hostId": "box",
+    "hostId": "<YOUR-HOST-ID>",
     "permissions": { "enabled": true, "protected": false },
     "runner": { "type": "external" },
-    "network": { "port": 8002, "healthPath": "/health" }
+    "network": { "port": <YOUR-TTS-PORT>, "healthPath": "<YOUR-TTS-HEALTH-PATH>" }
   }
 ]
 ```
 
-The two differ only in `id`, `name`, `capabilityId`, and `network`. Set `hostId`
-to match an entry in your `hosts` array (`box` above is an example), and set each
-`port` and `healthPath` to your own server's. If a server is reached over HTTPS,
-add `"scheme": "https"` inside its `network` block.
+| Replace | With |
+|---|---|
+| `<YOUR-STT-ID>`, `<YOUR-TTS-ID>` | Any unique string. Step 3 refers back to these, so pick something you will recognise — `stt-whisper`, `tts-kokoro` |
+| `<Your STT>`, `<Your TTS>` | Whatever you want shown in the dashboard |
+| `<YOUR-HOST-ID>` | The `id` of the machine in your registry's `hosts` array — the same value the `control` service already uses if everything is on one box |
+| `<YOUR-*-PORT>` | The port each server listens on, unquoted |
+| `<YOUR-*-HEALTH-PATH>` | Each server's health route, e.g. `/health` or `/healthz` |
+
+`capabilityId` is what tells Banter which server is which — `stt` and `tts` exactly, not your ids. `"runner": { "type": "external" }` means Banter only watches the service and never tries to start, stop, or restart it; that is the setup to use unless you want Banter managing the process. Add `"scheme": "https"` inside `network` if a server is reached over HTTPS.
 
 ### 3. Point the voice config at them
 
-The `voice` block in `config.json`, with both halves filled in. The `serviceId`
-values must match the `id` values you just used in the registry:
+The `voice` block in `config.json`. Same convention — replace the `<ANGLE-BRACKETED>` values, and use the **same ids you chose in step 2**:
 
 ```json
 "voice": {
   "enabled": true,
-  "stt": { "serviceId": "stt-mine" },
+  "stt": { "serviceId": "<YOUR-STT-ID>" },
   "tts": {
     "providers": [
       {
-        "serviceId": "tts-mine",
-        "name": "My TTS",
+        "serviceId": "<YOUR-TTS-ID>",
+        "name": "<Your TTS>",
         "models": [
           {
-            "id": "MODEL-ID",
-            "name": "My Model",
-            "voices": [{ "id": "VOICE-ID", "name": "Voice" }]
+            "id": "<MODEL-ID>",
+            "name": "<Model Name>",
+            "voices": [{ "id": "<VOICE-ID>", "name": "<Voice Name>" }]
           }
         ]
       }
-    ],
-    "selection": { "serviceId": "tts-mine", "model": "MODEL-ID", "voice": "VOICE-ID" }
+    ]
   }
 }
 ```
 
-STT needs only the service id. TTS needs the catalogue too: the settings dialog
-offers exactly what `providers` lists, so a model missing from it cannot be
-selected however well the server runs, and `selection` is what gets used until
-you change it in the dialog.
+| Replace | With |
+|---|---|
+| `<YOUR-STT-ID>`, `<YOUR-TTS-ID>` | The exact ids from step 2 |
+| `<MODEL-ID>`, `<VOICE-ID>` | Values your TTS server accepts — passed to it verbatim. Check its docs for what it takes |
+| `<Model Name>`, `<Voice Name>` | Labels for the settings dialog only |
 
-`MODEL-ID` and `VOICE-ID` are passed to your server verbatim, so they must be
-values it accepts. The `name` fields are only labels for the dialog.
+STT needs only the service id. TTS also needs the catalogue: the settings dialog offers exactly what `providers` lists, so a model missing from it cannot be selected however well the server runs. The first provider, model and voice are used at startup; switching in the dialog writes a `tts.selection` block that then takes precedence.
 
 ### 4. Restart and check
 
-`registry.json` is read only at startup, so a registry change needs a restart:
-`control-stop.sh` then `control-start.sh` (`shard-*` on a shard, or Ctrl+C and
-rerun `control-runner.sh` on the macOS fallback path). `config.json` reloads live
-via `POST /api/config/reload` — no restart.
+`registry.json` is read only at startup, so a registry change needs a restart.
+Run these from the repo — they act on the deployed tree:
+
+```bash
+scripts/control-stop.sh && scripts/control-start.sh
+```
+
+(`shard-stop.sh`/`shard-start.sh` for a shard; on the macOS fallback path, Ctrl+C
+the running `control-runner.sh` and start it again.)
+
+`config.json` reloads live, no restart needed:
+
+```bash
+curl -X POST http://localhost:4200/api/config/reload   # your control plane's port
+```
 
 Both services should show online in the dashboard. If voice still fails while
 they look healthy, it is almost always CORS — recheck step 1.
 
-> Want suggestions for what to run? [docs/models.md](docs/models.md) covers
-> known-working options per platform, and [services/](services/) has adapter code
-> for several. Neither is required: any server meeting the contract above works.
+> Want suggestions for what to run? [docs/models.md](docs/models.md) covers known-working options per platform, and [services/](services/) has adapter code for several. Neither is required: any server meeting the contract above works.
 
 ## iOS / mobile use
 

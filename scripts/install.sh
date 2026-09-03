@@ -136,5 +136,6 @@ esac
 
 echo ""
 log "Control plane is running: http://localhost:$BANTER_PORT"
-log "Next: pick and build speech models, then add them to $REGISTRY and restart."
-log "See the README's \"Choose and install speech models\" section — docs/models.md is the fastest path in."
+log "Next: point it at your speech servers — add an entry for each to $REGISTRY,"
+log "set voice.stt and voice.tts in the config, and restart."
+log "See the README's \"Connect your speech servers\" section for the exact blocks to paste."
