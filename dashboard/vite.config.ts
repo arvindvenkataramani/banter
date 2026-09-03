@@ -15,8 +15,9 @@ function getCommitSha(): string | null {
 
 // onnxruntime-web loads its WASM runtime from ort.env.wasm.wasmPaths = '/models/'
 // (see src/lib/voice/ort-init.ts), so those binaries must be served at /models/.
-// They ship inside the npm package, not in git — public/models/*.wasm is
-// .gitignored. Production deploys via `git archive` (control-deploy.sh), which
+// They ship inside the npm package, not in git — public/models/*.wasm and
+// *.mjs are .gitignored (unlike the model assets beside them, which are
+// committed). Production deploys via `git archive` (control-deploy.sh), which
 // drops ignored files, so without this step the wasm never lands in dist/models/
 // and VAD/SmartTurn silently fail to load in prod (works in dev only because the
 // dev server serves the wasm sitting in the working tree). Copy the

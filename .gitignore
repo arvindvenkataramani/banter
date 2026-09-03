@@ -15,6 +15,11 @@ shared/**/*.js
 control/control-shard/ops/shard-runner
 control/control-shard/ops/_CodeSignature/
 
+# Python bytecode and venvs from running the services/ adapters in place
+__pycache__/
+*.pyc
+.venv/
+
 # macOS
 .DS_Store
 
@@ -47,8 +52,13 @@ scratchpad/
 # Per-machine deploy settings — deploy.conf.example ships instead
 scripts/deploy.conf
 
+# ORT runtime binaries — copied out of node_modules at build time by the
+# copy-ort-wasm plugin (dashboard/vite.config.ts), never committed. The model
+# assets alongside them in public/models/ ARE committed; see NOTICE.
+dashboard/public/models/*.wasm
+dashboard/public/models/*.mjs
+
 # Live data files — examples ship instead (see data/*.example.json)
-dashboard/public/models/*
 control/control-plane/data/registry.json
 control/control-plane/data/config.json
 control/control-shard/data/registry.json

@@ -12,23 +12,21 @@ Published as-is; not actively maintained; no support implied. Apache-2.0. Built 
 
 ## What it does
 
-**Banter is designed to have fast, natural-feeling conversations, with the text chat simultaneously accessible. Speech quality is defined by the speech models you choose to run / can afford, and can be run entirely off private models hosted anywhere.**
+**Banter is designed to have fast, natural-feeling conversations, with zero effort. Speech quality is defined by the speech models you choose to run / can afford, and can be run entirely off private models hosted anywhere.**
 
 ### Features
 
-**Thoughtful turn-taking.** Most voice interfaces wait a fixed number of milliseconds for silence, so pausing to think cuts you off. Banter runs two ONNX models in the browser: Silero VAD decides when you are speaking, and pipecat's smart-turn decides whether you have finished a thought or merely paused. "I was thinking that…" and "I was thinking that." get different treatment. The reply streams back as audio while it is still being generated, and talking over it cuts the playback and starts a new turn.
+**Thoughtful turn-taking.** Most voice interfaces wait a fixed number of milliseconds for silence, so pausing to think cuts you off. Banter runs two ONNX models in the browser: Silero VAD decides when you are speaking, and pipecat's smart-turn decides whether you have finished a thought or merely paused. "I was thinking that…" and "I was thinking that." get different treatment. The reply streams back as audio while it is still being generated, and talking over it cuts the playback and starts a new turn. All this is tunable via `config.json`
 
 **Simultaneous text chat.** Message history, streaming responses, tool calls as expandable cards, and a session list for switching between conversations. Voice is one input mode on that page; turn it off and an ordinary text client remains. There are limitations: it is not a full replacement for a text chat, and doesn't include features like steering, response queues, or file attachments/uploads. The UI is tuned to be a voice-first interface. Unlike the Discord integrations, you get simultaneous voice and text chats, with the ability to use text mid-conversation.
 
-**Fully local speech processing.** You install the speech-to-text and text-to-speech servers yourself, and the registry points at them by address, so your audio only ever reaches machines you run. The VAD and turn-detection models download once, verified against pinned SHA-256 hashes, and run in the browser from then on. You can send your audio anywhere, including ElevenLabs or OpenAI's transcription services, but Banter is built on a model where you never need to.
+**Full control over your speech and text data.** You install the speech-to-text and text-to-speech servers yourself, and the registry points at them by address, so your audio only ever reaches machines you run. The VAD and turn-detection models download once, verified against pinned SHA-256 hashes, and run in the browser from then on. You can send your audio anywhere, including ElevenLabs or OpenAI's transcription services, but Banter is built on a model where you never need to.
 
-**Turn-taking is tunable.** How long a pause counts as a pause, how confident the turn detector must be before committing, how much speech registers as speech, how far into a reply you can still interrupt, how text is chunked before synthesis — all values in `config.json`. The defaults suit a conversational pace; a slower speaker or a noisier room is a matter of changing numbers.
+**Tightly contained architecture**: one single port is the access point, and each shard runs off a single port too. Banter does not attempt to solve security, leaving it up to much more mature mechanisms in harnesses and remote network access products. Dependencies are small, and you are free to install whichever speech and transcription services you choose.
 
 **Services start when needed and unload when idle.** A registered service can be demand-loaded: started on first use, health-checked until ready, evicted after a timeout. One machine can then host more models than it has memory to run at once. The services page shows health for everything registered, with manual start and stop.
 
 **Services can live anywhere.** A service is a registry entry with an address and a health path; the registry has no notion of what the service does. It can run on the same box, on another machine, or under something you manage yourself. Runners cover spawning a process, driving systemd or launchd, delegating to a service's own CLI, and health-checking something already running. Speech models are what this was built for, and anything answering HTTP can be registered alongside them.
-
-**Adaptable to other agent harnesses.** Banter uses an adapter to connect to OpenClaw, and the core voice logic works on abstractions. Another harness needs another adapter — which you would have to write yourself, and work out for yourself. The OpenClaw protocol is documented in [docs/gateway/](docs/gateway/) as a starting point.
 
 **Nothing to install on client devices.** The dashboard ships a web manifest, so it can be saved to a phone's home screen and run standalone. An unattended mode enables a screen lock for hands-free use on phones.
 
@@ -88,9 +86,11 @@ Run these on the control-plane machine.
 
 ```bash
 bun install
-cd dashboard && bun run setup   # downloads VAD + turn-detection model assets
-cd ..
 ```
+
+The browser's VAD and turn-detection model assets are committed to the repo, so
+there is nothing to download here. `cd dashboard && bun run setup` re-verifies
+them against their pinned hashes if you ever need to.
 
 ### Configure it
 
@@ -235,7 +235,7 @@ Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:` — se
 
 - STT/TTS servers must be OpenAI-compatible (`/v1/audio/speech`-shaped for TTS) and CORS-enabled — the browser calls them cross-origin from the dashboard's own origin.
 - `onnxruntime-web` is pinned to `1.18.0`. Versions ≥1.19 drop single-threaded WASM and require cross-origin isolation headers (`COOP`/`COEP`) this stack doesn't set. The `onnxruntime-web/experimental` bundle (`ort.all`) is required for the quantized operators smart-turn's model uses — the default import omits `QuantizeLinear`/`DequantizeLinear`.
-- Model assets are not committed to this repo — `cd dashboard && bun run setup` downloads them from their upstreams ([Silero VAD](https://github.com/snakers4/silero-vad), [pipecat smart-turn](https://huggingface.co/pipecat-ai/smart-turn-v3), [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny), used only for its preprocessor config), verified against pinned SHA-256 hashes (`dashboard/scripts/fetch-models.ts`).
+- The browser's model assets (~10MB) are committed to this repo, so a clone needs no download step for them: [Silero VAD](https://github.com/snakers4/silero-vad) (MIT), [pipecat smart-turn](https://huggingface.co/pipecat-ai/smart-turn-v3) (BSD-2-Clause), and [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny) (Apache-2.0, used only for its preprocessor config) — see NOTICE. Each is pinned by SHA-256 in `dashboard/scripts/fetch-models.ts`; `cd dashboard && bun run setup` re-verifies them against those pins and re-fetches if one is missing. This does not apply to the speech models themselves, which are large and download on first run.
 - `parakeet-mlx-fastapi` (a pip-installable STT option) and `services/stt/whisper` (this repo's own adapter) offer the same API shape — see [models.md](docs/models.md#speech-to-text-models-recommended) for the tradeoffs between them.
 
 ## Hardening

@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 // Downloads the browser voice pipeline's pinned model/runtime assets into
 // public/models/, verifying each against a pinned SHA-256 before accepting
-// it. Models are not committed to the repo (see README) — this script is
-// how a fresh clone gets them.
+// it. These assets are committed to the repo, so a fresh clone already has
+// them and does not need to run this — it exists to re-verify them against
+// their pins, and to re-fetch after a pin or a URL legitimately changes.
 //
 // For each asset: download to a temp file, hash it, and only rename it into
 // place if the hash matches the pin below. A mismatch is never accepted as a

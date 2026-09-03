@@ -6,3 +6,17 @@ Licensed under the Apache License, Version 2.0. See LICENSE.
 
 Vendored third-party patches keep their upstream licenses: services/stt/fluid-audio
 (Apache-2.0), services/tts/mlx-voxtral-swift (MIT). See each BUILD.md.
+
+Bundled third-party model assets in dashboard/public/models/ keep their upstream
+licenses, and are redistributed here unmodified:
+
+  silero_vad_legacy.onnx              Silero VAD, MIT
+                                      https://github.com/snakers4/silero-vad
+  smart-turn-v3.2-cpu.onnx            pipecat-ai smart-turn v3, BSD-2-Clause
+                                      https://huggingface.co/pipecat-ai/smart-turn-v3
+  whisper-tiny/preprocessor_config.json
+                                      openai/whisper-tiny, Apache-2.0
+                                      https://huggingface.co/openai/whisper-tiny
+
+Each is pinned by SHA-256 in dashboard/scripts/fetch-models.ts, which re-verifies
+them against those pins.

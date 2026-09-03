@@ -39,8 +39,11 @@ esac
 log "Installing dependencies..."
 bun install
 
-log "Downloading VAD + turn-detection model assets..."
-(cd dashboard && bun run setup)
+# The VAD + turn-detection assets are committed, so this only re-verifies them
+# against their pinned hashes. A failure here means a bad or missing file, not a
+# missing download — worth reporting, but not worth failing the install over.
+log "Verifying VAD + turn-detection model assets..."
+(cd dashboard && bun run setup) || log "warning: model asset verification failed — voice may not work until this is resolved. Continuing."
 
 # --- configure it --------------------------------------------------------------
 
