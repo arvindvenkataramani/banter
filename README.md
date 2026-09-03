@@ -166,17 +166,120 @@ scripts/control-uninstall.sh
 
 Reverses exactly what `control-deploy.sh` installed: tears down the Tailscale Serve binding, stops and removes the systemd unit (or, on the macOS fallback path, stops the running `control-runner.sh` process directly — there is no unit there to remove), and deletes the deployed tree at `$BANTER_PROD`. `scripts/shard-uninstall.sh` does the same for a shard. Run `control-deploy.sh` again afterward to reinstall.
 
-## Choose and install speech models
+## Connect your speech servers
 
-At this point the control plane is running and reachable — check the dashboard loads before going further. Voice needs one speech-to-text and one text-to-speech server on top of that, and picking and building those can turn into its own project, so it's worth doing with a working control plane already in hand rather than before.
+**Voice needs two servers you provide yourself:** one speech-to-text, one
+text-to-speech. Banter never installs, builds, or downloads them — it reads your
+config, checks they are healthy, and sends them audio and text. Until both are
+connected, the dashboard works for typing but voice does nothing.
 
-**Which ones depends on your hardware.** Text-to-speech runs anywhere — Kokoro, the recommended default, is plain PyTorch. Speech-to-text is where it matters: the vendored options here (`stt/whisper`, `stt/fluid-audio`) are Apple Silicon only, so a Linux or NVIDIA machine needs a different STT server — not vendored in this repo, but a documented path.
+Run them however you like: Docker, a venv, a systemd unit, another machine on
+your network. Banter only needs a URL and a health path. Any server works if it
+meets the contract in step 1 — [docs/models.md](docs/models.md) has known-working
+options if you don't already have a preference.
 
-> **[docs/models.md](docs/models.md) — what to run on Apple Silicon, on Linux, and what each option needs. It opens with a copy-pasteable setup for Parakeet and Kokoro, which is the quickest way to a working install.**
+### 1. Check your servers qualify
 
-Once you have picked, [services/README.md](services/README.md) covers building them. The Python adapters need **Python 3 with `venv`** and are `python -m venv .venv && .venv/bin/pip install -r requirements.txt`; the Swift ones need a **Swift toolchain** and build per their own `BUILD.md`. Models themselves download on first run, so no separate download step is needed.
+Any OpenAI-compatible speech server works: `POST /v1/audio/transcriptions` for
+STT, `POST /v1/audio/speech` plus `POST`/`DELETE /v1/models` for TTS, and a
+health path on each. They also need CORS, since the browser calls them directly
+— that is the usual reason a healthy-looking server fails. Check with:
 
-Add each one to `registry.json` as you go — [docs/configuration.md](docs/configuration.md) has the shape of a service entry — then restart to pick it up: `registry.json` is only read at startup, so `control-stop.sh` + `control-start.sh` (or `shard-stop.sh` + `shard-start.sh` on a shard, or Ctrl+C and rerun `control-runner.sh` on the macOS fallback path) on whichever machine you edited. Add a TTS provider and model to `config.json`'s `voice.tts.providers` the same way; that one reloads live via `POST /api/config/reload` instead, no restart needed.
+```bash
+curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
+  -H 'Origin: http://localhost:4200' \
+  -H 'Access-Control-Request-Method: POST' | grep -i allow-origin
+```
+
+An `access-control-allow-origin` line back means you are set. Nothing back means
+the browser will refuse the server even though `curl` reaches it — set the
+allowed origin on the server itself, using whatever address you open the
+dashboard at.
+
+### 2. Add them to `registry.json`
+
+Both entries go in the `services` array. `"runner": { "type": "external" }` means
+Banter only watches the service — it never tries to start, stop, or restart it.
+That is the simplest setup and the one to use unless you want Banter managing
+the process.
+
+```json
+"services": [
+  {
+    "id": "stt-mine",
+    "name": "My STT",
+    "capabilityId": "stt",
+    "hostId": "box",
+    "permissions": { "enabled": true, "protected": false },
+    "runner": { "type": "external" },
+    "network": { "port": 8765, "healthPath": "/healthz" }
+  },
+  {
+    "id": "tts-mine",
+    "name": "My TTS",
+    "capabilityId": "tts",
+    "hostId": "box",
+    "permissions": { "enabled": true, "protected": false },
+    "runner": { "type": "external" },
+    "network": { "port": 8002, "healthPath": "/health" }
+  }
+]
+```
+
+The two differ only in `id`, `name`, `capabilityId`, and `network`. Set `hostId`
+to match an entry in your `hosts` array (`box` above is an example), and set each
+`port` and `healthPath` to your own server's. If a server is reached over HTTPS,
+add `"scheme": "https"` inside its `network` block.
+
+### 3. Point the voice config at them
+
+The `voice` block in `config.json`, with both halves filled in. The `serviceId`
+values must match the `id` values you just used in the registry:
+
+```json
+"voice": {
+  "enabled": true,
+  "stt": { "serviceId": "stt-mine" },
+  "tts": {
+    "providers": [
+      {
+        "serviceId": "tts-mine",
+        "name": "My TTS",
+        "models": [
+          {
+            "id": "MODEL-ID",
+            "name": "My Model",
+            "voices": [{ "id": "VOICE-ID", "name": "Voice" }]
+          }
+        ]
+      }
+    ],
+    "selection": { "serviceId": "tts-mine", "model": "MODEL-ID", "voice": "VOICE-ID" }
+  }
+}
+```
+
+STT needs only the service id. TTS needs the catalogue too: the settings dialog
+offers exactly what `providers` lists, so a model missing from it cannot be
+selected however well the server runs, and `selection` is what gets used until
+you change it in the dialog.
+
+`MODEL-ID` and `VOICE-ID` are passed to your server verbatim, so they must be
+values it accepts. The `name` fields are only labels for the dialog.
+
+### 4. Restart and check
+
+`registry.json` is read only at startup, so a registry change needs a restart:
+`control-stop.sh` then `control-start.sh` (`shard-*` on a shard, or Ctrl+C and
+rerun `control-runner.sh` on the macOS fallback path). `config.json` reloads live
+via `POST /api/config/reload` — no restart.
+
+Both services should show online in the dashboard. If voice still fails while
+they look healthy, it is almost always CORS — recheck step 1.
+
+> Want suggestions for what to run? [docs/models.md](docs/models.md) covers
+> known-working options per platform, and [services/](services/) has adapter code
+> for several. Neither is required: any server meeting the contract above works.
 
 ## iOS / mobile use
 

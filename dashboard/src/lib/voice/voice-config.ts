@@ -101,8 +101,23 @@ export async function fetchVoiceConfig(): Promise<VoiceConfig | null> {
   }
 }
 
+/** First provider, its first model, that model's first voice. Null when the
+ * catalogue has no provider, no model, or no voice to fall back to. */
+function defaultSelection(config: VoiceConfig): VoiceSelection | null {
+  const provider = config.tts.providers?.[0]
+  const model = provider?.models?.[0]
+  const voice = model?.voices?.[0]
+  if (!provider || !model || !voice) return null
+  return { serviceId: provider.serviceId, model: model.id, voice: voice.id, speed: 1.0 }
+}
+
 export function loadVoiceSelection(config: VoiceConfig): VoiceSelection | null {
-  const sel = config.tts.selection
+  // `selection` is what the settings dialog writes back, and the only thing
+  // that matters once there is more than one provider. With a single provider
+  // it only restates `providers`, so treat its absence as "the first of
+  // everything" rather than as no voice at all — a config that declares one
+  // usable provider should work without repeating itself.
+  const sel = config.tts.selection ?? defaultSelection(config)
   if (!sel) return null
   const modelObj = config.tts.providers
     .find(p => p.serviceId === sel.serviceId)
