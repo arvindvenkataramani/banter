@@ -10,12 +10,12 @@ This doc covers how the dashboard's Chat feature is built — state ownership,
 component wiring, session lifecycle. It does **not** re-explain the gateway
 wire protocol; that's covered in depth, and kept current, by:
 
-- `../openclaw/gateway-session-lifecycle.md` — connect handshake, `chat.send`
+- `../gateway/openclaw/gateway-session-lifecycle.md` — connect handshake, `chat.send`
   / `chat.history` / `sessions.reset` / `sessions.patch`, event ordering.
-- `../openclaw/gateway-tool-and-message-events.md` — the `session.message`
+- `../gateway/openclaw/gateway-tool-and-message-events.md` — the `session.message`
   event family, tool-call dedup, `chat` vs `session.message` vs `agent`
   streams.
-- `../openclaw/openclaw-gateway-protocol.md` — full RPC catalog, the
+- `../gateway/openclaw/openclaw-gateway-protocol.md` — full RPC catalog, the
   `content` string-or-blocks union, `caps`, `__openclaw.id` anchoring,
   reconnect-as-new-projection.
 

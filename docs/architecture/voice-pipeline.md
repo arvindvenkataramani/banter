@@ -148,6 +148,6 @@ specified in `model-settings.ts`, with chunking's descriptor in
 
 ## What this document does NOT cover
 
-- Gateway protocol (WebSocket session lifecycle, RPC details) — see `../gateway/gateway-session-lifecycle.md`
+- Gateway protocol (WebSocket session lifecycle, RPC details) — see `../gateway/openclaw/gateway-session-lifecycle.md`
 - Voice settings API shape — see `/api/openapi.json`, or `docs/api-reference.md`
 - Audio encoding details — see `wav-encoder.ts` inline

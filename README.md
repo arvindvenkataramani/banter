@@ -344,7 +344,7 @@ Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:` — se
 - [docs/shard-setup.md](docs/shard-setup.md) — adding shards on other machines
 - [docs/remote-access.md](docs/remote-access.md) — reaching the dashboard from outside your network with Tailscale
 - [docs/architecture/](docs/architecture/README.md) — how the system works
-- [docs/gateway/](docs/gateway/) — the OpenClaw wire protocol, and the starting point for adapting this to a different agent harness
+- [docs/gateway/](docs/gateway/) — agent backend protocols, one directory per vendor: [OpenClaw](docs/gateway/openclaw/) is what Banter speaks, [OpenCode](docs/gateway/opencode/) is a second server it could attach to. The starting point for adapting this to a different agent harness
 - [docs/api-reference.md](docs/api-reference.md) — generated HTTP API reference
 - [scripts/README.md](scripts/README.md) — deployment, lifecycle, and diagnostic scripts
 
@@ -401,7 +401,7 @@ Most of `scripts/` is maintenance and deploy tooling rather than day-to-day dev 
 
 - [docs/architecture/](docs/architecture/README.md) — the three-plane structure, and how the control plane and shard relate
 - [docs/architecture/voice-pipeline.md](docs/architecture/voice-pipeline.md) — the mic and playback loops, the arbiter, and the settings model
-- [docs/gateway/](docs/gateway/) — the OpenClaw wire protocol, and the place to start if you want to point this at a different agent harness
+- [docs/gateway/](docs/gateway/) — agent backend protocols, one directory per vendor: [OpenClaw](docs/gateway/openclaw/) is what Banter speaks, [OpenCode](docs/gateway/opencode/) is a second server it could attach to. The place to start if you want to point this at a different agent harness
 - [dashboard/UI.md](dashboard/UI.md) and [dashboard/ui-design-system.md](dashboard/ui-design-system.md) — the visual system
 
 Swapping the agent backend is the most likely large change, and the gateway docs exist for exactly that.
