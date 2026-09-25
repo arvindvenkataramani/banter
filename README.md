@@ -174,11 +174,11 @@ Reverses exactly what `control-deploy.sh` installed: tears down the Tailscale Se
 
 ## Connect your speech servers
 
-**Voice needs two servers you provide yourself:** one speech-to-text, one text-to-speech. Banter never installs, builds, or downloads them — it reads your config, checks they are healthy, and sends them audio and text. Until both are connected, the dashboard works for typing but voice does nothing.
+The shipped examples already list two: `fluid-stt` for transcription and `fluid-tts` for synthesis, both from the `services/fluid` package. On Apple Silicon (macOS 15+), `scripts/fluid-build.sh` builds their binaries; a deploy (`scripts/control-deploy.sh`, or `install.sh`'s first run) then copies the built binaries into the deployed tree per each service's `ops.install`. Until they're built, voice does nothing; typing still works.
 
-Run them however you like: Docker, a venv, a systemd unit, another machine on your network. Banter only needs a URL and a health path. Any server works if it meets the contract in step 1 — [docs/models.md](docs/models.md) has known-working options if you don't already have a preference.
+Which models and voices each server offers — Kokoro's presets, Pocket-TTS, cloned voices, and so on — is declared in the registry's `roster` section, not in `config.json`. See [docs/voices-and-models.md](docs/voices-and-models.md) for how to change the default voice, add or remove a voice, or add a model.
 
-> **Which files to edit.** Steps 2 and 3 edit the two files in your *deployed* tree, not the repo you cloned:
+> **Which files to edit.** Registry and config edits go in the two files in your *deployed* tree, not the repo you cloned:
 >
 > ```
 > ~/services/banter/control/control-plane/data/registry.json
@@ -187,9 +187,20 @@ Run them however you like: Docker, a venv, a systemd unit, another machine on yo
 >
 > That tree is what runs; the repo is only its source. Editing the repo's copies changes nothing until you deploy, and a deploy preserves the deployed files rather than overwriting them. If you set `BANTER_PROD` in `scripts/deploy.conf`, use that path instead. If a server runs on a shard machine, its entry goes in that shard's own registry — see [docs/shard-setup.md](docs/shard-setup.md).
 
-### 1. Check your servers qualify
+### 1. Build the fluid servers (Apple Silicon)
 
-Any OpenAI-compatible speech server works: `POST /v1/audio/transcriptions` for STT, `POST /v1/audio/speech` plus `POST`/`DELETE /v1/models` for TTS, and a health path on each. They also need CORS, since the browser calls them directly — that is the usual reason a healthy-looking server fails. Check with:
+```bash
+scripts/fluid-build.sh
+scripts/control-deploy.sh   # or, on the macOS fallback path: `|| true`, per "macOS, or Linux without systemd" above
+```
+
+`fluid-build.sh` compiles `fluid-stt` and `fluid-tts`. A deploy afterward copies the built binaries into the deployed tree per each service's `ops.install`. Re-run this after any future `git pull` that changes the fluid sources, too.
+
+Not on Apple Silicon, or want a different server? Skip to step 4 — any OpenAI-compatible speech server works, it just needs its own service and roster entries.
+
+### 2. Check CORS
+
+Speech servers need the dashboard's origin in their CORS allowlist, since the browser calls them directly — that's the usual reason a healthy-looking server fails. Check with:
 
 ```bash
 curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
@@ -197,103 +208,23 @@ curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
   -H 'Access-Control-Request-Method: POST' | grep -i allow-origin
 ```
 
-An `access-control-allow-origin` line back means you are set. Nothing back means the browser will refuse the server even though `curl` reaches it.
+An `access-control-allow-origin` line back means you are set. Nothing back means the browser will refuse the server even though `curl` reaches it. The fluid servers take this as `FLUID_CORS_ORIGINS`, already set in the shipped registry; other servers vary — check their own docs.
 
-Fixing that is per-server: most take an origins list as a flag or environment variable — `WHISPER_CORS_ORIGINS` and `FLUID_CORS_ORIGINS` for the adapters in [services/](services/), `--allowed-origins` for `mlx-audio` — and some allow every origin with no setting at all. Check your server's own docs for the name. The value is the address you open the dashboard at, so if that is a tailnet name, use that rather than `localhost`.
+### 3. Add or change voices and models
 
-### 2. Add them to `registry.json`
+The fluid servers already come with a full Kokoro roster. To pick a different default voice, add a voice, or add a model — Kokoro or otherwise — see [docs/voices-and-models.md](docs/voices-and-models.md).
 
-Both entries go in the `services` array. Every `<ANGLE-BRACKETED>` value is one you replace; everything else is copied as-is.
+### 4. Using a different speech server
 
-```json
-"services": [
-  {
-    "id": "<YOUR-STT-ID>",
-    "name": "<Your STT>",
-    "capabilityId": "stt",
-    "hostId": "<YOUR-HOST-ID>",
-    "permissions": { "enabled": true, "protected": false },
-    "runner": { "type": "external" },
-    "network": { "port": <YOUR-STT-PORT>, "healthPath": "<YOUR-STT-HEALTH-PATH>" }
-  },
-  {
-    "id": "<YOUR-TTS-ID>",
-    "name": "<Your TTS>",
-    "capabilityId": "tts",
-    "hostId": "<YOUR-HOST-ID>",
-    "permissions": { "enabled": true, "protected": false },
-    "runner": { "type": "external" },
-    "network": { "port": <YOUR-TTS-PORT>, "healthPath": "<YOUR-TTS-HEALTH-PATH>" }
-  }
-]
-```
+Any OpenAI-compatible server works: `POST /v1/audio/transcriptions` for STT, `POST /v1/audio/speech` plus `POST`/`DELETE /v1/models` for TTS, a health path, and CORS (step 2). Give it a `services` entry like any other service — `capabilityId: "stt"` or `"tts"`, its host, port, and health path, `"runner": { "type": "external" }` if you're not letting Banter manage its process — and then a `roster.providers` entry keyed by its service id, naming at least one model. [docs/voices-and-models.md](docs/voices-and-models.md#adding-another-model-or-another-speech-server) has the exact shape; [docs/models.md](docs/models.md) has known-working options if you don't already have a preference.
 
-| Replace | With |
-|---|---|
-| `<YOUR-STT-ID>`, `<YOUR-TTS-ID>` | Any unique string. Step 3 refers back to these, so pick something you will recognise — `stt-whisper`, `tts-kokoro` |
-| `<Your STT>`, `<Your TTS>` | Whatever you want shown in the dashboard |
-| `<YOUR-HOST-ID>` | The `id` of the machine in your registry's `hosts` array — the same value the `control` service already uses if everything is on one box |
-| `<YOUR-*-PORT>` | The port each server listens on, unquoted |
-| `<YOUR-*-HEALTH-PATH>` | Each server's health route, e.g. `/health` or `/healthz` |
-
-`capabilityId` is what tells Banter which server is which — `stt` and `tts` exactly, not your ids. `"runner": { "type": "external" }` means Banter only watches the service and never tries to start, stop, or restart it; that is the setup to use unless you want Banter managing the process. Add `"scheme": "https"` inside `network` if a server is reached over HTTPS.
-
-### 3. Point the voice config at them
-
-The `voice` block in `config.json`. Same convention — replace the `<ANGLE-BRACKETED>` values, and use the **same ids you chose in step 2**:
-
-```json
-"voice": {
-  "enabled": true,
-  "stt": { "serviceId": "<YOUR-STT-ID>" },
-  "tts": {
-    "providers": [
-      {
-        "serviceId": "<YOUR-TTS-ID>",
-        "name": "<Your TTS>",
-        "models": [
-          {
-            "id": "<MODEL-ID>",
-            "name": "<Model Name>",
-            "voices": [{ "id": "<VOICE-ID>", "name": "<Voice Name>" }]
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-| Replace | With |
-|---|---|
-| `<YOUR-STT-ID>`, `<YOUR-TTS-ID>` | The exact ids from step 2 |
-| `<MODEL-ID>`, `<VOICE-ID>` | Values your TTS server accepts — passed to it verbatim. Check its docs for what it takes |
-| `<Model Name>`, `<Voice Name>` | Labels for the settings dialog only |
-
-STT needs only the service id. TTS also needs the catalogue: the settings dialog offers exactly what `providers` lists, so a model missing from it cannot be selected however well the server runs. The first provider, model and voice are used at startup; switching in the dialog writes a `tts.selection` block that then takes precedence.
-
-### 4. Restart and check
-
-`registry.json` is read only at startup, so a registry change needs a restart.
-Run these from the repo — they act on the deployed tree:
-
-```bash
-scripts/control-stop.sh && scripts/control-start.sh
-```
-
-(`shard-stop.sh`/`shard-start.sh` for a shard; on the macOS fallback path, Ctrl+C
-the running `control-runner.sh` and start it again.)
-
-`config.json` reloads live, no restart needed:
+After editing the registry, reload and restart the affected provider — see [docs/voices-and-models.md#applying-an-edit](docs/voices-and-models.md#applying-an-edit):
 
 ```bash
 curl -X POST http://localhost:4200/api/config/reload   # your control plane's port
 ```
 
-Both services should show online in the dashboard. If voice still fails while
-they look healthy, it is almost always CORS — recheck step 1.
-
-> Want suggestions for what to run? [docs/models.md](docs/models.md) covers known-working options per platform, and [services/](services/) has adapter code for several. Neither is required: any server meeting the contract above works.
+The fluid servers are demand-loaded, so they show as available rather than online until a voice conversation starts them. If a service shows unhealthy once started, or voice fails once it's healthy, it is almost always CORS — recheck step 2.
 
 ## iOS / mobile use
 
@@ -340,6 +271,7 @@ Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:` — se
 ## Documentation
 
 - [docs/models.md](docs/models.md) — which speech models to run, and what each needs
+- [docs/voices-and-models.md](docs/voices-and-models.md) — the roster: providers, models, voices, and how to customise them
 - [docs/configuration.md](docs/configuration.md) — the minimum config, adding services, adding a shard
 - [docs/shard-setup.md](docs/shard-setup.md) — adding shards on other machines
 - [docs/remote-access.md](docs/remote-access.md) — reaching the dashboard from outside your network with Tailscale

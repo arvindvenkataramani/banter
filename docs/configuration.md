@@ -89,7 +89,7 @@ A service entry answers four questions: what it is, where it runs, how to start 
 }
 ```
 
-`capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and the TTS provider's `serviceId` both refer to these.
+`capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and `voice.tts.selection.serviceId` both refer to these.
 
 ### Choosing a runner
 
@@ -174,46 +174,19 @@ Under `voice` in `config.json`. The pieces that matter:
 ```json
 "voice": {
   "enabled": true,
-  "stt": { "serviceId": "stt-whisper" },
+  "stt": { "serviceId": "fluid-stt", "model": "parakeet-unified-0.6b", "preferStreaming": true },
   "tts": {
-    "providers": [
-      {
-        "serviceId": "tts-kokoro",
-        "models": [
-          { "id": "hexgrad/Kokoro-82M", "voices": [{ "id": "af_heart", "name": "Heart" }] }
-        ]
-      }
-    ],
-    "selection": { "serviceId": "tts-kokoro", "model": "hexgrad/Kokoro-82M", "voice": "af_heart" }
+    "selection": { "serviceId": "fluid-tts", "model": "kokoro-ane", "voice": "heart", "speed": 1 },
+    "options": { "chunkStrategy": "greedy", "minChunkWords": 15, "maxChunkWords": 60 },
+    "settingsScope": "global",
+    "modelPrefs": {}
   }
 }
 ```
 
-`serviceId` values must match registry entries. The dashboard's settings dialog writes back to `selection` — the STT picker only appears when more than one STT service is registered.
+`serviceId` values must match registry entries. `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [docs/voices-and-models.md](voices-and-models.md) for what a roster model and voice are, and how to add or change them.
 
-### Adding a TTS provider or model
-
-`providers` is a catalogue, not a fixed list: the settings dialog offers exactly what is declared here, so a provider or model exists for the app once it appears in this array and nowhere else.
-
-To add a **provider**, append an entry with its `serviceId` (matching a registry entry) and at least one model. To add a **model** to an existing provider, append to that provider's `models`. A model needs an `id` the service will accept and a `voices` array; voice `id` values are passed through to the service, and `name` is only what the dialog shows.
-
-```json
-{
-  "serviceId": "tts-yourservice",
-  "name": "Your Service",
-  "models": [
-    {
-      "id": "vendor/model-name",
-      "name": "Model Name",
-      "voices": [{ "id": "voice-id", "name": "Voice Name" }]
-    }
-  ]
-}
-```
-
-The example config ships one provider with one model to show the shape. It is a worked example rather than a recommendation — nothing is preloaded with presets, and no model is special to the app.
-
-A model may also carry its own `options` block with the same chunking keys used globally. Declaring one is optional and only matters under per-model scope, below.
+The dashboard's settings dialog writes back to `selection` — the STT picker only appears when more than one STT service is registered. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for the dashboard to read, but nothing writes it back.
 
 ### Settings scope
 

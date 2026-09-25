@@ -37,6 +37,7 @@ A shard is optional — a single-machine install has no shard and no cross-host 
 | `capabilities` | Abstract things the system can do |
 | `services` | Concrete processes |
 | `shards` | (Control registries only) List of shard endpoints to poll |
+| `roster` | The models and voices this node's services offer; see [Roster](#roster). Always present on a loaded registry — a registry with none gets an empty one |
 | `defaults` | Default values for permissions, network, lifecycle, merged into each service at load time |
 
 ### Hosts
@@ -51,6 +52,16 @@ A shard is optional — a single-machine install has no shard and no cross-host 
 ### Capabilities
 
 Abstract things the system can do: `tts`, `stt`, `control`, `dashboard`, and whatever else a given deployment adds. A capability has an id and a name. Services implement capabilities. Consumers ask for a capability and get back the best healthy provider — they don't need to know which backend serves it.
+
+### Roster
+
+The `roster` section declares what this node's model services offer: `providers`, keyed by registry service id, with each provider's `ttsModels`, `sttModels` and `responseFormat`; and `voices`, each with its recordings and the models that render it. It is validated at load against the services in the same file — a provider naming no service, a model id reused across providers, or a voice claiming a preset or a cloning setup its model doesn't offer are all load errors. A registry with no `roster` gets an empty one rather than failing.
+
+Every node builds its roster from its own registry. The shard serves its roster at `GET /api/roster`; the control plane polls it alongside the shard's services and assembles every node's roster with its own. Voices merge by id across nodes; a model id declared on two nodes is excluded from both and reported as a collision, since a selection names a model by id alone and a silent winner would leave one node's copy unreachable without saying so.
+
+`fluid-stt` and `fluid-tts` read their provider's roster section at startup (`--registry <path> --provider <id>`), so an edit reaches them only when they restart; `POST /api/config/reload` re-reads the registry but names the affected provider in a warning rather than restarting it for you. See [docs/voices-and-models.md](../voices-and-models.md) for how to edit the roster and apply the change.
+
+Among the provider fields, `sessions: true` declares that the runtime's streaming socket understands session ids and take-over — the same way `responseFormat` declares the audio format it returns. It applies to both STT and TTS providers, and `GET /api/voice` carries it through to each `stt.options` entry and each TTS provider so the dashboard can tell which services support taking over a held session.
 
 ### Services
 
@@ -149,6 +160,14 @@ Health-monitored but not managed. Start/stop API calls return 400.
 |-------|-------------|
 | `workingDirectory` | Absolute path to cd into before spawning |
 | `variables` | Key-value env vars injected into the process |
+
+#### `ops.install` (for services built from this repo)
+
+```json
+"install": { "artifacts": [ { "from": "services/fluid/.build/release/fluid-stt", "to": ".build/release/fluid-stt" } ] }
+```
+
+What the install scripts copy into place. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running platform.
 
 #### `lifecycle`
 

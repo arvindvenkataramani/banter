@@ -27,10 +27,13 @@ A Linux shard needs a systemd counterpart to that script — a unit where it ins
 **2. Create the shard's registry:**
 
 ```bash
-cp control/control-shard/data/registry.example.json ~/services/shard/registry.json
+mkdir -p ~/services/shard
+jq --arg home "$HOME" \
+  '(.services[] | select((.ops.env.workingDirectory? // "") | startswith("~/")) | .ops.env.workingDirectory) |= ($home + .[1:])' \
+  control/control-shard/data/registry.example.json > ~/services/shard/registry.json
 ```
 
-That destination is the shard's default `BANTER_SHARD_REGISTRY_PATH`, which is a different directory from where the example lives in the repo — a copy across directories, not a rename in place.
+That destination is the shard's default `BANTER_SHARD_REGISTRY_PATH`, which is a different directory from where the example lives in the repo — a copy across directories, not a rename in place. The `jq` filter is the same one `scripts/install.sh` uses to expand a leading `~/` in each service's `ops.env.workingDirectory` to your home directory — a plain `cp` would leave the literal `~/` in place, which nothing downstream expands.
 
 Edit the host ids, hostnames, and service entries to match what actually runs there. The registry's `type` must be `"shard"`.
 

@@ -85,7 +85,7 @@ else
   log "Wrote gateway URL and token to $CONFIG."
 fi
 
-log "registry.json is left at its shipped defaults — the control plane itself doesn't need any speech services to start. Add those after this script finishes."
+log "registry.json ships with fluid-stt and fluid-tts already declared, but their binaries aren't built yet — the control plane itself doesn't need them to start."
 
 # --- install as a service -------------------------------------------------------
 
@@ -140,6 +140,7 @@ esac
 
 echo ""
 log "Control plane is running: http://localhost:$BANTER_PORT"
-log "Next: point it at your speech servers — add an entry for each to $REGISTRY,"
-log "set voice.stt and voice.tts in the config, and restart."
-log "See the README's \"Connect your speech servers\" section for the exact blocks to paste."
+log "Next: on Apple Silicon, run scripts/fluid-build.sh to build the speech servers"
+log "already declared in $REGISTRY, then re-deploy to install the binaries."
+log "To customise voices and models, or connect a different speech server, see"
+log "docs/voices-and-models.md. See the README's \"Connect your speech servers\" section for the rest."
