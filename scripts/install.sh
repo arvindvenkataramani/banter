@@ -55,8 +55,18 @@ if [[ -f "$REGISTRY" || -f "$CONFIG" ]]; then
 else
   # A service's working directory is used as given — nothing downstream expands
   # "~" — so the example's "~/..." becomes this user's home here, once.
-  jq --arg home "$HOME" \
-    '(.services[] | select((.ops.env.workingDirectory? // "") | startswith("~/")) | .ops.env.workingDirectory) |= ($home + .[1:])' \
+  #
+  # Speech servers are called from the browser, so each one's *_CORS_ORIGINS
+  # must name the dashboard's origins: the control plane's port (production)
+  # and Vite's 5173 (scripts/control-dev.sh), under both names a browser may
+  # use for this machine. Derived from the registry's own control port, so an
+  # edited port can't leave the allowlist behind.
+  jq --arg home "$HOME" '
+    (.services[] | select(.id == "control") | .network.port) as $port
+    | ([$port, 5173] | map("http://localhost:\(.)", "http://127.0.0.1:\(.)") | join(",")) as $origins
+    | (.services[] | select((.ops.env.workingDirectory? // "") | startswith("~/")) | .ops.env.workingDirectory) |= ($home + .[1:])
+    | reduce ([.services[] | .ops.env.variables? // {} | keys[] | select(endswith("_CORS_ORIGINS"))] | unique[]) as $var (.;
+        (.services[] | select(.ops.env.variables[$var]? != null) | .ops.env.variables[$var]) = $origins)' \
     control/control-plane/data/registry.example.json > "$REGISTRY"
   cp control/control-plane/data/config.example.json    "$CONFIG"
   log "Created registry.json and config.json from the shipped examples."
@@ -140,6 +150,9 @@ esac
 
 echo ""
 log "Control plane is running: http://localhost:$BANTER_PORT"
+log "Your OpenClaw gateway refuses browser origins it doesn't list: add"
+log "\"http://localhost:$BANTER_PORT\" to gateway.controlUi.allowedOrigins in openclaw.json"
+log "(and any https://…ts.net origin you open the dashboard from), then restart the gateway."
 log "Next: on Apple Silicon, run scripts/fluid-build.sh to build the speech servers"
 log "already declared in $REGISTRY, then re-deploy to install the binaries."
 log "To customise voices and models, or connect a different speech server, see"
