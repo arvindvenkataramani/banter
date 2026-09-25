@@ -1,9 +1,25 @@
 import { appendEvent } from "./events";
 import { addTailscaleServe, removeTailscaleServe, queryPortServed } from "./tailscale";
-import type { RunFn, PollHealthFn, SpawnFn } from "./tailscale";
+import { submit, isPending } from "./executor";
+import type { RunFn, PollHealthFn, SpawnFn, ProbeFn, RetryOpts } from "./tailscale";
 import type { Service, ServiceRunner } from "../../../shared/types";
 
-export type { RunFn, PollHealthFn, SpawnFn };
+export type { RunFn, PollHealthFn, SpawnFn, ProbeFn };
+
+const defaultProbeFn: ProbeFn = async (url, timeoutMs) => {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  return { ok: response.ok };
+};
+
+const DEFAULT_SERVE_RETRY_ATTEMPTS = 3;
+const DEFAULT_SERVE_RETRY_DELAY = 250;
+
+function serveRetryOpts(svc: Service): RetryOpts {
+  return {
+    attempts: svc.lifecycle?.serveRetryAttempts ?? DEFAULT_SERVE_RETRY_ATTEMPTS,
+    delayMs: svc.lifecycle?.serveRetryDelay ?? DEFAULT_SERVE_RETRY_DELAY,
+  };
+}
 
 // ── Lifecycle locking ────────────────────────────────────────────────────────
 
@@ -28,10 +44,22 @@ export function clearLocks(): void {
 // ── Process child registry ──────────────────────────────────────────────────
 // Tracks spawned process-runner children so stopService can kill them.
 
-const children = new Map<string, { kill: () => void }>();
+type SpawnedChild = { kill: () => void; exited?: Promise<number> };
 
-export function getChild(svcId: string): { kill: () => void } | undefined {
+const children = new Map<string, SpawnedChild>();
+
+// Consecutive crash restarts per service, reset once a start succeeds. In
+// memory, like the health checker's failure counts: a platform restart is
+// itself a recovery, so the count should not survive one.
+const restartCounts = new Map<string, number>();
+
+export function getChild(svcId: string): SpawnedChild | undefined {
   return children.get(svcId);
+}
+
+/** Test seam: drop all crash-restart bookkeeping. */
+export function clearRestartCounts(): void {
+  restartCounts.clear();
 }
 
 export function clearChildren(): void {
@@ -108,13 +136,39 @@ const ALREADY_RUNNING_PROBE_MS = 3000;
 // Confirmed live against Paseo: a graceful stop reports unhealthy within ~1s.
 const MANAGED_STOP_CONFIRM_MS = 5000;
 
+// Headroom above startupTime for the command steps bracketing the health
+// poll — the stop command, stale-Serve teardown, and registration with its
+// retries. A stop has no health poll to bound; its deadline is flat.
+const START_DEADLINE_HEADROOM_MS = 60000;
+const STOP_DEADLINE_MS = 60000;
+
+export function startDeadlineMs(svc: Service): number {
+  return (svc.lifecycle?.startupTime ?? DEFAULT_STARTUP_TIME) + START_DEADLINE_HEADROOM_MS;
+}
+
+export function stopDeadlineMs(): number {
+  return STOP_DEADLINE_MS;
+}
+
+export function restartDeadlineMs(svc: Service): number {
+  return startDeadlineMs(svc) + stopDeadlineMs();
+}
+
+export type StartResult = {
+  ok: boolean;
+  error?: string;
+  stage?: "process" | "serve";
+  processStarted?: boolean;
+};
+
 export async function startService(
   runFn: RunFn,
   pollHealthFn: PollHealthFn,
   svc: Service,
   eventsPath: string,
-  spawnFn?: SpawnFn
-): Promise<{ ok: boolean; error?: string }> {
+  spawnFn?: SpawnFn,
+  probeFn: ProbeFn = defaultProbeFn
+): Promise<StartResult> {
   const runner = getRunner(svc);
   if (runner.type === "external") {
     return { ok: false, error: "external services cannot be started by the platform" };
@@ -123,11 +177,15 @@ export async function startService(
   // Fast path (process runner only): if the service is already healthy, skip the
   // start (or repair-only when Tailscale Serve is missing — see below).
   // systemd/launchd start commands are already idempotent — no need to probe first.
-  // Uses a direct fetch (not pollHealthFn) so test mocks don't short-circuit the real start.
+  // Uses probeFn (not pollHealthFn) so a single miss can't be mistaken for the
+  // startup-grace-period retries pollHealthFn does — defaults to a real fetch,
+  // injectable so test mocks don't depend on real port/network state.
   if (runner.type === "process") {
     try {
       const probeUrl = `http://localhost:${svc.network.port}${svc.network.healthPath}`;
-      const probe = await fetch(probeUrl, { signal: AbortSignal.timeout(ALREADY_RUNNING_PROBE_MS) });
+      const acceptsAnyResponse = svc.network.healthExpect === "reachable";
+      const probeResult = await probeFn(probeUrl, ALREADY_RUNNING_PROBE_MS);
+      const probe = { ok: probeResult.ok || acceptsAnyResponse };
       // "Healthy locally" alone isn't proof the service is fully up: a process can
       // end up running without going through startService (killed and manually
       // restarted outside the platform), leaving its Serve registration stale or
@@ -156,7 +214,7 @@ export async function startService(
           // port != null check above passed. Narrowed explicitly so this reads
           // without a non-null assertion.
           if (port == null) return { ok: false, error: "tailscaleServe is set but network.port is missing" };
-          const addResult = await addTailscaleServe(runFn, port);
+          const addResult = await addTailscaleServe(runFn, port, serveRetryOpts(svc));
           if (!addResult.ok) {
             await appendEvent(eventsPath, {
               type: "tailscale.serve_failed",
@@ -165,7 +223,19 @@ export async function startService(
               data: { action: "add", port, error: addResult.error },
               actor: "system",
             });
-            return { ok: false, error: `tailscale serve failed: ${addResult.error}` };
+            // The process was healthy before the platform touched it — a
+            // failed repair leaves it running and reachable over loopback,
+            // the same degraded condition a failed full-sequence
+            // registration reports.
+            await appendEvent(eventsPath, {
+              type: "service.degraded",
+              subjectType: "service",
+              subjectId: svc.id,
+              data: { error: addResult.error },
+              actor: "system",
+            });
+            restartCounts.delete(svc.id);
+            return { ok: true, stage: "serve", processStarted: true, error: addResult.error };
           }
         }
         // serveRepaired distinguishes "adopted a healthy already-running service"
@@ -195,7 +265,7 @@ export async function startService(
 
   // Step 1: Remove any stale Tailscale Serve entry
   if (svc.network.tailscaleServe && svc.network.port) {
-    await removeTailscaleServe(runFn, svc.network.port);
+    await removeTailscaleServe(runFn, svc.network.port, serveRetryOpts(svc));
   }
 
   // Step 2: Start the process
@@ -214,6 +284,7 @@ export async function startService(
     if (svc.ops?.env?.variables) spawnOpts.env = svc.ops.env.variables;
     const child = spawnFn(startCmd, spawnOpts);
     children.set(svc.id, child);
+    watchForExit(runFn, svc, eventsPath, child, pollHealthFn, spawnFn);
   } else {
     // systemd/launchd: runFn completes quickly (systemctl start returns immediately)
     const startResult = await runFn(startCmd);
@@ -229,7 +300,8 @@ export async function startService(
     ? await pollManagedHealth(runFn, runner.healthCmd, startupTime)
     : await pollHealthFn(
         `http://localhost:${svc.network.port}${svc.network.healthPath}`,
-        startupTime
+        startupTime,
+        { acceptsAnyResponse: svc.network.healthExpect === "reachable" }
       );
   if (!healthy) {
     // Kill the child if we spawned one
@@ -239,12 +311,15 @@ export async function startService(
       children.delete(svc.id);
     }
     await runStopCmd(runFn, svc);
-    return { ok: false, error: `startup health poll timed out after ${startupTime}ms` };
+    return { ok: false, error: `startup health poll timed out after ${startupTime}ms`, stage: "process", processStarted: false };
   }
 
-  // Step 4: Register with Tailscale Serve
+  // Step 4: Register with Tailscale Serve. The process is healthy at this
+  // point, so a registration failure here is a Serve problem, not a process
+  // problem — the process stays running and the service reports degraded
+  // rather than being torn down over a config-write race.
   if (svc.network.tailscaleServe && svc.network.port) {
-    const addResult = await addTailscaleServe(runFn, svc.network.port);
+    const addResult = await addTailscaleServe(runFn, svc.network.port, serveRetryOpts(svc));
     if (!addResult.ok) {
       await appendEvent(eventsPath, {
         type: "tailscale.serve_failed",
@@ -253,13 +328,15 @@ export async function startService(
         data: { action: "add", port: svc.network.port, error: addResult.error },
         actor: "system",
       });
-      const child = children.get(svc.id);
-      if (child) {
-        child.kill();
-        children.delete(svc.id);
-      }
-      await runStopCmd(runFn, svc);
-      return { ok: false, error: `tailscale serve failed: ${addResult.error}` };
+      await appendEvent(eventsPath, {
+        type: "service.degraded",
+        subjectType: "service",
+        subjectId: svc.id,
+        data: { error: addResult.error },
+        actor: "system",
+      });
+      restartCounts.delete(svc.id);
+      return { ok: true, stage: "serve", processStarted: true, error: addResult.error };
     }
   }
 
@@ -271,6 +348,10 @@ export async function startService(
     data: {},
     actor: "system",
   });
+
+  // Healthy again: the restart budget counts consecutive failed recoveries,
+  // so a service that comes back up starts over.
+  restartCounts.delete(svc.id);
 
   return { ok: true };
 }
@@ -287,7 +368,7 @@ export async function stopService(
 
   // Step 1: Remove Tailscale Serve entry (best effort)
   if (svc.network.tailscaleServe && svc.network.port) {
-    const removeResult = await removeTailscaleServe(runFn, svc.network.port);
+    const removeResult = await removeTailscaleServe(runFn, svc.network.port, serveRetryOpts(svc));
     if (!removeResult.ok) {
       await appendEvent(eventsPath, {
         type: "tailscale.serve_remove_failed",
@@ -344,7 +425,7 @@ export async function restartService(
   svc: Service,
   eventsPath: string,
   spawnFn?: SpawnFn
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<StartResult> {
   const runner = getRunner(svc);
   if (runner.type === "external") {
     return { ok: false, error: "external services cannot be restarted by the platform" };
@@ -426,6 +507,63 @@ interface HandleExitOpts {
   spawnFn?: SpawnFn;
 }
 
+/** Observe a spawned child's exit and route a crash into recovery.
+ *
+ *  Wired here at the spawn site rather than in the entry points, so that a
+ *  child started by the restart path is watched too — that path comes back
+ *  through startService.
+ *
+ *  The identity check is what separates a crash from everything else. Every
+ *  deliberate path (stop, the start path's pre-kill, the health-timeout kill)
+ *  removes its entry from `children` before or as it kills, and a restart
+ *  replaces the entry. So if the map no longer holds *this* child, the exit
+ *  was expected and there is nothing to recover. Exit codes are not consulted
+ *  for that decision: a killed process resolves `exited` with a signal-derived
+ *  code that is indistinguishable from a crash.
+ */
+function watchForExit(
+  runFn: RunFn,
+  svc: Service,
+  eventsPath: string,
+  child: SpawnedChild,
+  pollHealthFn: PollHealthFn,
+  spawnFn?: SpawnFn
+): void {
+  if (!child.exited) return;
+
+  void child.exited.then(async (exitCode) => {
+    if (children.get(svc.id) !== child) return;
+    children.delete(svc.id);
+
+    if (exitCode === 0) return;
+
+    // A lifecycle operation is already in flight for this service — the user
+    // is stopping or restarting it. Record the crash, but don't race them.
+    if (isPending(svc.id)) {
+      await appendEvent(eventsPath, {
+        type: "service.crashed",
+        subjectType: "service",
+        subjectId: svc.id,
+        data: { exitCode, recovery: "skipped: lifecycle operation in progress" },
+        actor: "system",
+      });
+      return;
+    }
+
+    const restartCount = restartCounts.get(svc.id) ?? 0;
+    restartCounts.set(svc.id, restartCount + 1);
+
+    await handleProcessExit(runFn, svc, eventsPath, exitCode, {
+      restartCount,
+      pollHealthFn,
+      spawnFn,
+    });
+  }).catch(() => {
+    // A rejected `exited` tells us nothing actionable about the service.
+    children.delete(svc.id);
+  });
+}
+
 export async function handleProcessExit(
   runFn: RunFn,
   svc: Service,
@@ -438,7 +576,7 @@ export async function handleProcessExit(
 
   // Teardown Tailscale Serve since the process is gone
   if (svc.network.tailscaleServe && svc.network.port) {
-    await removeTailscaleServe(runFn, svc.network.port);
+    await removeTailscaleServe(runFn, svc.network.port, serveRetryOpts(svc));
   }
 
   // Emit crash event
@@ -478,7 +616,7 @@ export async function handleProcessExit(
 
   // Wait backoff then attempt restart
   await new Promise(r => setTimeout(r, restartBackoff));
-  await startService(runFn, opts.pollHealthFn, svc, eventsPath, opts.spawnFn);
+  await submit(svc.id, "start", () => startService(runFn, opts.pollHealthFn, svc, eventsPath, opts.spawnFn), { deadlineMs: startDeadlineMs(svc) });
 }
 
 // ── WithLock variants ────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 // shard-runner: supervisor process for the control shard.
-// Manages tailscale serve for the shard's port (which now also serves the dashboard).
+// Manages tailscale serve for the shard's port. The shard is API-only —
+// no dashboard is served here.
 // Compiled and signed by shard-deploy.sh — do not run directly.
 //
 // Sequence:
@@ -61,7 +62,6 @@ let bunPath     = ProcessInfo.processInfo.environment["BUN_PATH"]       ?? "\(NS
 let platformDir = ProcessInfo.processInfo.environment["PLATFORM_DIR"]   ?? "\(NSHomeDirectory())/services/banter"
 
 let shardDir    = "\(platformDir)/control/control-shard"
-let dashDist    = "\(platformDir)/dashboard/dist"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,8 +103,7 @@ func spawnShard() {
     let proc = makeProcess(
         executable: bunPath,
         arguments: ["run", "src/index.ts"],
-        directory: shardDir,
-        env: ["DASHBOARD_DIST": dashDist]
+        directory: shardDir
     )
     proc.terminationHandler = { p in
         guard !shuttingDown else { return }
@@ -120,8 +119,21 @@ func spawnShard() {
 func shutdown() {
     shuttingDown = true
     print("[shard-runner] Shutting down...")
-    shardProc?.terminate()
-    shardProc?.waitUntilExit()
+    // Polled rather than waitUntilExit(), which returns at once here: the main
+    // thread is parked in dispatchMain(), not a run loop. The shard stops its
+    // services before exiting, and a runner that left first would orphan it.
+    if let proc = shardProc {
+        let pid = proc.processIdentifier
+        proc.terminate()
+        let deadline = Date().addingTimeInterval(60)
+        while kill(pid, 0) == 0 && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        if kill(pid, 0) == 0 {
+            print("[shard-runner] shard (pid \(pid)) still running after 60s; killing it")
+            kill(pid, SIGKILL)
+        }
+    }
     teardownServe()
     print("[shard-runner] Done.")
     exit(0)

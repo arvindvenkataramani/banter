@@ -5,6 +5,11 @@ export interface Host {
   name: string;
   hostname: string;
   role: HostRole;
+  // Optional: the port a consumer should use to reach a well-known service
+  // on this host, when that fact isn't otherwise derivable from
+  // Registry.services[] (e.g. a consumer on a different machine entirely,
+  // with no access to this host's own registry.json).
+  port?: number;
 }
 
 export interface Capability {
@@ -65,8 +70,16 @@ export interface ServiceOpsEnv {
   variables?: Record<string, string>;
 }
 
+// One built file, copied from the source tree into the service's working
+// directory by the install scripts (scripts/install-artifacts.sh).
+export interface InstallArtifact {
+  from: string;           // Relative to the source tree the install runs from
+  to: string;             // Relative to ops.env.workingDirectory
+}
+
 export interface ServiceOps {
   env?: ServiceOpsEnv;    // Used by process runner only
+  install?: { artifacts: InstallArtifact[] };
 }
 
 export interface ServiceLifecycle {
@@ -79,6 +92,8 @@ export interface ServiceLifecycle {
   restartOnCrash?: boolean; // Auto-restart on unexpected exit (process runner only, default: false)
   maxRestarts?: number;   // Max restarts before giving up (default: 3)
   restartBackoff?: number; // Initial delay before restart attempt in ms (default: 5000)
+  serveRetryAttempts?: number; // Total Tailscale Serve write attempts, including the first (default: 3)
+  serveRetryDelay?: number;    // ms between Serve retry attempts (default: 250)
 }
 
 export interface ServiceState {
@@ -89,6 +104,7 @@ export interface ServiceState {
 export interface Service {
   id: string;
   name?: string;          // Display name; falls back to id if omitted
+  notes?: string;         // Free-text usage notes: what it is, how to drive it, where it came from
   capabilityId: string;
   hostId: string;
   permissions: ServicePermissions;
@@ -112,7 +128,7 @@ export type RegistryType = "control" | "shard";
 export type ServiceDefaults = {
   permissions?: Partial<Pick<ServicePermissions, "protected">>;
   network?: Partial<Pick<ServiceNetwork, "healthTimeout" | "tailscaleServe" | "scheme">>;
-  lifecycle?: Partial<Pick<ServiceLifecycle, "loadStrategy" | "idleUnload" | "idleTimeout" | "autoStart" | "shutdown">>;
+  lifecycle?: Partial<Pick<ServiceLifecycle, "loadStrategy" | "idleUnload" | "idleTimeout" | "autoStart" | "shutdown" | "startupTime" | "serveRetryAttempts" | "serveRetryDelay">>;
 };
 
 export interface Registry {
@@ -124,6 +140,8 @@ export interface Registry {
   capabilities: Capability[];
   services: Service[];
   shards?: Shard[];
+  /** Always present on a loaded registry; empty when the file has none. */
+  roster?: NodeRoster;
 }
 
 export type EventType =
@@ -159,7 +177,7 @@ export interface Event {
 export interface ServiceWithHealth extends Service {
   health: HealthState;
   lastEvent: Event | null;
-  locked?: boolean; // A start/stop lifecycle operation is in progress on the owning node
+  pending?: boolean; // A lifecycle request for this service is outstanding, queued or executing
 }
 
 
@@ -192,3 +210,115 @@ export interface TtsServiceInfo {
 
 export const CHUNK_STRATEGIES = ['two-chunk', 'paragraph', 'sentence', 'greedy'] as const;
 export type ChunkStrategy = typeof CHUNK_STRATEGIES[number];
+
+export interface ChunkProfile {
+  words: number;
+  chars: number;
+}
+
+// Compatibility with a VoiceReference is computed at validation, not written
+// per voice. Absent means the model cannot clone at all.
+export interface Cloning {
+  available: boolean;
+  requiresText?: boolean;
+  minDurationS?: number;
+  maxDurationS?: number;
+  sampleRate?: number;
+}
+
+// A voice rendered under a second model must use that model's own
+// chunkProfile, or one model's constraint silently degrades another's audio.
+export interface TtsModel {
+  id: string;
+  name: string;
+  /** What this provider's runtime calls the model — the same model can have
+   *  a different key under a different runtime. */
+  key: string;
+  cloning?: Cloning;
+  chunkProfile?: ChunkProfile;
+  /** Fast enough for the realtime voice loop. Absent means it is not. */
+  realtime?: boolean;
+  /** The provider's runtime can stream this model's audio as it renders. */
+  streaming?: boolean;
+  /** How the realtime voice loop splits text for this model. Distinct from
+   *  `chunkProfile`, which bounds the generation pipeline's own chunks. */
+  chunking?: { mode?: ChunkStrategy; minWords?: number; maxWords?: number };
+  /** Most requests the realtime voice loop sends this model at once. */
+  concurrency?: number;
+  /** Fields passed verbatim into every synthesis request for this model. */
+  requestParams?: Record<string, unknown>;
+  presetVoices?: { id: string; name: string }[];
+}
+
+export interface SttModel {
+  id: string;
+  name: string;
+  key: string;
+  kind: "batch" | "streaming" | "both";
+  params?: { name: string; values: number[] }[];
+  variants?: { id: string; params: { name: string; value: number }[] }[];
+}
+
+export interface Provider {
+  /** The audio format this runtime returns from /v1/audio/speech. Absent means mp3. */
+  responseFormat?: ResponseFormat;
+  ttsModels?: TtsModel[];
+  sttModels?: SttModel[];
+  /** Whether this runtime's streaming socket understands session ids and take-over. Absent means no. */
+  sessions?: boolean;
+}
+
+export const RESPONSE_FORMATS = ["mp3", "aac", "wav"] as const;
+export type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
+
+/** Declared, not probed from the file — a stale value here is taken as fact. */
+export interface VoiceReference {
+  audio: string;
+  text?: string;
+  durationS: number;
+  sampleRate: number;
+}
+
+export interface VoiceModel {
+  serviceId: string;
+  model: string;
+  key: string;
+}
+
+export interface VoiceDefinition {
+  id: string;
+  name: string;
+  references?: VoiceReference[];
+  models: VoiceModel[];
+}
+
+/** What `clone` means in a VoiceModel's `key`: render from a reference
+ *  rather than ask the model for a name it already knows. */
+export const CLONE_KEY = "clone";
+
+export interface NodeRoster {
+  providers: Record<string, Provider>;
+  voices: VoiceDefinition[];
+}
+
+/** One reload response reports one PartResult per part. */
+export type PartResult = { ok: true } | { ok: false; error: string };
+
+/** Names what a reload could not apply. Reload never restarts anything itself. */
+export interface ReloadWarning {
+  kind: "provider-changed" | "service-removed" | "shards-changed";
+  serviceId?: string;
+  message: string;
+}
+
+export interface ControlPlaneReloadResponse {
+  config: PartResult;
+  registry: PartResult;
+  shards: Record<string, PartResult>;
+  warnings: ReloadWarning[];
+}
+
+export interface ShardReloadResponse {
+  registry: PartResult;
+  warnings: ReloadWarning[];
+}

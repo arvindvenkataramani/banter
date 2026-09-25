@@ -128,6 +128,19 @@ describe("GET /api/services", () => {
     }
   });
 
+  // Both routes describe the same service, so both carry the same fields. A
+  // list that omitted pending made the two disagree, and a record copied from
+  // it read as "nothing outstanding" wherever it was later used.
+  it("carries pending, as the single-service route does", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/services");
+    const services = await res.json() as Array<{ pending: unknown }>;
+    for (const svc of services) {
+      expect("pending" in svc).toBe(true);
+      expect(typeof svc.pending).toBe("boolean");
+    }
+  });
+
   it("disabled service appears with health 'disabled' regardless of event log", async () => {
     await appendEvent(eventsPath, {
       type: "service.up", subjectType: "service", subjectId: "svc2", data: {}, actor: "system",
@@ -337,6 +350,37 @@ describe("PATCH /api/services/:id", () => {
     expect(res.status).toBe(400);
     const body = await res.json() as { error: string };
     expect(typeof body.error).toBe("string");
+  });
+
+  // A failed registry write is an infrastructure fault. Reporting it as 400
+  // sends the caller to debug a request that was never the problem.
+  it("returns 500 when the registry cannot be written", async () => {
+    const app = createApp({
+      registryState: registry,
+      registryPath: join(tmpDir, "no-such-dir", "registry.json"),
+      eventsPath,
+      checkService: async () => {},
+      runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+      pollHealthFn: async () => true,
+    });
+    const res = await app.request("/api/services/svc1", json({ network: { port: 9999 } }, "PATCH"));
+    expect(res.status).toBe(500);
+  });
+
+  // Two patches landing together must both survive: the write is serialized,
+  // and neither picks a colliding temp path.
+  it("applies concurrent patches to different services without losing either", async () => {
+    const app = makeApp();
+    const [a, b] = await Promise.all([
+      app.request("/api/services/svc1", json({ lifecycle: { idleUnload: false } }, "PATCH")),
+      app.request("/api/services/svc2", json({ lifecycle: { idleUnload: false } }, "PATCH")),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    const reloaded = await loadRegistry(join(tmpDir, "registry.json"));
+    expect(reloaded.services.find(s => s.id === "svc1")?.lifecycle?.idleUnload).toBe(false);
+    expect(reloaded.services.find(s => s.id === "svc2")?.lifecycle?.idleUnload).toBe(false);
   });
 });
 

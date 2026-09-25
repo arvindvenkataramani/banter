@@ -98,11 +98,16 @@ export const getServiceById = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: ServiceWithHealthSchema } },
-      description: "Service with health state",
+      description: "Service with health state, read live from the owning node",
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
       description: "Service not found",
+    },
+    503: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "The shard owning this service could not be reached. The route answers only from a live read, so a caller wanting last-known state reads GET /api/services instead.",
     },
   },
 });

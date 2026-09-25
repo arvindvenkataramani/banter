@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { fetchShardServices, fetchShardService, fetchShardEvents, proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck } from "../control-plane/src/shard-client";
+import { fetchShardServices, fetchShardService, fetchShardEvents, proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardPing, fetchShardRoster } from "../control-plane/src/shard-client";
 import type { ServiceWithHealth, Event } from "../../shared/types";
 
 let mockServer: ReturnType<typeof Bun.serve>;
@@ -410,6 +410,103 @@ describe("shard-client: proxyShardCheck", () => {
       const result = await proxyShardCheck(`http://localhost:${server.port}`, "svc-1");
       expect(result.ok).toBe(false);
       expect(result.status).toBe(404);
+    } finally {
+      server.stop(true);
+    }
+  });
+});
+
+// The shard's /ping/:service route is how a caller says "this service is in
+// use" — it touches the pingMap the idle loop reads, without writing anything
+// to the registry. The control plane had no way to reach it.
+describe("shard-client: proxyShardPing", () => {
+  it("sends POST to /ping/:service", async () => {
+    let capturedMethod = "";
+    let capturedPath = "";
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        capturedMethod = req.method;
+        capturedPath = new URL(req.url).pathname;
+        return Response.json({ ok: true });
+      },
+    });
+
+    try {
+      const result = await proxyShardPing(`http://localhost:${server.port}`, "stt-fluid");
+      expect(capturedMethod).toBe("POST");
+      expect(capturedPath).toBe("/ping/stt-fluid");
+      expect(result.ok).toBe(true);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("returns ok: false when the shard does not know the service", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => Response.json({ error: "service not found" }, { status: 404 }),
+    });
+
+    try {
+      const result = await proxyShardPing(`http://localhost:${server.port}`, "nope");
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(404);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("returns ok: false when the shard is unreachable", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
+    const deadPort = server.port;
+    server.stop(true);
+
+    const result = await proxyShardPing(`http://localhost:${deadPort}`, "stt-fluid");
+    expect(result.ok).toBe(false);
+    expect(typeof result.error).toBe("string");
+  });
+});
+
+describe("shard-client: fetchShardRoster", () => {
+  it("returns the roster section from the shard's GET /api/roster", async () => {
+    const roster = {
+      providers: { "fluid-tts": { ttsModels: [{ id: "pocket-tts", name: "Pocket TTS", key: "pocket-tts" }] } },
+      voices: [{ id: "alice", name: "Alice", models: [{ serviceId: "fluid-tts", model: "pocket-tts", key: "clone" }] }],
+    };
+    const server = Bun.serve({ port: 0, fetch: () => Response.json(roster) });
+    try {
+      const result = await fetchShardRoster(`http://localhost:${server.port}`);
+      expect(result).toEqual(roster);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("returns null for a shard older than this route (404)", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => Response.json({ error: "not found" }, { status: 404 }) });
+    try {
+      const result = await fetchShardRoster(`http://localhost:${server.port}`);
+      expect(result).toBeNull();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("returns null for a body with no providers/voices shape", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => Response.json({ ok: true }) });
+    try {
+      const result = await fetchShardRoster(`http://localhost:${server.port}`);
+      expect(result).toBeNull();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("throws on a non-404 error status, unlike a 404", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => Response.json({ error: "server error" }, { status: 500 }) });
+    try {
+      await expect(fetchShardRoster(`http://localhost:${server.port}`)).rejects.toThrow();
     } finally {
       server.stop(true);
     }

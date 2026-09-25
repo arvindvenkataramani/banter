@@ -1,21 +1,25 @@
-import type { ServiceWithHealth, Event, Shard } from "../../../shared/types";
-import { fetchShardServices, fetchShardEvents } from "./shard-client";
+import type { ServiceWithHealth, Event, Shard, NodeRoster } from "../../../shared/types";
+import { fetchShardServices, fetchShardEvents, fetchShardRoster } from "./shard-client";
 
 interface ShardCache {
   services: ServiceWithHealth[];
   events: Event[];
+  /** Null both before the first successful poll and for a shard with no
+   *  roster route — `rosterUnsupported` distinguishes the two. */
+  roster: NodeRoster | null;
+  rosterUnsupported: boolean;
   lastPoll: number;
   online: boolean;
 }
 
-export function startShardPollLoop(shards: Shard[], intervalMs: number): { stop: () => void; getShardServices: (hostId: string) => ServiceWithHealth[]; getShardEvents: (hostId: string) => Event[]; isShardOnline: (hostId: string) => boolean; getLastPoll: (hostId: string) => number; getAllShardServices: () => ServiceWithHealth[]; getAllShardEvents: () => Event[]; pollShard: (hostId: string) => Promise<void>; updateCachedService: (hostId: string, svc: ServiceWithHealth) => void } {
+export function startShardPollLoop(shards: Shard[], intervalMs: number): { stop: () => void; getShardServices: (hostId: string) => ServiceWithHealth[]; getShardEvents: (hostId: string) => Event[]; getShardRoster: (hostId: string) => NodeRoster | null; isRosterUnsupported: (hostId: string) => boolean; isShardOnline: (hostId: string) => boolean; getLastPoll: (hostId: string) => number; getAllShardServices: () => ServiceWithHealth[]; getAllShardEvents: () => Event[]; pollShard: (hostId: string) => Promise<void>; updateCachedService: (hostId: string, svc: ServiceWithHealth) => void } {
   const cache = new Map<string, ShardCache>();
   let stopped = false;
   let sleepResolve: (() => void) | null = null;
   let sleepTimer: ReturnType<typeof setTimeout> | null = null;
 
   for (const shard of shards) {
-    cache.set(shard.hostId, { services: [], events: [], lastPoll: 0, online: false });
+    cache.set(shard.hostId, { services: [], events: [], roster: null, rosterUnsupported: false, lastPoll: 0, online: false });
   }
 
   async function pollAll() {
@@ -46,13 +50,22 @@ export function startShardPollLoop(shards: Shard[], intervalMs: number): { stop:
 
   async function pollOne(shard: Shard) {
     try {
-      const [services, events] = await Promise.all([
+      const [services, events, roster] = await Promise.all([
         fetchShardServices(shard.endpoint),
         fetchShardEvents(shard.endpoint),
+        fetchShardRoster(shard.endpoint),
       ]);
       const c = cache.get(shard.hostId)!;
       c.services = services;
       c.events = events;
+      // A null roster (no route) keeps the last known one rather than
+      // clearing it.
+      if (roster !== null) {
+        c.roster = roster;
+        c.rosterUnsupported = false;
+      } else if (c.roster === null) {
+        c.rosterUnsupported = true;
+      }
       c.lastPoll = Date.now();
       c.online = true;
     } catch (err) {
@@ -76,6 +89,8 @@ export function startShardPollLoop(shards: Shard[], intervalMs: number): { stop:
     },
     getShardServices(hostId) { return cache.get(hostId)?.services ?? []; },
     getShardEvents(hostId) { return cache.get(hostId)?.events ?? []; },
+    getShardRoster(hostId) { return cache.get(hostId)?.roster ?? null; },
+    isRosterUnsupported(hostId) { return cache.get(hostId)?.rosterUnsupported ?? false; },
     isShardOnline(hostId) { return cache.get(hostId)?.online ?? false; },
     getLastPoll(hostId) { return cache.get(hostId)?.lastPoll ?? 0; },
     getAllShardServices() {

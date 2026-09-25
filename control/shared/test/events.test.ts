@@ -99,6 +99,20 @@ describe("Health map derivation", () => {
     expect(map.size).toBe(2);
   });
 
+  it("an install is a record, not a health signal: a stopped service stays down after one", async () => {
+    await appendEvent(eventsPath, { type: "service.stopped", subjectType: "service", subjectId: "svc1", data: {}, actor: "system" });
+    await appendEvent(eventsPath, { type: "service.installed", subjectType: "service", subjectId: "svc1", data: { commit: "abc" }, actor: "user" });
+    const map = await deriveHealthMap(eventsPath);
+    expect(map.get("svc1")?.type).toBe("service.stopped");
+  });
+
+  it("an event after an install still decides health", async () => {
+    await appendEvent(eventsPath, { type: "service.installed", subjectType: "service", subjectId: "svc1", data: { commit: "abc" }, actor: "user" });
+    await appendEvent(eventsPath, { type: "service.up", subjectType: "service", subjectId: "svc1", data: {}, actor: "system" });
+    const map = await deriveHealthMap(eventsPath);
+    expect(map.get("svc1")?.type).toBe("service.up");
+  });
+
   it("deriveHealthMap returns an empty map for nonexistent file", async () => {
     const map = await deriveHealthMap(join(tmpDir, "nonexistent.jsonl"));
     expect(map.size).toBe(0);

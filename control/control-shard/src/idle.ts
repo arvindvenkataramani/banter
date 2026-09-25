@@ -18,7 +18,9 @@ export function startIdleLoop(
       if (svc.lifecycle?.idleUnload !== true) continue;
       if (svc.state?.loadTime == null) continue;
 
-      const lastActivity = pingMap.get(svc.id) ?? svc.state.loadTime ?? Date.now();
+      // The ping map outlives an unload, so a ping older than the current load
+      // belongs to an earlier one and must not count against this one.
+      const lastActivity = Math.max(pingMap.get(svc.id) ?? 0, svc.state.loadTime);
       const idleTimeout = svc.lifecycle!.idleTimeout!;
 
       if (Date.now() - lastActivity > idleTimeout) {
@@ -39,20 +41,5 @@ export function startIdleLoop(
       stopped = true;
       clearInterval(timer);
     },
-  };
-}
-
-export function createPingEndpoint(
-  services: Service[],
-  pingMap: Map<string, number>
-): (serviceId: string) => Promise<{ status: number }> {
-  return async (serviceId: string) => {
-    const svc = services.find(s => s.id === serviceId);
-    if (!svc) {
-      return { status: 404 };
-    }
-
-    pingMap.set(serviceId, Date.now());
-    return { status: 200 };
   };
 }

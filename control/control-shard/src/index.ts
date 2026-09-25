@@ -1,16 +1,18 @@
-import { join } from "node:path";
 import { homedir } from "node:os";
 import { resolveShardPaths } from "./paths";
 import { loadRegistry } from "../../shared/src/registry";
-import { serveStatic } from "../../shared/src/static";
 import { createApp } from "../../shared/src/api";
 import { checkService, startHealthLoop } from "../../shared/src/health";
-import { stopService } from "../../shared/src/lifecycle";
+import { startService, stopService, startDeadlineMs, stopDeadlineMs } from "../../shared/src/lifecycle";
+import type { StartResult } from "../../shared/src/lifecycle";
+import { appendEvent } from "../../shared/src/events";
+import { submit } from "../../shared/src/executor";
 import { getFreeMem, checkMemoryBudget } from "./memory";
-import { startService, shardStartup, shardShutdown } from "./lifecycle";
+import { shardStartup, shardShutdown } from "./lifecycle";
 import { startIdleLoop } from "./idle";
 import { createShardApp } from "./shard-api";
-import type { RunFn, PollHealthFn, SpawnFn } from "../../shared/src/tailscale";
+import { isPlatformPath, routesToShardApp } from "./routing";
+import { createRunFn, createSpawnFn, createPollHealthFn } from "../../shared/src/exec";
 import type { Service } from "../../../shared/types";
 
 // Paths and intervals resolve in ./paths.ts, which takes the environment and
@@ -21,58 +23,49 @@ const paths = resolveShardPaths(process.env, homedir());
 
 const REGISTRY_PATH = paths.registryPath;
 const EVENTS_PATH = paths.eventsPath;
-const DIST = process.env.DASHBOARD_DIST ?? join(import.meta.dir, "../../../dashboard/dist");
 const PORT = paths.port;
 // See BANTER_CONTROL_HOST in the control plane — loopback, fronted by Tailscale Serve.
 const HOST = process.env.BANTER_SHARD_HOST ?? "localhost";
 const HEALTH_INTERVAL_MS = paths.healthIntervalMs;
 const IDLE_INTERVAL_MS = paths.idleIntervalMs;
 
-// Real RunFn — runs a command via Bun.spawn, returns stdout/stderr/exitCode
-const runFn: RunFn = async (cmd) => {
-  const proc = Bun.spawn({ cmd, stdout: "pipe", stderr: "pipe", env: process.env });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { stdout, stderr, exitCode };
-};
-
-// Real PollHealthFn — polls the health endpoint every 1s until healthy or timeout
-const pollHealthFn: PollHealthFn = async (url, timeoutMs) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) return true;
-    } catch {
-      // not ready yet
-    }
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  return false;
-};
-
-// Real SpawnFn — spawns a long-running process and returns a kill handle
-const spawnFn: SpawnFn = (cmd, opts) => {
-  const env = { ...process.env, ...opts?.env };
-  if (opts?.logDir) {
-    const proc = Bun.spawn({
-      cmd,
-      cwd: opts.cwd,
-      env,
-      stdout: Bun.file(`${opts.logDir}/stdout.log`),
-      stderr: Bun.file(`${opts.logDir}/stderr.log`),
-    });
-    return { kill: () => proc.kill() };
-  }
-  const proc = Bun.spawn({ cmd, cwd: opts?.cwd, env, stdout: "ignore", stderr: "ignore" });
-  return { kill: () => proc.kill() };
-};
+const runFn = createRunFn({ timeoutMs: 10000 });
+const pollHealthFn = createPollHealthFn();
+const spawnFn = createSpawnFn();
 
 // Ping map for idle eviction
 const pingMap = new Map<string, number>();
+
+// Every lifecycle path on this node goes through submit, so a start and a
+// stop for the same service always serialize and a concurrent request joins
+// the in-flight submission rather than being rejected. Failure reporting and
+// state mutation live here, run once per submission regardless of how many
+// callers are awaiting it — not once per caller, which duplicate service.down
+// events in the fire-and-forget start route used to produce under coalescing.
+async function loadService(svc: Service): Promise<StartResult> {
+  const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, EVENTS_PATH, spawnFn), { deadlineMs: startDeadlineMs(svc) });
+  if (result.ok) {
+    svc.state = { ...svc.state, loadTime: Date.now() };
+  } else {
+    console.error(`[shard] ${svc.id} load failed: ${result.error}`);
+    await appendEvent(EVENTS_PATH, {
+      type: "service.down",
+      subjectType: "service",
+      subjectId: svc.id,
+      data: { reason: "start_failed", error: result.error },
+      actor: "system",
+    });
+  }
+  return result;
+}
+
+async function unloadService(svc: Service): Promise<{ ok: boolean; error?: string }> {
+  const result = await submit(svc.id, "stop", () => stopService(runFn, svc, EVENTS_PATH), { deadlineMs: stopDeadlineMs() });
+  if (result.ok) {
+    svc.state = { ...svc.state, loadTime: undefined };
+  }
+  return result;
+}
 
 // ── Startup ────────────────────────────────────────────────────────────────────
 
@@ -106,8 +99,10 @@ const shardApp = createShardApp({
     const freeMem = await getFreeMem(runFn);
     return checkMemoryBudget(runFn, freeMem, 0, new Map(), EVENTS_PATH);
   },
-  loadService: (svc: Service) => startService(runFn, pollHealthFn, svc, EVENTS_PATH, spawnFn),
-  unloadService: (svc: Service) => stopService(runFn, svc, EVENTS_PATH),
+  loadService,
+  unloadService,
+  pingMap,
+  registryPath: REGISTRY_PATH,
 });
 
 // Step 4: Merge apps and start HTTP server
@@ -116,18 +111,10 @@ const server = Bun.serve({
   port: PORT,
   fetch: (req) => {
     const url = new URL(req.url);
-    if (url.pathname.startsWith("/api/") || url.pathname === "/status" || url.pathname.startsWith("/ping/")) {
-      // Shard-specific routes take precedence for /status, /ping, and /api/services/*/start|stop
-      if (
-        url.pathname === "/status" ||
-        url.pathname.startsWith("/ping/") ||
-        (url.pathname.startsWith("/api/services/") && (url.pathname.endsWith("/start") || url.pathname.endsWith("/stop")))
-      ) {
-        return shardApp.fetch(req);
-      }
-      return sharedApp.fetch(req);
+    if (!isPlatformPath(url.pathname)) {
+      return new Response("Not found", { status: 404 });
     }
-    return serveStatic(DIST, req);
+    return (routesToShardApp(url.pathname) ? shardApp : sharedApp).fetch(req);
   },
 });
 console.log(`ControlShard running on :${PORT}`);
@@ -140,8 +127,7 @@ const { stop: stopIdle } = startIdleLoop(
   registry.services,
   pingMap,
   async (svc) => {
-    await stopService(runFn, svc, EVENTS_PATH);
-    svc.state = { ...svc.state, loadTime: undefined };
+    await unloadService(svc);
   },
   EVENTS_PATH,
   IDLE_INTERVAL_MS

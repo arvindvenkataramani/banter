@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { deriveHealthMap, deriveHealth, readEvents, appendEvent } from "../../shared/src/events";
-import { isLocked } from "../../shared/src/lifecycle";
+import { emptyRoster } from "../../shared/src/roster";
+import { reloadRegistry } from "../../shared/src/registry";
 import * as shardRoutes from "./routes";
 import type { Registry, Service } from "../../../shared/types";
 
@@ -15,12 +16,16 @@ interface ShardAppDeps {
   checkMemoryBudget: CheckMemoryBudgetFn;
   loadService: LoadServiceFn;
   unloadService: UnloadServiceFn;
+  /** Last-activity timestamps, keyed by service id. Must be the same map the
+   *  idle loop reads, or pings never reach the eviction decision. */
+  pingMap?: Map<string, number>;
+  registryPath?: string;
 }
 
 export function createShardApp(deps: ShardAppDeps) {
   const { registryState, eventsPath, getFreeMem, checkMemoryBudget, loadService, unloadService } = deps;
   const app = new OpenAPIHono();
-  const pingMap = new Map<string, number>();
+  const pingMap = deps.pingMap ?? new Map<string, number>();
 
   // GET /api/health
   app.get("/api/health", (c) => {
@@ -82,7 +87,6 @@ export function createShardApp(deps: ShardAppDeps) {
     const svc = registryState.services.find(s => s.id === svcId);
     if (!svc) return c.json({ error: "service not found" }, 404);
     if (!svc.permissions.enabled) return c.json({ error: "service is disabled" }, 400);
-    if (isLocked(svcId)) return c.json({ error: "lifecycle operation in progress" }, 409);
 
     // For demand-loaded services, check memory budget before starting
     if (svc.lifecycle?.loadStrategy === "demand") {
@@ -98,31 +102,14 @@ export function createShardApp(deps: ShardAppDeps) {
         return c.json({ success: false, error: budgetCheck.error ?? "memory pressure" }, 503);
       }
 
-      // Fire-and-forget: kick off lifecycle in background, return 202 immediately.
-      // Caller polls GET /api/services/:id for locked + health status.
-      loadService(svc).then(async result => {
-        if (result.ok) {
-          svc.state = { ...svc.state, loadTime: Date.now() };
-        } else {
-          console.error(`[shard] ${svcId} load failed: ${result.error}`);
-          await appendEvent(eventsPath, {
-            type: "service.down",
-            subjectType: "service",
-            subjectId: svcId,
-            data: { reason: "start_failed", error: result.error },
-            actor: "system",
-          });
-        }
-      }).catch(async err => {
+      // Fire-and-forget: submit and return 202 immediately. A concurrent
+      // request against this service joins the same submission rather than
+      // being rejected, so state handling and failure reporting belong to
+      // loadService itself — done once per submission, not once per caller.
+      // Caller polls GET /api/services/:id for pending + health status.
+      loadService(svc).catch(err => {
         const error = err instanceof Error ? err.message : String(err);
         console.error(`[shard] ${svcId} load error: ${error}`);
-        await appendEvent(eventsPath, {
-          type: "service.down",
-          subjectType: "service",
-          subjectId: svcId,
-          data: { reason: "start_error", error },
-          actor: "system",
-        });
       });
       return c.json({ success: true }, 202);
     }
@@ -136,7 +123,6 @@ export function createShardApp(deps: ShardAppDeps) {
     const svcId = c.req.param("id");
     const svc = registryState.services.find(s => s.id === svcId);
     if (!svc) return c.json({ error: "service not found" }, 404);
-    if (isLocked(svcId)) return c.json({ error: "lifecycle operation in progress" }, 409);
 
     // For demand-loaded services, handle the stop
     if (svc.lifecycle?.loadStrategy === "demand") {
@@ -144,12 +130,31 @@ export function createShardApp(deps: ShardAppDeps) {
       if (!result.ok) {
         return c.json({ success: false, error: result.error ?? "stop failed" }, 500);
       }
-      svc.state = { ...svc.state, loadTime: undefined };
       return c.json({ success: true });
     }
 
     // For non-demand services, fall through to shared app
     return c.json({ success: false, error: "not a demand service" }, 400);
+  });
+
+  // Read from the live registry object on every request, not cached at
+  // factory time, so a reload is reflected without a restart.
+  app.get("/api/roster", (c) => {
+    return c.json(registryState.roster ?? emptyRoster());
+  });
+
+  app.post("/api/config/reload", async (c) => {
+    if (!deps.registryPath) {
+      return c.json({ registry: { ok: false, error: "no registry path configured" }, warnings: [] }, 500);
+    }
+    const healthMap = await deriveHealthMap(eventsPath);
+    const isRunning = (serviceId: string) =>
+      ["healthy", "degraded", "timed_out"].includes(deriveHealth(healthMap.get(serviceId) ?? null));
+    const result = await reloadRegistry(deps.registryPath, registryState, isRunning);
+    if (!result.ok) {
+      return c.json({ registry: { ok: false, error: result.error }, warnings: [] }, 500);
+    }
+    return c.json({ registry: { ok: true }, warnings: result.warnings });
   });
 
   return app;

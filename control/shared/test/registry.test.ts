@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadRegistry, updateService, setEnabled } from "../src/registry";
+import type { NodeRoster } from "../../../shared/types";
 
 const validRegistry = {
   version: 2,
@@ -115,6 +116,31 @@ describe("Registry loader — new schema fields", () => {
     expect(registry.services[0].network.port).toBe(8080);
   });
 
+  it("loads a host with a port field and preserves the value", async () => {
+    const reg = {
+      ...validRegistry,
+      hosts: [{ ...validRegistry.hosts[0], port: 3101 }]
+    };
+    await writeFile(registryPath, JSON.stringify(reg));
+    const registry = await loadRegistry(registryPath);
+    expect(registry.hosts[0].port).toBe(3101);
+  });
+
+  it("loads a host with no port field — it stays undefined, not defaulted", async () => {
+    await writeFile(registryPath, JSON.stringify(validRegistry));
+    const registry = await loadRegistry(registryPath);
+    expect(registry.hosts[0].port).toBeUndefined();
+  });
+
+  it("rejects a host with a non-positive-integer port", async () => {
+    const reg = {
+      ...validRegistry,
+      hosts: [{ ...validRegistry.hosts[0], port: -1 }]
+    };
+    await writeFile(registryPath, JSON.stringify(reg));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/port/);
+  });
+
   it("loads a service with loadStrategy:demand and preserves the value", async () => {
     const reg = {
       ...validRegistry,
@@ -184,6 +210,33 @@ describe("Registry loader — new schema fields", () => {
     await writeFile(registryPath, JSON.stringify(shardRegistry));
     const registry = await loadRegistry(registryPath);
     expect(registry.services[0].lifecycle?.idleUnload).toBe(false);
+  });
+});
+
+describe("Registry loader — roster", () => {
+  const ROSTER: NodeRoster = {
+    providers: {
+      svc1: { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] },
+    },
+    voices: [],
+  };
+
+  it("loads a registry with a valid roster, present on the loaded object", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, roster: ROSTER }));
+    const registry = await loadRegistry(registryPath);
+    expect(registry.roster).toEqual(ROSTER);
+  });
+
+  it("loads a registry with no roster section with an empty roster", async () => {
+    await writeFile(registryPath, JSON.stringify(validRegistry));
+    const registry = await loadRegistry(registryPath);
+    expect(registry.roster).toEqual({ providers: {}, voices: [] });
+  });
+
+  it("rejects a provider naming a service absent from the same registry", async () => {
+    const bad = { providers: { ghost: { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } }, voices: [] };
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, roster: bad }));
+    await expect(loadRegistry(registryPath)).rejects.toThrow(/registry\.json roster:.*ghost/);
   });
 });
 
@@ -518,5 +571,62 @@ describe("Registry writer", () => {
     // And the final file must be valid JSON
     const result = await readFile(registryPath, "utf-8");
     expect(() => JSON.parse(result)).not.toThrow();
+  });
+});
+
+describe("Registry loader — ops.install", () => {
+  const installing = (ops: unknown) => ({
+    ...validRegistry,
+    services: [{
+      ...validRegistry.services[0],
+      runner: { type: "process" as const, main: ".build/release/app" },
+      ops,
+    }],
+  });
+  const env = { workingDirectory: "/srv/app" };
+  const artifact = { from: "services/app/.build/release/app", to: ".build/release/app" };
+
+  it("accepts artifacts with a source-tree from and a working-directory to", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [artifact] } })));
+    const registry = await loadRegistry(registryPath);
+    expect(registry.services[0].ops?.install?.artifacts).toEqual([artifact]);
+  });
+
+  it("rejects ops.install without a non-empty artifacts array", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [] } })));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*ops.install.artifacts/);
+  });
+
+  it("rejects an artifact missing its from or to", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ from: artifact.from }] } })));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*to/);
+  });
+
+  it("rejects an absolute to, which would escape the working directory", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ ...artifact, to: "/usr/local/bin/app" }] } })));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*relative/);
+  });
+
+  it("rejects a to that climbs out with ..", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ ...artifact, to: "../other/app" }] } })));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*relative/);
+  });
+
+  it("rejects an absolute from, which would read outside the source tree", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ ...artifact, from: "/tmp/app" }] } })));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*relative/);
+  });
+
+  it("rejects ops.install on a service with no working directory to install into", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ install: { artifacts: [artifact] } })));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*workingDirectory/);
+  });
+
+  it("keeps ops.install across a dashboard edit that rewrites the registry", async () => {
+    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [artifact] } })));
+    const state = await loadRegistry(registryPath);
+    await setEnabled(state, registryPath, "svc1", false);
+    const reloaded = await loadRegistry(registryPath);
+    expect(reloaded.services[0].ops?.install?.artifacts).toEqual([artifact]);
   });
 });

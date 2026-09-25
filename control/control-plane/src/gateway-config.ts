@@ -1,9 +1,14 @@
 import { Hono } from 'hono'
-import { readFile, writeFile, rename, mkdir, readdir, unlink } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises'
+import { writeFileAtomic } from '../../shared/src/atomic-write'
+import { reloadRegistry } from '../../shared/src/registry'
+import { deriveHealthMap, deriveHealth } from '../../shared/src/events'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { CHUNK_STRATEGIES } from '../../../shared/types'
-import type { Service, ServiceWithHealth } from '../../../shared/types'
+import type { Service, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
+import type { AssembledRoster } from './roster-assembly'
+import { voiceModeProviders, type VoiceModeProvider } from './voice-roster'
 
 export interface ModelChunkingPref {
   chunking?: { mode?: string; minWords?: number; maxWords?: number }
@@ -41,23 +46,31 @@ export interface PlatformConfig {
   }
   voice?: {
     enabled?: boolean
+    /** What a voice session does when a voice server it wants — TTS or STT —
+     * is held by another session. `ask` (default) shows a dialog offering to
+     * take it over; `always` takes over without asking. */
+    takeover?: 'ask' | 'always'
     tts?: {
-      providers?: Array<{
-        serviceId: string
-        name?: string
-        models: Array<{
-          id: string
-          voices: Array<{ id: string; name: string }>
-        }>
-      }>
+      /** Roster ids: `model` names a roster model, `voice` a roster voice or
+       * one of the model's presets. What exists is the shard roster's to say. */
       selection?: { serviceId: string; model: string; voice: string; speed?: number }
       options?: { chunkStrategy?: string | null; minChunkWords?: number | null; maxChunkWords?: number | null }
+      /** Keyed serviceId -> roster model id. */
       modelPrefs?: Record<string, Record<string, ModelChunkingPref>>
       settingsScope?: 'global' | 'per-model'
     }
     stt?: {
       serviceId?: string
-      options?: Array<{ serviceId: string; name: string }>
+      /** Which model a voice session loads before its first utterance. The STT
+       * server starts holding nothing and never loads implicitly. */
+      model?: string
+      /** Which half of a model reporting kind `both` to load. Consulted only
+       * there: a model that does one thing is not a choice. */
+      preferStreaming?: boolean
+      /** Which streaming latency tier to load, for a model declaring several.
+       * A tier is a parameter over one set of weights, not a model. */
+      chunkMs?: number
+      options?: Array<{ serviceId: string; name: string; sessions?: boolean }>
       [key: string]: unknown
     }
     debug?: {
@@ -78,6 +91,48 @@ export type VoiceSelectionPatch = {
   settingsScope?: 'global' | 'per-model'
   sttServiceId?: string
   saveMicSamples?: boolean
+  takeover?: 'ask' | 'always'
+  /** Merged field by field into `voice.stt.vad`. */
+  vad?: Partial<Record<VadTuningField, number>>
+  /** Merged field by field into `voice.stt.turnTaking`. */
+  turnTaking?: Partial<Record<TurnTakingTuningField, number>>
+}
+
+/** The listening fields the voice settings dialog tunes, and the bound each
+ * value must fall within. A probability stays within [0, 1]; a duration only
+ * has to be non-negative. */
+const VAD_TUNING = {
+  minSpeechDurationS: 'duration',
+  minSpeechProb: 'probability',
+} as const
+const TURN_TAKING_TUNING = {
+  pauseThresholdMs: 'duration',
+  commitMinDelayMs: 'duration',
+  commitMaxDelayMs: 'duration',
+  smartTurnThreshold: 'probability',
+  smartTurnLowCutoff: 'probability',
+} as const
+type VadTuningField = keyof typeof VAD_TUNING
+type TurnTakingTuningField = keyof typeof TURN_TAKING_TUNING
+
+function validateTuning(
+  section: string,
+  patch: Record<string, unknown>,
+  bounds: Record<string, 'duration' | 'probability'>,
+): void {
+  if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
+    throw new ValidationError(`${section} must be an object`)
+  }
+  for (const [field, value] of Object.entries(patch)) {
+    const bound = bounds[field]
+    if (!bound) throw new ValidationError(`unknown field "${field}" in ${section}`)
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      throw new ValidationError(`${section}.${field} must be a non-negative number`)
+    }
+    if (bound === 'probability' && value > 1) {
+      throw new ValidationError(`${section}.${field} must be between 0 and 1`)
+    }
+  }
 }
 
 /** Source of service metadata for voice-config enrichment. Returns services from all known nodes. */
@@ -106,7 +161,6 @@ export function resolveConfigValue(value: string | undefined): string | undefine
 export async function loadConfig(configPath: string): Promise<PlatformConfig> {
   const raw = await readFile(configPath, 'utf-8')
   const config = JSON.parse(raw) as PlatformConfig
-  mergeDuplicateProviders(config)
   return config
 }
 
@@ -125,47 +179,21 @@ export async function reloadConfig(configPath: string, target: PlatformConfig): 
   Object.assign(target, fresh)
 }
 
-/**
- * Coalesce TTS providers that share a serviceId. Multiple entries pointing
- * at the same backend service usually mean the author wanted to group models
- * by display name; the UI sees them as duplicate dropdown items keyed by
- * the same value, which is confusing. Merge in place: keep the first entry's
- * name, concatenate models[] from subsequent duplicates. Logs a warning so
- * the source config gets cleaned up.
- */
-function mergeDuplicateProviders(config: PlatformConfig): void {
-  const providers = config.voice?.tts?.providers
-  if (!providers || providers.length < 2) return
-  const merged: typeof providers = []
-  const bySid = new Map<string, typeof providers[number]>()
-  for (const p of providers) {
-    const existing = bySid.get(p.serviceId)
-    if (existing) {
-      console.warn(
-        `[config] merging duplicate TTS provider serviceId="${p.serviceId}" ` +
-        `(name="${p.name ?? ''}") into first entry (name="${existing.name ?? ''}"). ` +
-        `Combine these in config.json — every provider entry must have a unique serviceId.`
-      )
-      existing.models.push(...p.models)
-    } else {
-      bySid.set(p.serviceId, p)
-      merged.push(p)
-    }
-  }
-  config.voice!.tts!.providers = merged
-}
-
 export async function updateVoiceSelection(
   configPath: string,
   config: PlatformConfig,
   patch: VoiceSelectionPatch,
-  getServices?: ServiceLookup
+  getServices?: ServiceLookup,
+  getProviders?: () => VoiceModeProvider[],
+  /** A named service resolving to no provider is a 503 only while some
+   *  shard here has never been polled; otherwise it's an ordinary 400. */
+  neverPolledHosts?: () => string[],
 ): Promise<PlatformConfig['voice']> {
   if (!config.voice) {
     throw new Error('Voice not configured')
   }
 
-  const providers = config.voice.tts?.providers ?? []
+  const providers = getProviders ? getProviders() : []
 
   // Validate serviceId/model/voice if provided
   if (patch.serviceId !== undefined || patch.model !== undefined || patch.voice !== undefined) {
@@ -176,6 +204,9 @@ export async function updateVoiceSelection(
     if (serviceId !== undefined) {
       const provider = providers.find(p => p.serviceId === serviceId)
       if (!provider) {
+        if ((neverPolledHosts?.() ?? []).length > 0) {
+          throw new RosterUnavailableError(`serviceId "${serviceId}" cannot be checked — a shard has never been polled`)
+        }
         throw new ValidationError(`unknown serviceId "${serviceId}"`)
       }
       if (model !== undefined) {
@@ -276,6 +307,17 @@ export async function updateVoiceSelection(
     }
   }
 
+  if (patch.vad !== undefined) validateTuning('vad', patch.vad, VAD_TUNING)
+  if (patch.turnTaking !== undefined) {
+    validateTuning('turnTaking', patch.turnTaking, TURN_TAKING_TUNING)
+    const current = (config.voice.stt?.turnTaking ?? {}) as Record<string, unknown>
+    const min = patch.turnTaking.commitMinDelayMs ?? current.commitMinDelayMs
+    const max = patch.turnTaking.commitMaxDelayMs ?? current.commitMaxDelayMs
+    if (typeof min === 'number' && typeof max === 'number' && min > max) {
+      throw new ValidationError('turnTaking.commitMinDelayMs must not exceed commitMaxDelayMs')
+    }
+  }
+
   // Apply patch
   const currentSelection = config.voice.tts?.selection ?? { serviceId: '', model: '', voice: '' }
   const currentOptions = config.voice.tts?.options ?? {}
@@ -325,6 +367,16 @@ export async function updateVoiceSelection(
     config.voice.stt.serviceId = patch.sttServiceId
   }
 
+  if (patch.vad !== undefined) {
+    if (!config.voice.stt) config.voice.stt = {}
+    config.voice.stt.vad = { ...(config.voice.stt.vad as object | undefined), ...patch.vad }
+  }
+
+  if (patch.turnTaking !== undefined) {
+    if (!config.voice.stt) config.voice.stt = {}
+    config.voice.stt.turnTaking = { ...(config.voice.stt.turnTaking as object | undefined), ...patch.turnTaking }
+  }
+
   if (patch.saveMicSamples !== undefined) {
     if (typeof patch.saveMicSamples !== 'boolean') {
       throw new ValidationError('saveMicSamples must be a boolean')
@@ -333,10 +385,14 @@ export async function updateVoiceSelection(
     config.voice.debug.saveMicSamples = patch.saveMicSamples
   }
 
-  // Atomic write
-  const tmpPath = join(dirname(configPath), `.config.tmp.${Date.now()}`)
-  await writeFile(tmpPath, JSON.stringify(config, null, 2))
-  await rename(tmpPath, configPath)
+  if (patch.takeover !== undefined) {
+    if (patch.takeover !== 'ask' && patch.takeover !== 'always') {
+      throw new ValidationError("takeover must be 'ask' or 'always'")
+    }
+    config.voice.takeover = patch.takeover
+  }
+
+  await writeFileAtomic(configPath, JSON.stringify(config, null, 2))
 
   return config.voice
 }
@@ -345,6 +401,13 @@ export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'ValidationError'
+  }
+}
+
+export class RosterUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RosterUnavailableError'
   }
 }
 
@@ -361,9 +424,7 @@ export async function updateDefaultAgent(
   if (!config.integrations.openclaw) config.integrations.openclaw = {}
   config.integrations.openclaw.defaultAgent = agentId
 
-  const tmpPath = join(dirname(configPath), `.config.tmp.${Date.now()}`)
-  await writeFile(tmpPath, JSON.stringify(config, null, 2))
-  await rename(tmpPath, configPath)
+  await writeFileAtomic(configPath, JSON.stringify(config, null, 2))
 
   return agentId
 }
@@ -386,9 +447,7 @@ export async function updateLastSession(
   if (!config.integrations.openclaw.lastSessionByAgent) config.integrations.openclaw.lastSessionByAgent = {}
   config.integrations.openclaw.lastSessionByAgent[agentId] = sessionName
 
-  const tmpPath = join(dirname(configPath), `.config.tmp.${Date.now()}`)
-  await writeFile(tmpPath, JSON.stringify(config, null, 2))
-  await rename(tmpPath, configPath)
+  await writeFileAtomic(configPath, JSON.stringify(config, null, 2))
 
   return config.integrations.openclaw.lastSessionByAgent
 }
@@ -466,37 +525,31 @@ export function registerVoiceConfig(
   config: PlatformConfig,
   configPath?: string,
   getServices?: ServiceLookup,
+  /** An assembly with no providers means it can't be read — the control
+   *  plane always has at least its own (possibly empty) roster. */
+  getAssembly?: () => AssembledRoster,
+  neverPolledHosts?: () => string[],
 ) {
-  app.get('/api/voice', (c) => {
+  const getProviders = (): VoiceModeProvider[] => voiceModeProviders(getAssembly ? getAssembly() : { providers: [], voices: [], collisions: [] })
+
+  app.get('/api/voice', async (c) => {
     if (!config.voice) {
       return c.json({ error: 'Voice not configured' }, 503)
     }
-    const services = getServices ? getServices() : []
-    const nameFor = (id: string): string | undefined => {
-      const svc = services.find(s => s.id === id)
-      return svc?.name ?? undefined
-    }
-
-    const enrichedProviders = (config.voice.tts?.providers ?? []).map(p => ({
-      ...p,
-      name: nameFor(p.serviceId) ?? p.serviceId,
-    }))
-
-    const sttOptions = services
+    const assembledProviders = getAssembly ? getAssembly().providers : []
+    const sttOptions = (getServices ? getServices() : [])
       .filter(s => s.capabilityId === 'stt')
-      .map(s => ({ serviceId: s.id, name: s.name ?? s.id }))
+      .map(s => ({
+        serviceId: s.id,
+        name: s.name ?? s.id,
+        sessions: assembledProviders.find(p => p.serviceId === s.id)?.sessions ?? false,
+      }))
 
-    const enriched: NonNullable<PlatformConfig['voice']> = {
+    return c.json({
       ...config.voice,
-      tts: config.voice.tts
-        ? { ...config.voice.tts, providers: enrichedProviders }
-        : config.voice.tts,
-      stt: {
-        ...(config.voice.stt ?? {}),
-        options: sttOptions,
-      },
-    }
-    return c.json(enriched)
+      tts: { ...(config.voice.tts ?? {}), providers: getProviders() },
+      stt: { ...(config.voice.stt ?? {}), options: sttOptions },
+    })
   })
 
   app.patch('/api/voice/selection', async (c) => {
@@ -515,11 +568,14 @@ export function registerVoiceConfig(
     }
 
     try {
-      const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices)
+      const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices, getProviders, neverPolledHosts)
       return c.json(updatedVoice)
     } catch (err) {
       if (err instanceof ValidationError) {
         return c.json({ error: err.message }, 400)
+      }
+      if (err instanceof RosterUnavailableError) {
+        return c.json({ error: err.message }, 503)
       }
       throw err
     }
@@ -569,17 +625,61 @@ export function registerVoiceDebug(app: Hono<any>, config: PlatformConfig) {
   })
 }
 
-export function registerConfigReload(app: Hono<any>, config: PlatformConfig, configPath?: string) {
+export interface ConfigReloadDeps {
+  config: PlatformConfig
+  configPath?: string
+  registry: Registry
+  registryPath: string
+  eventsPath: string
+  shards: Shard[]
+  reloadShard: (endpoint: string) => Promise<ShardReloadResponse>
+  pollShard: (hostId: string) => Promise<void>
+}
+
+/** Covers only the control plane's local services; a shard-hosted service's
+ *  removal is reported in the shard's own part of the reload response. */
+async function isLocalServiceRunning(eventsPath: string): Promise<(serviceId: string) => boolean> {
+  const healthMap = await deriveHealthMap(eventsPath)
+  return (serviceId: string) =>
+    ["healthy", "degraded", "timed_out"].includes(deriveHealth(healthMap.get(serviceId) ?? null))
+}
+
+export function registerConfigReload(app: Hono<any>, deps: ConfigReloadDeps) {
   app.post('/api/config/reload', async (c) => {
+    const { config, configPath, registry, registryPath, eventsPath, shards, reloadShard, pollShard } = deps
+
+    let configResult: PartResult
     if (!configPath) {
-      return c.json({ error: 'Config path not set' }, 500)
+      configResult = { ok: false, error: 'Config path not set' }
+    } else {
+      try {
+        await reloadConfig(configPath, config)
+        configResult = { ok: true }
+      } catch (err) {
+        configResult = { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
-    try {
-      await reloadConfig(configPath, config)
-      return c.json({ ok: true, version: config.version })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      return c.json({ error: `failed to reload config: ${message}` }, 500)
+
+    const isRunning = await isLocalServiceRunning(eventsPath)
+    const registryResult = await reloadRegistry(registryPath, registry, isRunning)
+    const warnings: ReloadWarning[] = registryResult.ok ? registryResult.warnings : []
+
+    const shardResults: Record<string, PartResult> = {}
+    for (const shard of shards) {
+      const result = await reloadShard(shard.endpoint)
+      shardResults[shard.hostId] = result.registry
+      warnings.push(...result.warnings)
+      // Polled even if the reload failed, rather than waiting out the interval.
+      await pollShard(shard.hostId)
     }
+
+    const response: ControlPlaneReloadResponse = {
+      config: configResult,
+      registry: registryResult.ok ? { ok: true } : { ok: false, error: registryResult.error },
+      shards: shardResults,
+      warnings,
+    }
+    const allOk = configResult.ok && registryResult.ok && Object.values(shardResults).every(r => r.ok)
+    return c.json(response, allOk ? 200 : 500)
   })
 }

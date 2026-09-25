@@ -11,6 +11,7 @@ let tmpDir: string;
 let registryPath: string;
 let eventsPath: string;
 let mockShardServer: ReturnType<typeof Bun.serve>;
+const createdApps: Awaited<ReturnType<typeof createControlPlaneApp>>[] = [];
 
 const REGISTRY: Registry = {
   version: 2,
@@ -92,9 +93,9 @@ beforeEach(async () => {
         });
       }
 
-      if (url.pathname === "/api/services/stt-parakeet" && req.method === "GET") {
+      if (url.pathname === "/api/services/stt-fluid" && req.method === "GET") {
         return Response.json({
-          id: "stt-parakeet",
+          id: "stt-fluid",
           capabilityId: "stt",
           hostId: "gpu-machine",
           permissions: { enabled: true },
@@ -106,7 +107,7 @@ beforeEach(async () => {
             timestamp: new Date().toISOString(),
             type: "service.up",
             subjectType: "service",
-            subjectId: "stt-parakeet",
+            subjectId: "stt-fluid",
             data: { latencyMs: 8 },
             actor: "system",
           },
@@ -134,7 +135,7 @@ beforeEach(async () => {
             },
           },
           {
-            id: "stt-parakeet",
+            id: "stt-fluid",
             capabilityId: "stt",
             hostId: "gpu-machine",
             permissions: { enabled: true },
@@ -201,6 +202,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const a of createdApps) a.stopShardPoll?.();
+  createdApps.length = 0;
   delete process.env.BANTER_SHARD_POLL_INTERVAL_MS;
   mockShardServer.stop(true);
   await rm(tmpDir, { recursive: true, force: true });
@@ -215,6 +218,7 @@ describe("shard-app: service listing and merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     // Wait for initial poll
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -229,7 +233,7 @@ describe("shard-app: service listing and merge", () => {
     expect(ids).toContain("control");
     expect(ids).toContain("dashboard");
     expect(ids).toContain("tts-mlx-audio");
-    expect(ids).toContain("stt-parakeet");
+    expect(ids).toContain("stt-fluid");
   });
 
   it("GET /api/services/:id returns a local service", async () => {
@@ -240,6 +244,7 @@ describe("shard-app: service listing and merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     const res = await app.fetch(new Request("http://localhost/api/services/dashboard"));
     expect(res.status).toBe(200);
@@ -257,6 +262,7 @@ describe("shard-app: service listing and merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     // Wait for initial poll
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -271,7 +277,7 @@ describe("shard-app: service listing and merge", () => {
     expect(svc.health).toBe("healthy");
   });
 
-  it("GET /api/services/:id returns live health for stt-parakeet", async () => {
+  it("GET /api/services/:id returns live health for stt-fluid", async () => {
     const app = await createControlPlaneApp({
       registryPath,
       eventsPath,
@@ -279,20 +285,25 @@ describe("shard-app: service listing and merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
-    // Wait for initial poll — list endpoint returns "unknown" for stt-parakeet
+    // Wait for initial poll — list endpoint returns "unknown" for stt-fluid
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const res = await app.fetch(new Request("http://localhost/api/services/stt-parakeet"));
+    const res = await app.fetch(new Request("http://localhost/api/services/stt-fluid"));
     expect(res.status).toBe(200);
 
     const svc = await res.json();
-    expect(svc.id).toBe("stt-parakeet");
+    expect(svc.id).toBe("stt-fluid");
     // Live fetch returns "healthy" even though the list cache had "unknown"
     expect(svc.health).toBe("healthy");
   });
 
-  it("GET /api/services/:id falls back to cache when shard is unreachable", async () => {
+  // The cached copy comes from the list route and predates the request, so it
+  // cannot answer whether a start issued moments ago is still running. Saying
+  // so is the point: a caller that reads a stale record as current concludes a
+  // running start has finished and failed.
+  it("GET /api/services/:id reports the shard unreachable rather than serving cache", async () => {
     const app = await createControlPlaneApp({
       registryPath,
       eventsPath,
@@ -300,6 +311,7 @@ describe("shard-app: service listing and merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     // Wait for initial poll to populate cache
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -308,12 +320,10 @@ describe("shard-app: service listing and merge", () => {
     mockShardServer.stop(true);
 
     const res = await app.fetch(new Request("http://localhost/api/services/tts-mlx-audio"));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
 
-    const svc = await res.json();
-    expect(svc.id).toBe("tts-mlx-audio");
-    // Falls back to cached data instead of erroring
-    expect(svc.hostId).toBe("gpu-machine");
+    const body = await res.json();
+    expect(body.error).toContain("shard unreachable");
   });
 
   it("GET /api/services/:id returns 404 for unknown service", async () => {
@@ -324,6 +334,7 @@ describe("shard-app: service listing and merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     const res = await app.fetch(new Request("http://localhost/api/services/unknown-svc"));
     expect(res.status).toBe(404);
@@ -340,6 +351,7 @@ describe("shard-app: lifecycle action routing", () => {
       runFn: async (cmd) => { cmds.push(cmd); return { stdout: "", stderr: "", exitCode: 0 }; },
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     const res = await app.fetch(
       new Request("http://localhost/api/services/dashboard/start", { method: "POST" })
@@ -356,6 +368,7 @@ describe("shard-app: lifecycle action routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     // Wait for initial poll
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -374,6 +387,7 @@ describe("shard-app: lifecycle action routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -391,6 +405,7 @@ describe("shard-app: lifecycle action routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -408,6 +423,7 @@ describe("shard-app: lifecycle action routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -425,6 +441,7 @@ describe("shard-app: lifecycle action routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -448,6 +465,7 @@ describe("shard-app: PATCH routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     const res = await app.fetch(
       new Request("http://localhost/api/services/dashboard", {
@@ -470,6 +488,7 @@ describe("shard-app: PATCH routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -494,6 +513,7 @@ describe("shard-app: PATCH routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -517,6 +537,7 @@ describe("shard-app: events merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     // Write a local event
     await appendEvent(eventsPath, {
@@ -544,6 +565,7 @@ describe("shard-app: events merge", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -562,6 +584,7 @@ describe("shard-app: health check routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -582,6 +605,7 @@ describe("shard-app: health check routing", () => {
       runFn: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       pollHealthFn: async () => true,
     });
+    createdApps.push(app);
 
     const res = await app.fetch(
       new Request("http://localhost/api/services/dashboard/check", { method: "POST" })

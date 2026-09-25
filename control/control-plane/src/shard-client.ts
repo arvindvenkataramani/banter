@@ -1,4 +1,4 @@
-import type { ServiceWithHealth, Event } from "../../../shared/types";
+import type { ServiceWithHealth, Event, NodeRoster, ShardReloadResponse } from "../../../shared/types";
 
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -112,6 +112,29 @@ export async function fetchShardEvents(
     const res = await fetch(url.toString(), { signal: controller.signal });
     if (!res.ok) throw await shardResponseError(endpoint, res);
     return await res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Never throws. An unreachable shard, a non-2xx response, a 404 (shard
+ *  older than this route) or a body missing `registry` all resolve to
+ *  `{ registry: { ok: false, error }, warnings: [] }`. */
+export async function reloadShard(endpoint: string): Promise<ShardReloadResponse> {
+  const url = `${endpoint}/api/config/reload`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, { method: "POST", signal: controller.signal });
+    let data: any = null;
+    try { data = await res.json(); } catch { /* empty or non-JSON body */ }
+    if (data && typeof data.registry === "object" && data.registry !== null) {
+      return { registry: data.registry, warnings: Array.isArray(data.warnings) ? data.warnings : [] };
+    }
+    return { registry: { ok: false, error: data?.error ?? `shard returned ${res.status}` }, warnings: [] };
+  } catch (err) {
+    return { registry: { ok: false, error: err instanceof Error ? err.message : String(err) }, warnings: [] };
   } finally {
     clearTimeout(timeout);
   }
@@ -240,6 +263,57 @@ export async function proxyShardCheck(
     return { ok: true, status: res.status, data };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Tell the shard a service is still in use, so its idle loop defers eviction.
+ * Activity is runtime state and belongs in the shard's ping map — the
+ * `idleUnload` flag in the registry is declared policy and is never written to
+ * say "busy right now". */
+export async function proxyShardPing(
+  endpoint: string,
+  serviceId: string
+): Promise<{ ok: boolean; status?: number; data?: any; error?: string }> {
+  const url = `${endpoint}/ping/${serviceId}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, { method: "POST", signal: controller.signal });
+    let data: any = null;
+    try { data = await res.json(); } catch { /* empty or non-JSON body */ }
+    if (!res.ok) {
+      return { ok: false, status: res.status, data, error: data?.error ?? `shard returned ${res.status}` };
+    }
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Null only for a 404 (shard older than this route) or a malformed body.
+ *  Any other failure throws — the poller keeps the last cached roster
+ *  rather than clearing it. */
+export async function fetchShardRoster(endpoint: string): Promise<NodeRoster | null> {
+  const url = `${endpoint}/api/roster`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Shard returned ${res.status}`);
+    const body = await res.json();
+    if (!isRecord(body) || !isRecord(body.providers) || !Array.isArray(body.voices)) return null;
+    return body as unknown as NodeRoster;
   } finally {
     clearTimeout(timeout);
   }

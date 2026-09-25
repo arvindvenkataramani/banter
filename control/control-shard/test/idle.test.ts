@@ -30,6 +30,26 @@ function makeService(overrides: Partial<Service> = {}): Service {
   };
 }
 
+
+function makeDeps(services: Service[], pingMap: Map<string, number>) {
+  return {
+    registryState: {
+      version: 2,
+      type: "shard",
+      servicesRoot: tmpDir,
+      hosts: [],
+      capabilities: [],
+      services,
+    },
+    eventsPath,
+    getFreeMem: async () => 8 * 1024 * 1024 * 1024,
+    checkMemoryBudget: async () => ({ ok: true }),
+    loadService: async () => ({ ok: true }),
+    unloadService: async () => ({ ok: true }),
+    pingMap,
+  } as any;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("startIdleLoop() — eviction decisions", () => {
@@ -109,6 +129,24 @@ describe("startIdleLoop() — eviction decisions", () => {
     expect(evictMock).toHaveBeenCalled();
   });
 
+  it("does not let a ping from before the current load evict a freshly loaded service", async () => {
+    // The ping map outlives an unload. A service pinged, evicted, then loaded
+    // again carries the old ping, which reads as long idle on the first tick.
+    const evictMock = mock(() => Promise.resolve());
+    const now = Date.now();
+    const svc = makeService({ id: "svc1", lifecycle: { idleTimeout: 5000, idleUnload: true } });
+    svc.state = { loadTime: now - 1000 }; // loaded 1 second ago
+    const pingMap = new Map([["svc1", now - 60000]]); // pinged during an earlier load
+
+    const { startIdleLoop } = await import("../src/idle");
+    const loop = startIdleLoop([svc], pingMap, evictMock, eventsPath, 10);
+
+    await new Promise(r => setTimeout(r, 50));
+    loop.stop();
+
+    expect(evictMock).not.toHaveBeenCalled();
+  });
+
   it("evicts only timed-out services when multiple services are registered and only some have expired", async () => {
     const evictMock = mock((svc: Service) => { svc.state = { ...svc.state, loadTime: undefined }; return Promise.resolve(); });
     const now = Date.now();
@@ -176,51 +214,54 @@ describe("startIdleLoop() — eviction decisions", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("POST /ping/:service — effect on idle clock", () => {
+describe("POST /ping/:service — status codes", () => {
   it("returns 200 for a known service id", async () => {
-    const { createPingEndpoint } = await import("../src/idle");
+    const { createShardApp } = await import("../src/shard-api");
     const svc = makeService({ id: "svc1" });
-    const pingMap = new Map<string, number>();
-    const pingHandler = createPingEndpoint([svc], pingMap);
+    const app = createShardApp(makeDeps([svc], new Map()));
 
-    const result = await pingHandler("svc1");
-    expect(result.status).toBe(200);
+    const res = await app.fetch(new Request("http://localhost/ping/svc1", { method: "POST" }));
+    expect(res.status).toBe(200);
   });
 
   it("returns 404 for an unknown service id", async () => {
-    const { createPingEndpoint } = await import("../src/idle");
+    const { createShardApp } = await import("../src/shard-api");
     const svc = makeService({ id: "svc1" });
-    const pingMap = new Map<string, number>();
-    const pingHandler = createPingEndpoint([svc], pingMap);
+    const app = createShardApp(makeDeps([svc], new Map()));
 
-    const result = await pingHandler("unknown-svc");
-    expect(result.status).toBe(404);
+    const res = await app.fetch(new Request("http://localhost/ping/nope", { method: "POST" }));
+    expect(res.status).toBe(404);
   });
+});
 
-  it("a ping prevents eviction on the next tick (resets the idle clock)", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("POST /ping/:service — reaches the eviction loop", () => {
+  // The endpoint and the eviction loop have to share one ping map. They used
+  // not to: createShardApp built its own, so pings landed in a map the loop
+  // never read and eviction ran off loadTime regardless of activity.
+  it("a ping through the endpoint prevents the next eviction tick", async () => {
+    const { createShardApp } = await import("../src/shard-api");
+    const { startIdleLoop } = await import("../src/idle");
+
     const evictMock = mock(() => Promise.resolve());
-    const now = Date.now();
-    const svc = makeService({ id: "svc1", lifecycle: { idleTimeout: 5000, idleUnload: true } });
-    const pingMap = new Map([["svc1", now - 10000]]); // old ping
+    const svc = makeService({
+      id: "svc1",
+      lifecycle: { idleTimeout: 5000, idleUnload: true },
+      state: { loadTime: Date.now() - 10000 },
+    } as any);
+    const pingMap = new Map<string, number>();
 
-    const { startIdleLoop, createPingEndpoint } = await import("../src/idle");
+    const app = createShardApp(makeDeps([svc], pingMap));
+
+    // Ping first: the service is well past its idle timeout on loadTime alone,
+    // so only a ping the loop can see keeps it alive.
+    await app.fetch(new Request("http://localhost/ping/svc1", { method: "POST" }));
+
     const loop = startIdleLoop([svc], pingMap, evictMock, eventsPath, 10);
-    const pingHandler = createPingEndpoint([svc], pingMap);
-
-    // Let the first eviction happen
-    await new Promise(r => setTimeout(r, 20));
-    const countAfterFirstRun = evictMock.mock.calls.length;
-
-    // Now ping the service to reset the clock
-    pingMap.set("svc1", Date.now());
-
-    // Wait for the next loop iteration
     await new Promise(r => setTimeout(r, 30));
-    const countAfterPing = evictMock.mock.calls.length;
-
     loop.stop();
 
-    // The eviction count should not increase after the ping
-    expect(countAfterPing).toBe(countAfterFirstRun);
+    expect(evictMock).not.toHaveBeenCalled();
   });
 });

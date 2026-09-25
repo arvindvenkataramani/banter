@@ -3,13 +3,40 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEvents } from "../src/events";
-import { clearLocks } from "../src/lifecycle";
+import { clearLocks, clearRestartCounts, startService as realStartService } from "../src/lifecycle";
 import type { Service } from "../../../shared/types";
+import type { RunFn as SharedRunFn, PollHealthFn as SharedPollHealthFn, SpawnFn, ProbeFn } from "../src/tailscale";
+
+// startService's fast path probes localhost for an already-running instance
+// before falling through to the full sequence these tests exercise. Real
+// fetch() would make that outcome depend on what (if anything) is actually
+// listening on the test's chosen port — pin it to "not running" so every
+// test deterministically reaches the code path it's testing.
+//
+// "Not running" must be signaled by throwing, not by resolving with
+// { ok: false } — a connection refused (nothing listening) throws from
+// fetch(), while { ok: false } is what a *reachable* service serving a
+// non-2xx response produces. startService's healthExpect: "reachable"
+// handling treats any resolved probe (even { ok: false }) as "already up",
+// so a resolving fake falsely looks like a live, non-2xx-answering service.
+const notRunningProbeFn: ProbeFn = async () => {
+  throw new Error("ECONNREFUSED (test stub: nothing listening)");
+};
+
+function startService(
+  runFn: SharedRunFn,
+  pollHealthFn: SharedPollHealthFn,
+  svc: Service,
+  eventsPath: string,
+  spawnFn?: SpawnFn
+): ReturnType<typeof realStartService> {
+  return realStartService(runFn, pollHealthFn, svc, eventsPath, spawnFn, notRunningProbeFn);
+}
 
 // ── Types for injectable dependencies ───────────────────────────────────────
 
 type RunFn = (cmd: string[]) => Promise<{ stdout: string; exitCode: number; stderr: string }>;
-type PollHealthFn = (endpoint: string, timeout: number) => Promise<boolean>;
+type PollHealthFn = (endpoint: string, timeout: number, opts?: { acceptsAnyResponse?: boolean }) => Promise<boolean>;
 type SpawnProcessFn = (cmd: string, opts: { cwd?: string; env?: Record<string, string> }) => {
   pid: number;
   exited: Promise<number>;
@@ -23,6 +50,7 @@ let eventsPath: string;
 
 beforeEach(async () => {
   clearLocks();
+  clearRestartCounts();
   tmpDir = await mkdtemp(join(tmpdir(), "lifecycle-test-"));
   eventsPath = join(tmpDir, "events.jsonl");
 });
@@ -91,7 +119,6 @@ describe("runner command derivation", () => {
       const { runFn, calls } = trackingRunFn();
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({ runner: { type: "process", main: ".venv/bin/uvicorn server:app --port 8080" } });
       await startService(runFn, pollHealthFn, svc, eventsPath);
 
@@ -119,7 +146,6 @@ describe("runner command derivation", () => {
       const { runFn, calls } = trackingRunFn();
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "systemd", unit: "embedding", unitFile: "ops/systemd/embedding.service" },
         network: { port: 8767, healthPath: "/health", endpoint: "http://localhost:8767", tailscaleServe: false },
@@ -233,7 +259,6 @@ describe("runner command derivation", () => {
       const { runFn, calls } = trackingRunFn();
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
         network: { port: 6767, healthPath: "", tailscaleServe: false },
@@ -291,7 +316,6 @@ describe("runner command derivation", () => {
       };
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
         network: { port: 6767, healthPath: "", tailscaleServe: false },
@@ -305,7 +329,6 @@ describe("runner command derivation", () => {
       const runFn: RunFn = async () => ({ stdout: "", exitCode: 1, stderr: "paseo: command not found" });
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
         network: { port: 6767, healthPath: "", tailscaleServe: false },
@@ -384,7 +407,6 @@ describe("runner command derivation", () => {
         return { stdout: "", exitCode: 0, stderr: "" };
       };
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'" },
         network: { port: 6767, healthPath: "", tailscaleServe: false },
@@ -404,7 +426,6 @@ describe("runner command derivation", () => {
         return { stdout: "", exitCode: 0, stderr: "" };
       };
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
         network: { port: 6767, healthPath: "", tailscaleServe: false },
@@ -425,7 +446,6 @@ describe("runner command derivation", () => {
       };
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({
         runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
         network: { port: 6767, healthPath: "", tailscaleServe: false },
@@ -440,7 +460,6 @@ describe("runner command derivation", () => {
     it("start returns error for external services", async () => {
       const pollHealthFn: PollHealthFn = async () => true;
 
-      const { startService } = await import("../src/lifecycle");
       const svc = makeService({ runner: { type: "external" } });
       const result = await startService(successRunFn(), pollHealthFn, svc, eventsPath);
 
@@ -481,7 +500,6 @@ describe("startService — atomic lifecycle", () => {
       return true;
     };
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService();
     await startService(runFn, pollHealthFn, svc, eventsPath);
 
@@ -498,7 +516,6 @@ describe("startService — atomic lifecycle", () => {
       return true;
     };
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({
       network: { port: 9999, endpoint: "https://remote-host:9999", healthPath: "/healthz", healthTimeout: 5000 },
     });
@@ -514,7 +531,6 @@ describe("startService — atomic lifecycle", () => {
       return true;
     };
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({
       network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", healthTimeout: 5000 },
       lifecycle: { startupTime: 60000 },
@@ -527,7 +543,6 @@ describe("startService — atomic lifecycle", () => {
   it("emits service.up event after successful start", async () => {
     const pollHealthFn: PollHealthFn = async () => true;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService();
     await startService(successRunFn(), pollHealthFn, svc, eventsPath);
 
@@ -538,7 +553,6 @@ describe("startService — atomic lifecycle", () => {
   it("returns error if health poll times out", async () => {
     const pollHealthFn: PollHealthFn = async () => false;
 
-    const { startService } = await import("../src/lifecycle");
     // Use systemd runner so a stop command exists for cleanup
     const svc = makeService({
       runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
@@ -558,7 +572,6 @@ describe("startService — atomic lifecycle", () => {
     };
     const pollHealthFn: PollHealthFn = async () => false;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({
       runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
       network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false },
@@ -577,14 +590,13 @@ describe("startService — atomic lifecycle", () => {
     };
     const pollHealthFn: PollHealthFn = async () => false;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService();
     await startService(runFn, pollHealthFn, svc, eventsPath);
 
     expect(serveAdded).toBe(false);
   });
 
-  it("returns error if Tailscale Serve setup fails", async () => {
+  it("reports ok with stage serve if Tailscale Serve setup fails", async () => {
     const runFn: RunFn = async (cmd) => {
       // Serve add fails
       if (cmd[0] === "tailscale" && !cmd.includes("off") && !cmd.includes("status")) {
@@ -594,32 +606,35 @@ describe("startService — atomic lifecycle", () => {
     };
     const pollHealthFn: PollHealthFn = async () => true;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService();
     const result = await startService(runFn, pollHealthFn, svc, eventsPath);
 
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("tailscale");
+    expect(result.ok).toBe(true);
+    expect(result.stage).toBe("serve");
+    expect(result.error).toContain("serve failed");
   });
 
-  it("issues stop command after Tailscale Serve setup fails (systemd runner)", async () => {
+  it("does not issue a stop command after Tailscale Serve setup fails (systemd runner)", async () => {
+    // The start sequence runs an idempotent stop before spawning, so only a
+    // stop issued *after* the serve write counts as tearing the service down.
+    let serveFailed = false;
     let stopCalled = false;
     const runFn: RunFn = async (cmd) => {
       // Serve add fails
       if (cmd[0] === "tailscale" && !cmd.includes("off") && !cmd.includes("status")) {
+        serveFailed = true;
         return { stdout: "", exitCode: 1, stderr: "serve failed" };
       }
-      if (cmd.includes("stop") && cmd.includes("test-svc.service")) stopCalled = true;
+      if (serveFailed && cmd.includes("stop") && cmd.includes("test-svc.service")) stopCalled = true;
       return { stdout: "", exitCode: 0, stderr: "" };
     };
     const pollHealthFn: PollHealthFn = async () => true;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({
       runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
     });
     await startService(runFn, pollHealthFn, svc, eventsPath);
-    expect(stopCalled).toBe(true);
+    expect(stopCalled).toBe(false);
   });
 
   it("emits tailscale.serve_failed event when Tailscale Serve setup fails", async () => {
@@ -631,7 +646,6 @@ describe("startService — atomic lifecycle", () => {
     };
     const pollHealthFn: PollHealthFn = async () => true;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService();
     await startService(runFn, pollHealthFn, svc, eventsPath);
 
@@ -647,7 +661,6 @@ describe("startService — atomic lifecycle", () => {
     };
     const pollHealthFn: PollHealthFn = async () => true;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({ network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false } });
     await startService(runFn, pollHealthFn, svc, eventsPath);
 
@@ -664,7 +677,6 @@ describe("startService — atomic lifecycle", () => {
     };
     const pollHealthFn: PollHealthFn = async () => true;
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService();
     const result = await startService(runFn, pollHealthFn, svc, eventsPath);
 
@@ -839,7 +851,7 @@ describe("startService — fast path Tailscale Serve repair", () => {
     expect(upEvent?.data).toEqual({ alreadyRunning: true });
   });
 
-  it("returns an error if repairing the Tailscale Serve entry fails", async () => {
+  it("reports ok with stage serve if repairing the Tailscale Serve entry fails", async () => {
     mockHealthyFetch();
     const runFn: RunFn = async (cmd) => {
       if (cmd.includes("status") && cmd.includes("--json")) {
@@ -855,8 +867,31 @@ describe("startService — fast path Tailscale Serve repair", () => {
     const svc = makeService();
     const result = await startService(runFn, pollHealthFn, svc, eventsPath);
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    expect(result.stage).toBe("serve");
+    expect(result.processStarted).toBe(true);
     expect(result.error).toContain("etag mismatch");
+  });
+
+  // healthExpect: "reachable" services (e.g. an MCP streamable-HTTP endpoint that
+  // 406s a plain GET) must be adopted as already-running on a non-2xx response,
+  // the same leniency checkService already applies to the periodic health check.
+  it("adopts an already-running reachable-only service even when its probe returns non-2xx", async () => {
+    globalThis.fetch = (async () => new Response(null, { status: 406 })) as typeof fetch;
+    const { runFn } = unservedRunFn();
+    const pollHealthFn: PollHealthFn = async () => true;
+
+    const { startService, clearChildren } = await import("../src/lifecycle");
+    clearChildren();
+    const svc = makeService({
+      network: { port: 8080, healthPath: "/mcp", endpoint: "http://localhost:8080", tailscaleServe: true, healthExpect: "reachable" },
+    });
+    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
+
+    expect(result.ok).toBe(true);
+    const events = await readEvents(eventsPath);
+    const upEvent = events.find(e => e.type === "service.up" && e.subjectId === "test-svc");
+    expect(upEvent?.data).toEqual({ alreadyRunning: true, serveRepaired: true });
   });
 });
 
@@ -1092,7 +1127,6 @@ describe("startupTime", () => {
       return true;
     };
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({
       network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", healthTimeout: 5000 },
       lifecycle: { startupTime: 120000 },
@@ -1111,7 +1145,6 @@ describe("startupTime", () => {
       return true;
     };
 
-    const { startService } = await import("../src/lifecycle");
     const svc = makeService({ lifecycle: {} });
     // Remove startupTime to test default
     delete (svc as any).lifecycle.startupTime;
@@ -1163,5 +1196,88 @@ describe("lifecycle locking", () => {
     await startServiceWithLock(successRunFn(), pollHealthFn, svc, eventsPath);
 
     expect(isLocked(svc.id)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("crash detection — spawn-site exit wiring", () => {
+  // startService has to observe the child's exit itself. Wiring this in the
+  // entry points instead would leave restarted children unmonitored, since the
+  // restart path goes back through startService.
+  function makeSpawnFn() {
+    let resolveExit: ((code: number) => void) | undefined;
+    const killed = { value: false };
+    const spawnFn: SpawnFn = () => ({
+      kill: () => { killed.value = true; },
+      exited: new Promise<number>(r => { resolveExit = r; }),
+    });
+    return { spawnFn, exit: (code: number) => resolveExit!(code), killed };
+  }
+
+  it("emits service.crashed when a spawned child exits nonzero", async () => {
+    const svc = makeService({ id: "crash-1", lifecycle: { restartOnCrash: false } } as any);
+    const { spawnFn, exit } = makeSpawnFn();
+
+    await startService(successRunFn(), async () => true, svc, eventsPath, spawnFn);
+    exit(1);
+    await new Promise(r => setTimeout(r, 20));
+
+    const events = await readEvents(eventsPath);
+    const crashed = events.filter(e => e.type === "service.crashed" && e.subjectId === "crash-1");
+    expect(crashed.length).toBe(1);
+    expect(crashed[0]!.data).toMatchObject({ exitCode: 1 });
+  });
+
+  it("does not emit service.crashed when the service was deliberately stopped", async () => {
+    const { startService, stopService } = await import("../src/lifecycle");
+    const svc = makeService({ id: "crash-2", lifecycle: { restartOnCrash: true } } as any);
+    const { spawnFn, exit } = makeSpawnFn();
+
+    await startService(successRunFn(), async () => true, svc, eventsPath, spawnFn);
+    await stopService(successRunFn(), svc, eventsPath);
+    // A killed process still resolves `exited`; that must not read as a crash.
+    exit(143);
+    await new Promise(r => setTimeout(r, 20));
+
+    const events = await readEvents(eventsPath);
+    expect(events.filter(e => e.type === "service.crashed" && e.subjectId === "crash-2").length).toBe(0);
+  });
+
+  it("ignores an exit from a superseded child (restarted under the same id)", async () => {
+    const svc = makeService({ id: "crash-3", lifecycle: { restartOnCrash: false } } as any);
+    const first = makeSpawnFn();
+    const second = makeSpawnFn();
+
+    await startService(successRunFn(), async () => true, svc, eventsPath, first.spawnFn);
+    // A second start replaces the tracked child before the first one's exit lands.
+    await startService(successRunFn(), async () => true, svc, eventsPath, second.spawnFn);
+    first.exit(1);
+    await new Promise(r => setTimeout(r, 20));
+
+    const events = await readEvents(eventsPath);
+    expect(events.filter(e => e.type === "service.crashed" && e.subjectId === "crash-3").length).toBe(0);
+  });
+
+  it("restarts a crashed service when restartOnCrash is true", async () => {
+    const svc = makeService({
+      id: "crash-4",
+      lifecycle: { restartOnCrash: true, restartBackoff: 1, maxRestarts: 3 },
+    } as any);
+
+    let spawns = 0;
+    let resolveExit: ((code: number) => void) | undefined;
+    const spawnFn: SpawnFn = () => {
+      spawns++;
+      return { kill: () => {}, exited: new Promise<number>(r => { resolveExit = r; }) };
+    };
+
+    await startService(successRunFn(), async () => true, svc, eventsPath, spawnFn);
+    expect(spawns).toBe(1);
+
+    resolveExit!(1);
+    await new Promise(r => setTimeout(r, 60));
+
+    expect(spawns).toBe(2);
   });
 });

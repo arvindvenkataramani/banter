@@ -251,9 +251,13 @@ describe("managed runner health check", () => {
 
     const runFn = async (_cmd: string[]) => ({ stdout: '{"localDaemon":"running"}', exitCode: 0, stderr: "" });
     const svc = makeManagedService();
-    await checkService(svc, eventsPath, { bypassThreshold: true, runFn });
-
-    globalThis.fetch = originalFetch;
+    try {
+      await checkService(svc, eventsPath, { bypassThreshold: true, runFn });
+    } finally {
+      // Restored unconditionally: a throw here would otherwise leave the fake
+      // installed for every test file that runs after this one.
+      globalThis.fetch = originalFetch;
+    }
 
     const events = await readEvents(eventsPath, {});
     expect(events[0].type).toBe("service.up");

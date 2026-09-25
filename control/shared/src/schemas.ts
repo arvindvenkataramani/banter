@@ -78,15 +78,8 @@ export const ServiceRunnerSchema = z.discriminatedUnion("type", [
   }),
 ]).openapi("ServiceRunner");
 
-export const ServiceOpsCommandsSchema = z.object({
-  main: z.string().optional(),
-  start: z.string().optional(),
-  stop: z.string().optional(),
-  restart: z.string().optional(),
-  install: z.string().optional(),
-  uninstall: z.string().optional(),
-  enable: z.string().optional(),
-  disable: z.string().optional(),
+export const ServiceInstallSchema = z.object({
+  artifacts: z.array(z.object({ from: z.string(), to: z.string() })).min(1),
 });
 
 export const ServiceOpsEnvSchema = z.object({
@@ -95,7 +88,7 @@ export const ServiceOpsEnvSchema = z.object({
 });
 
 export const ServiceOpsSchema = z.object({
-  commands: ServiceOpsCommandsSchema.optional(),
+  install: ServiceInstallSchema.optional(),
   env: ServiceOpsEnvSchema.optional(),
 });
 
@@ -114,6 +107,7 @@ export const ServiceStateSchema = z.object({
 export const ServiceSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
+  notes: z.string().optional(),
   capabilityId: z.string(),
   hostId: z.string(),
   permissions: ServicePermissionsSchema,
@@ -127,6 +121,10 @@ export const ServiceSchema = z.object({
 export const ServiceWithHealthSchema = ServiceSchema.extend({
   health: HealthStateSchema,
   lastEvent: z.union([EventSchema, z.null()]),
+  pending: z.boolean().openapi({
+    description:
+      "A lifecycle operation is outstanding for this service. Clients waiting on a start continue only while this is true, so it is always present on a live response — an absent value ends the wait.",
+  }),
 }).openapi("ServiceWithHealth");
 
 // --- Common response schemas ---

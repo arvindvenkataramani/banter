@@ -1,10 +1,12 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { loadRegistry } from "../../shared/src/registry";
+import { emptyRoster } from "../../shared/src/roster";
 import { createApp } from "../../shared/src/api";
 import { startShardPollLoop } from "./shard-poller";
-import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardInfo, fetchShardService } from "./shard-client";
+import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardInfo, proxyShardPing, fetchShardService, reloadShard } from "./shard-client";
 import { registerGatewayConfig, registerVoiceConfig, registerVoiceDebug, registerConfigReload } from "./gateway-config";
+import { assembleRoster, type AssembledRoster } from "./roster-assembly";
 import * as cpRoutes from "./routes";
 import type { PlatformConfig } from "./gateway-config";
 import type { Service, ServiceWithHealth, Event, Shard, Registry } from "../../../shared/types";
@@ -81,6 +83,33 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     return poller ? poller.isShardOnline(hostId) : false;
   }
 
+  const controlHostId = registry.hosts.find((h) => h.role === "control")?.id ?? localHostId ?? "control";
+
+  function nameFor(serviceId: string): string | undefined {
+    return [...registry.services, ...allShardServices()].find((s) => s.id === serviceId)?.name ?? undefined;
+  }
+
+  // Built fresh per call, not cached — registry.roster and the poller's
+  // cache both update live, after startup.
+  function buildAssembly(): AssembledRoster {
+    return assembleRoster({
+      local: { hostId: controlHostId, roster: registry.roster ?? emptyRoster() },
+      shards: shards.map((s) => ({
+        hostId: s.hostId,
+        roster: poller ? poller.getShardRoster(s.hostId) : null,
+        reachable: shardIsOnline(s.hostId),
+      })),
+      nameFor,
+    });
+  }
+
+  // Host ids never successfully polled — a roster the assembler could not
+  // yet ask about, distinct from one it asked and got nothing back from.
+  function neverPolledHosts(): string[] {
+    if (!poller) return shards.map((s) => s.hostId);
+    return shards.filter((s) => poller!.getLastPoll(s.hostId) === 0).map((s) => s.hostId);
+  }
+
   // Helper: is this service in the local registry?
   function isLocal(id: string): boolean {
     return registry.services.some((s) => s.id === id);
@@ -142,7 +171,16 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     return c.json([...localServices, ...shardServices]);
   });
 
-  // GET /api/services/:id — local first, then live fetch from shard (cache fallback)
+  // GET /api/services/:id — local first, then live fetch from shard.
+  //
+  // This route answers a question about now: callers ask it to decide whether a
+  // service is usable, or whether a start they just issued is still running.
+  // The poller's cache cannot answer either — its newest entry may predate the
+  // request by a whole poll interval, and it comes from the list route, which
+  // does not carry `pending` at all. Serving it here would answer a question
+  // about the present with a record of the past, and the client has no way to
+  // tell the two apart. A caller that genuinely wants last-known state reads
+  // the list route, which is honestly a cache and polled as one.
   app.get("/api/services/:id", async (c) => {
     const id = c.req.param("id");
     if (isLocal(id)) {
@@ -152,17 +190,20 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     if (!cachedSvc) return c.json({ error: "service not found" }, 404);
 
     const endpoint = shardEndpointFor(cachedSvc.hostId);
-    if (!endpoint) return c.json(rewriteShardEndpoint(cachedSvc));
+    if (!endpoint) {
+      return c.json({ error: `no endpoint configured for host "${cachedSvc.hostId}"` }, 503);
+    }
 
     try {
       const liveSvc = await fetchShardService(endpoint, id);
-      if (liveSvc) {
-        if (poller) poller.updateCachedService(cachedSvc.hostId, liveSvc);
-        return c.json(rewriteShardEndpoint(liveSvc));
-      }
-      return c.json(rewriteShardEndpoint(cachedSvc));
-    } catch {
-      return c.json(rewriteShardEndpoint(cachedSvc));
+      // null is the shard's own 404: our cache lists the service, the node that
+      // owns it does not, and the owner is the authority.
+      if (!liveSvc) return c.json({ error: "service not found" }, 404);
+      if (poller) poller.updateCachedService(cachedSvc.hostId, liveSvc);
+      return c.json(rewriteShardEndpoint(liveSvc));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "unknown error";
+      return c.json({ error: `shard unreachable: ${reason}` }, 503);
     }
   });
 
@@ -225,6 +266,27 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     routeAction(c, c.req.param("id"), (ep) => proxyShardAction(ep, c.req.param("id"), "restart"))
   );
 
+  // POST /api/services/:id/ping — "this service is in use, don't evict it".
+  // Only the shard runs an idle loop, so a ping for a control-plane-local
+  // service is a no-op rather than an error: the caller need not know which
+  // node owns the service to keep it alive.
+  app.post("/api/services/:id/ping", async (c) => {
+    const id = c.req.param("id");
+    if (isLocal(id)) return c.json({ ok: true, evictable: false });
+
+    const shardSvc = allShardServices().find((s) => s.id === id);
+    if (!shardSvc) return c.json({ error: "service not found" }, 404);
+    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "shard is offline" }, 503);
+
+    const endpoint = shardEndpointFor(shardSvc.hostId);
+    if (!endpoint) return c.json({ error: "shard not found" }, 404);
+
+    // No poller refresh: a ping changes eviction timing, not anything the
+    // service list reports.
+    const result = await proxyShardPing(endpoint, id);
+    return c.json(result.data ?? { error: result.error }, (result.status ?? (result.ok ? 200 : 500)) as ContentfulStatusCode);
+  });
+
   app.patch("/api/services/:id/enabled", async (c) => {
     const id = c.req.param("id");
     if (isLocal(id)) return sharedApp.fetch(c.req.raw);
@@ -274,11 +336,24 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
   // Gateway + voice config
   if (config) {
     registerGatewayConfig(app, config, configPath)
-    registerVoiceConfig(app, config, configPath, () => [
-      ...registry.services,
-      ...allShardServices(),
-    ])
-    registerConfigReload(app, config, configPath)
+    registerVoiceConfig(
+      app,
+      config,
+      configPath,
+      () => [...registry.services, ...allShardServices()],
+      buildAssembly,
+      neverPolledHosts,
+    )
+    registerConfigReload(app, {
+      config,
+      configPath,
+      registry,
+      registryPath,
+      eventsPath,
+      shards,
+      reloadShard,
+      pollShard: (hostId) => poller?.pollShard(hostId) ?? Promise.resolve(),
+    })
     registerVoiceDebug(app, config)
   }
 

@@ -5,7 +5,7 @@ import { checkService, startHealthLoop } from "../../shared/src/health";
 import { serveStatic } from "../../shared/src/static";
 import { loadConfig } from "./gateway-config";
 import { resolveRuntimeSettings } from "./runtime-settings";
-import type { RunFn, PollHealthFn, SpawnFn } from "../../shared/src/tailscale";
+import { createRunFn, createSpawnFn, createPollHealthFn } from "../../shared/src/exec";
 
 // Bootstrap pointers: where to find the files. These stay in the environment
 // because a file cannot carry its own location. Both default to the deployed
@@ -25,49 +25,9 @@ const { port: PORT, host: HOST, eventsPath: EVENTS_PATH, healthIntervalMs: HEALT
 
 console.log(`Loaded registry: ${registry.services.length} services, ${registry.hosts.length} hosts`);
 
-// Real RunFn — runs a command via Bun.spawn, returns stdout/stderr/exitCode
-const runFn: RunFn = async (cmd) => {
-  const proc = Bun.spawn({ cmd, stdout: "pipe", stderr: "pipe", env: process.env });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { stdout, stderr, exitCode };
-};
-
-// Real PollHealthFn — polls the health endpoint every 1s until healthy or timeout
-const pollHealthFn: PollHealthFn = async (url, timeoutMs) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) return true;
-    } catch {
-      // not ready yet
-    }
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  return false;
-};
-
-// Real SpawnFn — spawns a long-running process and returns a kill handle.
-// When logDir is set, stdout/stderr stream to log files; install scripts pre-create the directory.
-const spawnFn: SpawnFn = (cmd, opts) => {
-  const env = { ...process.env, ...opts?.env };
-  if (opts?.logDir) {
-    const proc = Bun.spawn({
-      cmd,
-      cwd: opts.cwd,
-      env,
-      stdout: Bun.file(`${opts.logDir}/stdout.log`),
-      stderr: Bun.file(`${opts.logDir}/stderr.log`),
-    });
-    return { kill: () => proc.kill() };
-  }
-  const proc = Bun.spawn({ cmd, cwd: opts?.cwd, env, stdout: "ignore", stderr: "ignore" });
-  return { kill: () => proc.kill() };
-};
+const runFn = createRunFn({ timeoutMs: 10000 });
+const pollHealthFn = createPollHealthFn();
+const spawnFn = createSpawnFn();
 
 const localHost = registry.hosts.find(h => h.role === "control");
 // The same registry object goes to the app and the health loop. The app's

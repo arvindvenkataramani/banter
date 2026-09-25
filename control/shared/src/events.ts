@@ -59,10 +59,13 @@ export async function deriveHealthMap(eventsPath: string): Promise<Map<string, E
   const lines = content.split("\n").filter(l => l.trim());
   const map = new Map<string, Event>();
 
-  // Read in order (oldest first), later events overwrite earlier ones
+  // Read in order (oldest first), later events overwrite earlier ones. An
+  // install is a record of what was placed on disk, not a statement about
+  // whether the service answers, so it never becomes the health-deciding event.
   for (const line of lines) {
     try {
       const event = JSON.parse(line) as Event;
+      if (event.type === "service.installed") continue;
       map.set(event.subjectId, event);
     } catch { /* skip malformed line */ }
   }
