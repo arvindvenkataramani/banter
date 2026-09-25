@@ -10,6 +10,7 @@ dashboard/dist/
 tsconfig.tsbuildinfo
 control/**/*.js
 shared/**/*.js
+.build
 
 # Compiled shard supervisor (built by shard-deploy.sh)
 control/control-shard/ops/shard-runner
