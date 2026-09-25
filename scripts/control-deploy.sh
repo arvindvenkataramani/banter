@@ -8,10 +8,21 @@
 #   control-deploy.sh main      — deploy from main without prompting
 #   control-deploy.sh dev       — deploy from working tree without prompting
 #
-# The deployed config.json and registry.json are kept across a deploy. Add
-# --reset-config to replace them with the shipped examples instead; an
-# interactive deploy asks before doing so, and an unattended one always keeps
-# them.
+# The deployed config.json and registry.json are kept across a deploy.
+#   --reset-config              — replace both with the shipped examples.
+#   --reset-config=registry.json — replace only that file, keeping the rest.
+#                                 Takes a comma-separated list; the bare form
+#                                 above means all of them. This is the same
+#                                 per-file choice an interactive run offers, so
+#                                 an unattended deploy can express it too.
+#
+#                                 Without the flag the live files are never
+#                                 overwritten: an interactive run offers the
+#                                 choice, a non-interactive one keeps them.
+#                                 Either way a shipped example that is older
+#                                 than the live file it would replace, and
+#                                 differs from it, stops the deploy rather than
+#                                 overwriting.
 #
 # First-time setup:
 #   loginctl enable-linger $USER
@@ -48,8 +59,10 @@ for arg in "$@"; do
   case "$arg" in
     # Replace the deployed config and registry with the shipped examples instead
     # of keeping them. Without this the live files are preserved, and an
-    # interactive deploy asks before doing anything else.
-    --reset-config) export BANTER_RESET_CONFIG=1 ;;
+    # interactive deploy asks before doing anything else. A comma-separated
+    # list after = names exactly which files to take from the repo.
+    --reset-config) export BANTER_RESET_CONFIG=all ;;
+    --reset-config=*) export BANTER_RESET_CONFIG="${arg#*=}" ;;
     *) FORCE_REF="$arg" ;;
   esac
 done
@@ -117,7 +130,7 @@ systemctl --user stop "$BANTER_UNIT" 2>/dev/null || true
 CONFIG_STASH="$(mktemp -d "${TMPDIR:-/tmp}/banter-config-stash.XXXXXX")"
 CLEANUP_DIRS+=("$CONFIG_STASH")
 # A refusal comes before anything is copied, so the old deployment restarts intact.
-if ! bash "$SCRIPTS_DIR/deploy-preserve-config.sh" save "$PROD" "$CONFIG_STASH"; then
+if ! bash "$SCRIPTS_DIR/deploy-preserve-config.sh" save "$PROD" "$CONFIG_STASH" "$SRC/control/control-plane/data"; then
   echo "[control-deploy] Deploy refused — restarting the existing control plane." >&2
   systemctl --user start "$BANTER_UNIT"
   exit 1
