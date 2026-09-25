@@ -40,7 +40,7 @@ Optional CORS: set `FLUID_CORS_ORIGINS` (comma-separated origins) before startin
 
 ## Models
 
-The roster on chintamani offers three ids:
+The shipped roster offers three ids:
 
 | Model id | Kind | Selecting a variant |
 |---|---|---|
@@ -227,4 +227,4 @@ The boundary rule is written against parakeet-mlx's own tokenizer behaviour, whi
 
 ## Deployment
 
-`scripts/fluid-build.sh` builds both `fluid-stt` and `fluid-tts` from this package. `scripts/shard-install-services.sh` installs them into `~/Services/fluid/fluid-stt/` and `~/Services/fluid/fluid-tts/` on chintamani, each as `.build/release/<binary>`, as the registry entries' `ops.install` declares, alongside a `SOURCE-COMMIT.txt` recording what they were built from and a `service.installed` event in the shard's log. A service already running is stopped through the control API before its binary is replaced and started again afterward; one that was not running stays that way, and one whose binary has not changed is not touched. The registry's launch command supplies `--registry` and `--provider fluid-stt`, pointing at the shard's own `registry.json`.
+`scripts/fluid-build.sh` builds both `fluid-stt` and `fluid-tts` from this package. `scripts/shard-install-services.sh` installs them into `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, each as `.build/release/<binary>`, as the registry entries' `ops.install` declares, alongside a `SOURCE-COMMIT.txt` recording what they were built from and a `service.installed` event in the shard's log. A service already running is stopped through the control API before its binary is replaced and started again afterward; one that was not running stays that way, and one whose binary has not changed is not touched. The registry's launch command supplies `--registry` and `--provider fluid-stt`, pointing at the shard's own `registry.json`.
