@@ -166,12 +166,92 @@
             "key": "kokoro-ane",
             "presetVoices": [
               {
+                "id": "af_alloy",
+                "name": "Alloy"
+              },
+              {
+                "id": "af_aoede",
+                "name": "Aoede"
+              },
+              {
+                "id": "af_bella",
+                "name": "Bella"
+              },
+              {
                 "id": "af_heart",
                 "name": "Heart"
               },
               {
+                "id": "af_jessica",
+                "name": "Jessica"
+              },
+              {
+                "id": "af_kore",
+                "name": "Kore"
+              },
+              {
                 "id": "af_nicole",
                 "name": "Nicole"
+              },
+              {
+                "id": "af_nova",
+                "name": "Nova"
+              },
+              {
+                "id": "af_river",
+                "name": "River"
+              },
+              {
+                "id": "af_sarah",
+                "name": "Sarah"
+              },
+              {
+                "id": "af_sky",
+                "name": "Sky"
+              },
+              {
+                "id": "am_adam",
+                "name": "Adam"
+              },
+              {
+                "id": "am_echo",
+                "name": "Echo"
+              },
+              {
+                "id": "am_eric",
+                "name": "Eric"
+              },
+              {
+                "id": "am_fenrir",
+                "name": "Fenrir"
+              },
+              {
+                "id": "am_liam",
+                "name": "Liam"
+              },
+              {
+                "id": "am_michael",
+                "name": "Michael"
+              },
+              {
+                "id": "am_onyx",
+                "name": "Onyx"
+              },
+              {
+                "id": "am_puck",
+                "name": "Puck"
+              },
+              {
+                "id": "am_santa",
+                "name": "Santa"
+              },
+              {
+                "id": "bf_alice",
+                "name": "Alice"
+              },
+              {
+                "id": "bf_emma",
+                "name": "Emma"
               },
               {
                 "id": "bf_isabella",
@@ -180,6 +260,22 @@
               {
                 "id": "bf_lily",
                 "name": "Lily"
+              },
+              {
+                "id": "bm_daniel",
+                "name": "Daniel"
+              },
+              {
+                "id": "bm_fable",
+                "name": "Fable"
+              },
+              {
+                "id": "bm_george",
+                "name": "George"
+              },
+              {
+                "id": "bm_lewis",
+                "name": "Lewis"
               }
             ],
             "realtime": true,
@@ -263,6 +359,39 @@
     },
     "voices": [
       {
+        "id": "alloy",
+        "name": "Alloy",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_alloy"
+          }
+        ]
+      },
+      {
+        "id": "aoede",
+        "name": "Aoede",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_aoede"
+          }
+        ]
+      },
+      {
+        "id": "bella",
+        "name": "Bella",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_bella"
+          }
+        ]
+      },
+      {
         "id": "heart",
         "name": "Heart",
         "models": [
@@ -274,6 +403,28 @@
         ]
       },
       {
+        "id": "jessica",
+        "name": "Jessica",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_jessica"
+          }
+        ]
+      },
+      {
+        "id": "kore",
+        "name": "Kore",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_kore"
+          }
+        ]
+      },
+      {
         "id": "nicole",
         "name": "Nicole",
         "models": [
@@ -281,6 +432,171 @@
             "serviceId": "fluid-tts",
             "model": "kokoro-ane",
             "key": "af_nicole"
+          }
+        ]
+      },
+      {
+        "id": "nova",
+        "name": "Nova",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_nova"
+          }
+        ]
+      },
+      {
+        "id": "river",
+        "name": "River",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_river"
+          }
+        ]
+      },
+      {
+        "id": "sarah",
+        "name": "Sarah",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_sarah"
+          }
+        ]
+      },
+      {
+        "id": "sky",
+        "name": "Sky",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_sky"
+          }
+        ]
+      },
+      {
+        "id": "adam",
+        "name": "Adam",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_adam"
+          }
+        ]
+      },
+      {
+        "id": "echo",
+        "name": "Echo",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_echo"
+          }
+        ]
+      },
+      {
+        "id": "eric",
+        "name": "Eric",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_eric"
+          }
+        ]
+      },
+      {
+        "id": "fenrir",
+        "name": "Fenrir",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_fenrir"
+          }
+        ]
+      },
+      {
+        "id": "liam",
+        "name": "Liam",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_liam"
+          }
+        ]
+      },
+      {
+        "id": "michael",
+        "name": "Michael",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_michael"
+          }
+        ]
+      },
+      {
+        "id": "onyx",
+        "name": "Onyx",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_onyx"
+          }
+        ]
+      },
+      {
+        "id": "puck",
+        "name": "Puck",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_puck"
+          }
+        ]
+      },
+      {
+        "id": "santa",
+        "name": "Santa",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_santa"
+          }
+        ]
+      },
+      {
+        "id": "alice",
+        "name": "Alice",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_alice"
+          }
+        ]
+      },
+      {
+        "id": "emma",
+        "name": "Emma",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_emma"
           }
         ]
       },
@@ -303,6 +619,50 @@
             "serviceId": "fluid-tts",
             "model": "kokoro-ane",
             "key": "bf_lily"
+          }
+        ]
+      },
+      {
+        "id": "daniel",
+        "name": "Daniel",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_daniel"
+          }
+        ]
+      },
+      {
+        "id": "fable",
+        "name": "Fable",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_fable"
+          }
+        ]
+      },
+      {
+        "id": "george",
+        "name": "George",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_george"
+          }
+        ]
+      },
+      {
+        "id": "lewis",
+        "name": "Lewis",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_lewis"
           }
         ]
       }
