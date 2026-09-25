@@ -12,6 +12,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Scrolls, shows no bar. For regions where the scroll is the system moving
+   its own content past a small window — a live transcript filling — rather
+   than something the reader drives and needs a position for. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -235,6 +245,25 @@
         color-mix(in oklch, var(--wash-top) 0.4%, transparent) 80%,
         transparent 100%);
     }
+  }
+
+  /* ── Live transcript sizing ──────────────────────────────────── */
+  /* Dictated words in the desktop composer, capped at three whole lines of
+     its own type. Past that they scroll: the composer holds its size while
+     someone speaks, however long the turn runs. --text-base and
+     --text-base--line-height are Tailwind's own text-base scale vars, so
+     this tracks the type size directly rather than pinning a pixel height. */
+  .voice-composer-transcript {
+    max-height: calc(3 * var(--text-base) * var(--text-base--line-height));
+  }
+
+  /* Whole lines of the readout's own type, so its top edge never clips a
+     partial one. The line count comes from --readout-lines, set inline by
+     the mobile voice controls. */
+  .voice-readout-region {
+    height: calc(
+      var(--readout-lines) * var(--text-base) * var(--text-base--line-height)
+    );
   }
 
   /* ── Mobile voice-controls backdrop ─────────────────────────── */

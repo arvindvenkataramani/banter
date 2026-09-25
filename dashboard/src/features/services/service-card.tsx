@@ -16,7 +16,7 @@ import { ServiceDetail } from '@/features/services/service-detail'
 import { ServiceHistory } from '@/features/services/service-history'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { healthBadgeClass, healthLabel } from '@/lib/health-badge'
+import { healthBadgeClass, healthLabel, serviceIsRunning } from '@/lib/health-badge'
 
 function hostPort(endpoint: string): string {
   try {
@@ -80,7 +80,7 @@ export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
   async function handlePlayPause() {
-    const isRunning = service.health === 'healthy'
+    const isRunning = serviceIsRunning[service.health]
 
     if (isRunning) {
       setToggleState('stopping')
@@ -96,7 +96,7 @@ export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
           await sleep(1000)
           const updated = await checkService(service.id)
           onUpdate(updated)
-          if (updated.health !== 'healthy') { setToggleState(null); return }
+          if (!serviceIsRunning[updated.health]) { setToggleState(null); return }
         }
         toast.error('Service did not stop in time')
       } catch (err) {
@@ -113,14 +113,20 @@ export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
           setToggleState(null)
           return
         }
-        const deadline = Date.now() + 15000
+        // A slow starter gets the whole window to reach `healthy` before the
+        // state is judged, so a service still registering Tailscale Serve is
+        // not called a failure. At the deadline a running-but-unreachable
+        // service is still running, and only a service that never came up at
+        // all is worth offering to cancel.
+        const deadline = Date.now() + 30000
+        let last = service
         while (Date.now() < deadline) {
           await sleep(1000)
-          const updated = await checkService(service.id)
-          onUpdate(updated)
-          if (updated.health === 'healthy') { setToggleState(null); return }
+          last = await checkService(service.id)
+          onUpdate(last)
+          if (last.health === 'healthy') { setToggleState(null); return }
         }
-        setToggleState('timed-out')
+        setToggleState(serviceIsRunning[last.health] ? null : 'timed-out')
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Start failed')
         setToggleState(null)
@@ -210,7 +216,7 @@ export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
                 onClick={handlePlayPause}
                 disabled={disabled || toggleState !== null}
               >
-                {toggleState === 'stopping' || toggleState === 'cancelling' || service.health === 'healthy' ? (
+                {toggleState === 'stopping' || toggleState === 'cancelling' || serviceIsRunning[service.health] ? (
                   <>
                     <Square />
                     {toggleState === 'stopping' ? 'Stopping…' : toggleState === 'cancelling' ? 'Cancelling…' : 'Stop'}

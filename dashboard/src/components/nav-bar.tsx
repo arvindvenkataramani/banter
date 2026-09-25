@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun, ChevronDown, Server, Settings, RefreshCw } from 'lucide-react'
+import { Monitor, Moon, Sun, ChevronDown, Server, Settings, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { BanterIcon } from '@/components/icons'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { getTheme, setTheme, type Theme } from '@/lib/theme'
 import { useState } from 'react'
+import { SettingsDialog } from '@/features/settings/settings-dialog'
 
 type NavOption = {
   path: string
@@ -44,6 +45,7 @@ interface NavBarProps {
 export function NavBar({ currentPath, onNavigate }: NavBarProps) {
   const [theme, setThemeState] = useState<Theme>(getTheme)
   const [reloading, setReloading] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   function handleTheme(t: Theme) {
     setTheme(t)
@@ -162,6 +164,10 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSettingsOpen(true)} className="gap-2">
+                <SlidersHorizontal className="size-4" />
+                Settings
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={reloadConfig} disabled={reloading} className="gap-2">
                 <RefreshCw className={`size-4${reloading ? ' animate-spin' : ''}`} />
                 Reload config
@@ -170,6 +176,7 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
           </DropdownMenu>
         </div>
       </div>
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </header>
   )
 }

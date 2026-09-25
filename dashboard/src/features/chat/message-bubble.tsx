@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Components } from 'react-markdown'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -35,6 +36,15 @@ const mdComponents: Components = {
   },
 }
 
+const remarkPlugins = [remarkGfm]
+
+// Parsing builds a full syntax tree per message, and the list re-renders on
+// every streamed token and voice state change. Memoized on text, so only the
+// message whose text changed is parsed again.
+const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
+  return <Markdown remarkPlugins={remarkPlugins} components={mdComponents}>{text}</Markdown>
+})
+
 export function MessageBubble({ role, text, isStreaming, senderAgentId, delivery, onResend }: Props) {
   if (role === 'user') {
     // delivery is absent for history rows (long confirmed) — only style the
@@ -44,7 +54,7 @@ export function MessageBubble({ role, text, isStreaming, senderAgentId, delivery
     const bubble = (
       <div className="self-end flex flex-col items-end gap-1">
         <div className={bubbleClassName}>
-          <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</Markdown>
+          <MarkdownText text={text} />
         </div>
         {delivery === 'failed' && (
           <div className="flex items-center gap-1.5 text-xs text-destructive">
@@ -72,7 +82,7 @@ export function MessageBubble({ role, text, isStreaming, senderAgentId, delivery
 
   return (
     <div className="msg-assistant">
-      <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</Markdown>
+      <MarkdownText text={text} />
       {isStreaming && <span className="opacity-60">▊</span>}
     </div>
   )

@@ -75,3 +75,122 @@ describe('ensureServiceReady', () => {
     await expect(ensureServiceReady('stt')).rejects.toThrow('has no endpoint')
   })
 })
+
+describe('waiting for a start to finish', () => {
+  it('waits while the operation is pending, then returns the service it left healthy', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockResolvedValueOnce(service({ health: 'down', pending: true }))
+      .mockResolvedValueOnce(service({ health: 'down', pending: true }))
+      .mockResolvedValueOnce(service({ health: 'healthy', pending: false }))
+    startService.mockResolvedValue({ success: true })
+
+    expect(await ensureServiceReady('stt')).toBe('https://host1:8767')
+    expect(getService).toHaveBeenCalledTimes(4)
+  })
+
+  // Health reached healthy before the operation settled — the platform is still
+  // working on the service, so the endpoint is not handed back until it stops.
+  it('keeps waiting on a service that reads healthy while the operation is outstanding', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockResolvedValueOnce(service({ health: 'healthy', pending: true }))
+      .mockResolvedValueOnce(service({ health: 'healthy', pending: false }))
+    startService.mockResolvedValue({ success: true })
+
+    expect(await ensureServiceReady('stt')).toBe('https://host1:8767')
+    expect(getService).toHaveBeenCalledTimes(3)
+  })
+
+  it('reports the service unavailable when the operation finishes without it coming up', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockResolvedValueOnce(service({ health: 'down', pending: true }))
+      .mockResolvedValueOnce(service({
+        health: 'down',
+        pending: false,
+        lastEvent: { data: { error: 'port already in use' } } as never,
+      }))
+    startService.mockResolvedValue({ success: true })
+
+    await expect(ensureServiceReady('stt')).rejects.toThrow('port already in use')
+  })
+
+  // Nothing bounds the wait on the client side, so an absent field must end it.
+  it('stops waiting when the server sends no pending field at all', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockResolvedValueOnce(service({ health: 'down' }))
+    startService.mockResolvedValue({ success: true })
+
+    await expect(ensureServiceReady('stt')).rejects.toThrow('is not available')
+    expect(getService).toHaveBeenCalledTimes(2)
+  })
+
+  // A start can succeed and be undone before the next read — idle eviction, another
+  // client, a health sweep. The service is unusable either way, so the caller fails;
+  // the message says the service is unavailable rather than naming a failed start.
+  it('reports an unusable service without claiming the start itself failed', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockResolvedValueOnce(service({
+        health: 'down',
+        pending: false,
+        lastEvent: { data: { error: 'evicted while idle' } } as never,
+      }))
+    startService.mockResolvedValue({ success: true })
+
+    await expect(ensureServiceReady('stt')).rejects.toThrow(
+      'Service "stt" is not available: evicted while idle'
+    )
+  })
+})
+
+// A read that fails says nothing about the start it was asking after. The
+// control plane answers 503 while it cannot reach the shard, and a spawn is
+// exactly when that happens, so a wait that gave up on the first one would
+// blame the service for its own inability to ask.
+describe('waiting through a control plane that cannot answer', () => {
+  it('keeps polling across a failed read and returns the service once it answers', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockRejectedValueOnce(new Error('shard unreachable: timeout'))
+      .mockRejectedValueOnce(new Error('shard unreachable: timeout'))
+      .mockResolvedValueOnce(service({ health: 'down', pending: true }))
+      .mockResolvedValueOnce(service({ health: 'healthy', pending: false }))
+    startService.mockResolvedValue({ success: true })
+
+    expect(await ensureServiceReady('stt')).toBe('https://host1:8767')
+    expect(getService).toHaveBeenCalledTimes(5)
+  })
+
+  it('blames the transport, not the service, when contact is never regained', async () => {
+    vi.useFakeTimers()
+    try {
+      getService
+        .mockResolvedValueOnce(service({ health: 'down' }))
+        .mockRejectedValue(new Error('shard unreachable: timeout'))
+      startService.mockResolvedValue({ success: true })
+
+      const pending = ensureServiceReady('stt')
+      const assertion = expect(pending).rejects.toThrow('Lost contact while starting "stt"')
+      await vi.advanceTimersByTimeAsync(60_000)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // The grace period covers a gap in contact, not a service that answers and
+  // says it is done — an answered read still ends the wait immediately.
+  it('does not let the grace period delay a service that answers', async () => {
+    getService
+      .mockResolvedValueOnce(service({ health: 'down' }))
+      .mockRejectedValueOnce(new Error('shard unreachable: timeout'))
+      .mockResolvedValueOnce(service({ health: 'healthy', pending: false }))
+    startService.mockResolvedValue({ success: true })
+
+    expect(await ensureServiceReady('stt')).toBe('https://host1:8767')
+    expect(getService).toHaveBeenCalledTimes(3)
+  })
+})

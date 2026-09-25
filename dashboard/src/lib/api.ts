@@ -68,11 +68,16 @@ export function checkService(id: string): Promise<ServiceWithHealth> {
   return request<ServiceWithHealth>(`/api/services/${id}/check`, { method: 'POST' })
 }
 
+// `null` clears a field. Only the optional ones accept it — the server rejects
+// a null on anything the registry requires.
+type Clearable<T> = { [K in keyof T]: T[K] | null }
+
 type ServicePatch = {
   capabilityId?: string;
   hostId?: string;
-  network?: Partial<Pick<ServiceNetwork, "port" | "healthPath" | "listenAddress" | "tailscaleServe">>;
-  lifecycle?: Partial<Pick<ServiceLifecycle, "loadStrategy" | "autoStart" | "idleUnload" | "idleTimeout" | "startupTime" | "restartOnCrash" | "maxRestarts" | "restartBackoff">>;
+  notes?: string | null;
+  network?: Partial<Clearable<Pick<ServiceNetwork, "port" | "healthPath" | "listenAddress" | "tailscaleServe">>>;
+  lifecycle?: Partial<Clearable<Pick<ServiceLifecycle, "loadStrategy" | "autoStart" | "idleUnload" | "idleTimeout" | "startupTime" | "restartOnCrash" | "maxRestarts" | "restartBackoff">>>;
 }
 
 export function updateService(id: string, patch: ServicePatch): Promise<ServiceWithHealth> {
@@ -83,6 +88,13 @@ export function updateService(id: string, patch: ServicePatch): Promise<ServiceW
   })
 }
 
+/** Keep a demand-loaded service alive while it is in use. Idle eviction is
+ * timed from the last ping, so a caller holding a service open re-pings well
+ * inside its idleTimeout. */
+export function pingService(id: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/services/${id}/ping`, { method: 'POST' })
+}
+
 export function setEnabled(id: string, enabled: boolean): Promise<ServiceWithHealth> {
   return request<ServiceWithHealth>(`/api/services/${id}/enabled`, {
     method: 'PATCH',
@@ -91,8 +103,8 @@ export function setEnabled(id: string, enabled: boolean): Promise<ServiceWithHea
   })
 }
 
-export function startService(id: string): Promise<{ success: boolean; error?: string }> {
-  return request<{ success: boolean; error?: string }>(`/api/services/${id}/start`, {
+export function startService(id: string): Promise<{ success: boolean; error?: string; stage?: 'process' | 'serve' }> {
+  return request<{ success: boolean; error?: string; stage?: 'process' | 'serve' }>(`/api/services/${id}/start`, {
     method: 'POST',
   })
 }
@@ -103,8 +115,8 @@ export function stopService(id: string): Promise<{ success: boolean; error?: str
   })
 }
 
-export function restartService(id: string): Promise<{ success: boolean; error?: string }> {
-  return request<{ success: boolean; error?: string }>(`/api/services/${id}/restart`, {
+export function restartService(id: string): Promise<{ success: boolean; error?: string; stage?: 'process' | 'serve' }> {
+  return request<{ success: boolean; error?: string; stage?: 'process' | 'serve' }>(`/api/services/${id}/restart`, {
     method: 'POST',
   })
 }
@@ -121,6 +133,9 @@ export type VoiceSelectionPatch = {
   settingsScope?: SettingsScope
   sttServiceId?: string
   saveMicSamples?: boolean
+  takeover?: 'ask' | 'always'
+  vad?: Partial<Record<'minSpeechDurationS' | 'minSpeechProb', number>>
+  turnTaking?: Partial<Record<'pauseThresholdMs' | 'commitMinDelayMs' | 'commitMaxDelayMs' | 'smartTurnThreshold' | 'smartTurnLowCutoff', number>>
 }
 
 /** What `PATCH /api/voice/selection` returns — `config.voice` verbatim, so
@@ -129,6 +144,7 @@ export type VoiceSelectionPatch = {
  * onto their existing config rather than replace it wholesale. */
 export type VoiceUpdateResult = {
   enabled?: boolean
+  takeover?: VoiceConfig['takeover']
   tts?: Partial<VoiceConfig['tts']>
   stt?: VoiceConfig['stt']
   debug?: VoiceConfig['debug']

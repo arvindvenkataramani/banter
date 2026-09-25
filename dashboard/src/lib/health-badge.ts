@@ -9,6 +9,20 @@ export const healthBadgeClass: Record<HealthState, string> = {
   unknown:   'bg-status-muted-bg text-status-muted-fg border-transparent',
 }
 
+// Whether the process is up, which is a narrower question than whether the
+// service is reachable: `degraded` means localhost answered and the Tailscale
+// endpoint did not, so starting it again is a no-op. `timed_out` is the
+// ambiguous case — a hung process and a dead one look alike — and counts as
+// running because stop is the recoverable mistake and start is not.
+export const serviceIsRunning: Record<HealthState, boolean> = {
+  healthy:   true,
+  degraded:  true,
+  timed_out: true,
+  down:      false,
+  disabled:  false,
+  unknown:   false,
+}
+
 export const healthLabel: Record<HealthState, string> = {
   healthy:   'online',
   degraded:  'degraded',

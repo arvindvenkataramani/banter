@@ -8,7 +8,7 @@ export const ANNOTATIONS: Record<VoiceAnnotation, string> = {
 }
 
 // Module-level, not per-instance: there is one voice engine, not one per
-// session. use-voice-loop registers `() => engine.cancel()`; import
+// session. agent-voice.ts registers `() => engine.cancel()`; import
 // direction is voice → controls only, never the reverse.
 const audioHalters = new Set<() => void>()
 
@@ -46,6 +46,12 @@ export class SessionControls {
   // broken, so local silence precedes ground truth.
   stop(): Promise<void> {
     for (const halt of audioHalters) halt()
+    return this.session.abort()
+  }
+
+  // The turn manager's abort of a run the human interrupted. No halters: the
+  // player already cancels an interrupted turn's audio by reconciling.
+  abort(): Promise<void> {
     return this.session.abort()
   }
 

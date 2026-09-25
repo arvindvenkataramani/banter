@@ -1,23 +1,40 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
+import { useStore } from 'zustand'
 import { toast } from 'sonner'
-import { Loader2, AudioLines, EyeClosed, ArrowDown } from 'lucide-react'
+import { ArrowDown } from 'lucide-react'
 import { useSessionManager } from '@/lib/use-session-manager'
 import { consumePendingChatLaunch } from '@/lib/chat-launch'
-import { fetchVoiceConfig, loadSpeechEnabled, saveSpeechEnabled, loadVoiceSelection, loadTtsModel, resolveChunkingFor, useVoiceLoop, ensureServiceReady, setSaveMicSamples, MIC_AUDIO_CONSTRAINTS } from '@/lib/voice'
-import type { VoiceConfig, VoiceSelection } from '@/lib/voice'
-import { ensureTtsReady } from '@/lib/voice'
-import { updateService } from '@/lib/api'
+import { fetchVoiceConfig, loadVoiceSelection, setSaveMicSamples } from '@/lib/voice'
+import { useTurnManagerStore, loopStateFromSnapshot, playbackStateFromSnapshot } from '@/lib/voice'
+import { useMuteStore, toggleMuteAll, toggleSpeechMuted, relinkMutes, setMicAutoMuted } from '@/lib/voice/human/mute-store'
+import {
+  useVoiceSessionStore, publishSession, setVoiceConfig as publishVoiceConfig,
+  setVoiceSelection as publishVoiceSelection,
+} from '@/lib/voice/voice-session-store'
+import { useVoiceSystemStore, voiceSystem } from '@/lib/voice/system'
+import { voiceOn, voiceOff, armVoice, commitVoice, isArmed, cancelArm } from '@/lib/media-voice-mode'
+import { useMediaEngine } from '@/lib/media-engine'
 import { useWakeLock } from '@/lib/use-wake-lock'
+import { useIsMobile } from '@/lib/use-is-mobile'
 import { overrideTheme } from '@/lib/theme'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { MessageList } from './message-list'
-import { ChatComposer } from './chat-composer'
-import { VoiceControlsMobile } from './voice-controls-mobile'
+import { ComposerDock } from './composer-dock'
+import { VoiceControlsMobile, SpokenReadout } from './voice-controls-mobile'
 import { ModelPill } from './model-pill'
 import { ControlBar } from './control-bar'
 import { DisconnectBanner } from './disconnect-banner'
 import { CompactionIndicator } from './compaction-indicator'
-import { VoiceSettings } from './voice-settings'
 
 interface Props {
   filter?: string
@@ -29,25 +46,58 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
-type VoiceStatus = 'off' | 'loading' | 'ready' | 'error'
-
+// the design record: the voice pipeline itself —
+// mic capture, VAD, smart-turn, the turn manager, the gateway session — is
+// owned by the voice system (lib/voice/system), not by this page. ChatPage
+// keeps only what it alone can do (the tap that turns voice on or off,
+// through media-voice-mode.ts's gate) and what only it needs to render (the
+// composer, the mobile voice-controls block): everything else is read from
+// the system's own store and voice-session-store.ts.
 export function ChatPage(_props: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
+  const isMobile = useIsMobile()
 
-  // Voice state
-  const [voiceConfig, setVoiceConfig] = useState<VoiceConfig | null>(null)
-  const [voiceSelection, setVoiceSelection] = useState<VoiceSelection | null>(null)
-  const [speechEnabled, setSpeechEnabled] = useState<boolean>(() => loadSpeechEnabled())
-  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('off')
-  const [ttsEndpoint, setTtsEndpoint] = useState<string | null>(null)
-  const [sttEndpoint, setSttEndpoint] = useState<string | null>(null)
+  const voiceConfig = useStore(useVoiceSessionStore, (s) => s.voiceConfig)
+  const voiceSelection = useStore(useVoiceSessionStore, (s) => s.voiceSelection)
+  const phase = useStore(useVoiceSystemStore, (s) => s.phase)
+  const reconfiguring = useStore(useVoiceSystemStore, (s) => s.reconfiguring)
+  const lastEnd = useStore(useVoiceSystemStore, (s) => s.lastEnd)
+
+  /**
+   * The voice controls' real height, so the conversation can be padded clear
+   * of it. A ref callback rather than an effect: the element is a different
+   * node in the voice-on and voice-off states, and the callback fires on each
+   * swap where an effect would need the state it is measuring as a dependency.
+   */
+  const [voiceControlsHeight, setVoiceControlsHeight] = useState(0)
+  const voiceControlsObserver = useRef<ResizeObserver | null>(null)
+  const voiceControlsRef = useCallback((el: HTMLDivElement | null) => {
+    voiceControlsObserver.current?.disconnect()
+    voiceControlsObserver.current = null
+    if (!el) {
+      setVoiceControlsHeight(0)
+      return
+    }
+    // getBoundingClientRect, not contentRect: the block's padding carries the
+    // safe-area inset, which contentRect excludes — measuring without it
+    // leaves the last bubble under the buttons by exactly that much.
+    const measure = () => setVoiceControlsHeight(el.getBoundingClientRect().height)
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    voiceControlsObserver.current = observer
+    measure()
+  }, [])
+
   const [unattended, setUnattended] = useState(false)
-  // Mic stream acquired synchronously inside the speech-toggle tap so iOS
-  // Safari sees the gesture and prompts for permission. Threaded down to
-  // MicCapture via useVoiceLoop; auto-start (page reload with voice already
-  // enabled) skips this and relies on cached permission via gUM fallback.
-  const [micStream, setMicStream] = useState<MediaStream | null>(null)
+
+  // Said once and gone. The lock icon carries the state from then on, so
+  // nothing permanent sits over the conversation the screen is being held
+  // awake to show.
+  const toggleUnattended = useCallback(() => {
+    setUnattended((on) => !on)
+    toast(unattended ? 'Screen can sleep again' : 'Screen will stay awake')
+  }, [unattended])
 
   useWakeLock(unattended)
 
@@ -57,88 +107,49 @@ export function ChatPage(_props: Props) {
     return restore
   }, [unattended])
 
-  const startVoiceServices = useCallback(async (cfg: VoiceConfig, sel: VoiceSelection) => {
-    const provider = cfg.tts.providers.find(p => p.serviceId === sel.serviceId)
-    if (!provider) throw new Error('TTS provider not found')
-    setVoiceStatus('loading')
-    const [ttsEp, sttEp] = await Promise.all([
-      ensureTtsReady(provider.serviceId),
-      cfg.stt?.serviceId ? ensureServiceReady(cfg.stt.serviceId) : Promise.resolve(null),
-    ])
-    setTtsEndpoint(ttsEp)
-    setSttEndpoint(sttEp)
-    // Service "up" only means the process is reachable — the model still has to
-    // load into VRAM before it can synthesize. Wait on that too, so the loading
-    // indicator doesn't clear while the first utterance would still stall.
-    await loadTtsModel(ttsEp, sel.model)
-    setVoiceStatus('ready')
-    updateService(provider.serviceId, { lifecycle: { idleUnload: false } }).catch(() => { })
-    if (cfg.stt?.serviceId) updateService(cfg.stt.serviceId, { lifecycle: { idleUnload: false } }).catch(() => { })
-  }, [])
-
-  const stopVoiceServices = useCallback((cfg: VoiceConfig | null, sel: VoiceSelection | null) => {
-    setVoiceStatus('off')
-    setTtsEndpoint(null)
-    setSttEndpoint(null)
-    if (sel && cfg) {
-      const prov = cfg.tts.providers.find(p => p.serviceId === sel.serviceId)
-      if (prov) updateService(prov.serviceId, { lifecycle: { idleUnload: true } }).catch(() => { })
-      if (cfg.stt?.serviceId) updateService(cfg.stt.serviceId, { lifecycle: { idleUnload: true } }).catch(() => { })
-    }
-  }, [])
-
+  // Config fetch publishes into voice-session-store rather than local state
+  // — the store outlives this page, so config has to as well (H9).
   useEffect(() => {
     fetchVoiceConfig().then(cfg => {
       if (!cfg) return
-      setVoiceConfig(cfg)
+      publishVoiceConfig(cfg)
       setSaveMicSamples(cfg.debug?.saveMicSamples ?? false)
       const sel = loadVoiceSelection(cfg)
-      setVoiceSelection(sel)
-      const enabled = loadSpeechEnabled(cfg)
-      setSpeechEnabled(enabled)
-      if (enabled && sel) {
-        startVoiceServices(cfg, sel).catch(() => {
-          setSpeechEnabled(false)
-          saveSpeechEnabled(false)
-          setVoiceStatus('off')
-        })
-      }
+      publishVoiceSelection(sel)
     })
-  }, [startVoiceServices])
+  }, [])
 
+  // The composer's / mobile controls' voice button. H6's gate has to branch
+  // synchronously in this same tap, before any await: getUserMedia only
+  // prompts when called inside the gesture's own call stack (H11's own
+  // reason voice starts nowhere but Chat), and the *arm* press must not call
+  // it at all — an arm press changes no media x voice state (H6), so it must
+  // not ask for microphone permission either.
   const handleSpeechToggle = useCallback((enabled: boolean) => {
     if (!enabled) {
-      setSpeechEnabled(false)
-      saveSpeechEnabled(false)
       setUnattended(false)
-      stopVoiceServices(voiceConfig, voiceSelection)
-      setMicStream(prev => { prev?.getTracks().forEach(t => t.stop()); return null })
+      voiceOff()
       return
     }
+    // Refuse before arming: an arm with no config behind it would leave the
+    // gate showing a commit that can never succeed (H7).
     if (!voiceConfig || !voiceSelection) {
       toast.error('Voice not configured')
       return
     }
-    // iOS Safari requires getUserMedia to be invoked synchronously inside the
-    // tap handler — any preceding await drops the user-activation context and
-    // the permission prompt silently fails. Start the gUM call here, then chain
-    // the rest of the startup off the resulting promise.
-    const streamPromise = navigator.mediaDevices.getUserMedia({ audio: MIC_AUDIO_CONSTRAINTS })
-    setSpeechEnabled(true)
-    saveSpeechEnabled(true)
-    streamPromise
-      .then(stream => {
-        setMicStream(stream)
-        return startVoiceServices(voiceConfig, voiceSelection)
-      })
-      .catch(err => {
-        toast.error(`Voice failed to start: ${err instanceof Error ? err.message : String(err)}`)
-        setSpeechEnabled(false)
-        saveSpeechEnabled(false)
-        setVoiceStatus('error')
-        setMicStream(prev => { prev?.getTracks().forEach(t => t.stop()); return null })
-      })
-  }, [voiceConfig, voiceSelection, startVoiceServices, stopVoiceServices])
+    const loaded = useMediaEngine.getState().track !== null
+    if (loaded && !isArmed()) {
+      armVoice()
+      return
+    }
+    // The writer runs here, in the tap, before gUM — H3/H6: a commit
+    // dismisses media the instant it commits, not once startup resolves.
+    // The system does everything past this point — acquiring the devices,
+    // starting the services, opening the connection — synchronously up to
+    // its own first await, from inside this same gesture.
+    if (isArmed()) commitVoice()
+    else voiceOn()
+  }, [voiceConfig, voiceSelection])
 
   const {
     connectionState,
@@ -166,6 +177,21 @@ export function ChatPage(_props: Props) {
     reconnect,
   } = useSessionManager()
 
+  // Publishes this page's activeSession into voice-session-store for the
+  // system to read (H9) — never cleared on unmount, only on change. A mere
+  // navigation away from Chat must not blank the session the pipeline is
+  // running against, and neither must a navigation back: the session
+  // manager starts every mount with no session yet, and publishing that
+  // null would read to the system as the session being lost, tearing the
+  // pipeline down and rebuilding it a moment later. Only a null that
+  // follows a real session is a loss.
+  const hadSession = useRef(false)
+  useEffect(() => {
+    if (activeSession) hadSession.current = true
+    else if (!hadSession.current) return
+    publishSession(activeSession)
+  }, [activeSession])
+
   // Shared by all three model selectors — ControlBar, the mobile voice
   // controls, and the composer's mobile ModelPill.
   const handleModelChange = useCallback((id: string) => {
@@ -184,19 +210,14 @@ export function ChatPage(_props: Props) {
   }, [error])
 
   // Chat-launches from another page (e.g. "Talk about this" on home).
-  // Sequence on mount:
-  //   - switch to agent:main:main, start a fresh session there
-  //   - flip voice on (TTS services start in the background — by the time
-  //     the agent's reply chunks arrive, voice is ready to play them)
-  //   - send the rendered opening message
-  // Voice config has to be loaded for handleSpeechToggle to do anything,
-  // so we wait on that signal before running.
+  // Sequence on mount: switch to agent:main:main, start a fresh session
+  // there, then send the rendered opening message. Voice starts only from
+  // the composer's own control — a launch never turns the microphone on.
   const launchRunRef = useRef(false)
   useEffect(() => {
     if (launchRunRef.current) return
     if (connectionState !== 'connected') return
     if (!activeSession) return
-    if (!voiceConfig || !voiceSelection) return
     const intent = consumePendingChatLaunch()
     launchRunRef.current = true
     if (!intent) return
@@ -204,25 +225,50 @@ export function ChatPage(_props: Props) {
       try {
         await switchTo('main', 'main')
         await newSession()
-        if (!speechEnabled) handleSpeechToggle(true)
         await send(intent.openingMessage)
       } catch (err) {
         console.error('[chat-launch] failed', err)
         toast.error('Failed to start the chat — try again.')
       }
     })()
-  }, [connectionState, activeSession, voiceConfig, voiceSelection, speechEnabled, switchTo, newSession, send, handleSpeechToggle])
+  }, [connectionState, activeSession, switchTo, newSession, send])
 
   // On initial messages-load, jump to the bottom unconditionally — without
   // this, gated auto-scroll sees scrollTop=0 and refuses to follow.
+  //
+  // Then again once the web fonts have swapped in. Text laid out in the
+  // fallback face is a different height from the same text in Literata and
+  // Geist, so the first jump lands on a bottom the conversation then grows
+  // past — which is why a reloaded page has always opened a little short of
+  // the end, with a few lines still below the fold. Nothing in the browser
+  // re-pins a scroller to its end when content above grows; the position has
+  // to be taken again after the growth.
   const didInitialScrollRef = useRef(false)
   useLayoutEffect(() => {
     if (didInitialScrollRef.current) return
     if (items.length === 0) return
     const el = scrollRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
+
+    const toEnd = () => { el.scrollTop = el.scrollHeight }
+    toEnd()
     didInitialScrollRef.current = true
+
+    let cancelled = false
+    // Whoever scrolls first owns the position: past that point correcting it
+    // would be taking the conversation away from where they put it.
+    const release = () => { cancelled = true }
+    el.addEventListener('wheel', release, { passive: true, once: true })
+    el.addEventListener('touchstart', release, { passive: true, once: true })
+
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) toEnd()
+    })
+
+    return () => {
+      el.removeEventListener('wheel', release)
+      el.removeEventListener('touchstart', release)
+    }
   }, [items])
 
   // Track whether the user is at the bottom of the message scroll container
@@ -245,18 +291,23 @@ export function ChatPage(_props: Props) {
   // Keyed on items/runActive (what's actually rendered now) — runActive
   // catches the processing placeholder's own appear/disappear, which
   // doesn't otherwise touch items.
+  // voiceControlsHeight is in here because the block grows and shrinks under
+  // the conversation — voice turning on, a readout appearing as speech
+  // starts — and each change moves the floor the last message sits above.
+  // Without it the message stays put and the block rises over it.
   useEffect(() => {
     if (!isAtBottom) return
     const el = scrollRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  }, [items, runActive, isAtBottom])
+  }, [items, runActive, isAtBottom, voiceControlsHeight])
 
   function scrollToBottom() {
     const el = scrollRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }
+
 
   const modelOptions = models.map((m) => ({ id: m.id, label: m.alias || m.name || m.id }))
   const contextUsage = contextTokens != null && contextWindow != null
@@ -273,31 +324,64 @@ export function ChatPage(_props: Props) {
 
   const inputDisabled = connectionState !== 'connected'
 
-  // Active model's chunking resolved under the app-wide scope: global only,
-  // or override -> model defaults -> global. See resolveChunkingFor /
-  // model-settings.ts for the precedence rules.
-  const chunking = resolveChunkingFor(voiceConfig, voiceSelection)
+  // The pipeline itself (mic loop, turn manager, playback) lives in the
+  // system (lib/voice/system) — this page only reads its state back off the
+  // stores the system drives, via useStore selectors, so nothing here is a
+  // second live pipeline.
+  const loopState = useStore(useTurnManagerStore, loopStateFromSnapshot)
+  const playbackState = useStore(useTurnManagerStore, playbackStateFromSnapshot)
+  const micMuted = useStore(useTurnManagerStore, (s) => s.snapshot.controls.micMuted)
+  const speechMuted = useStore(useTurnManagerStore, (s) => s.snapshot.controls.speechMuted)
+  // Not on the snapshot: muteLinked is the chrome's own coupling memory
+  // (store/mute-store.ts's LINKED/UNLINKED table), never reported to the
+  // turn manager. Reading the controls actor's own store for a fact it
+  // never promotes to a report is what the untestable pins' chrome
+  // exception permits.
+  const muteLinked = useStore(useMuteStore, (s) => s.muteLinked)
 
-  const voiceLoopEnabled = speechEnabled && voiceStatus === 'ready'
-  const { loopState, playbackState, isVoiceReady, micReady, micMuted, speechMuted, muteLinked, relinkMutes, toggleSpeechMuted, toggleMuteAll, setMicAutoMuted } = useVoiceLoop({
-    enabled: voiceLoopEnabled,
-    sttEndpoint,
-    voiceConfig,
-    session: activeSession,
-    ttsEndpoint,
-    ttsSelection: voiceSelection,
-    chunkStrategy: chunking.strategy,
-    minChunkWords: chunking.minWords,
-    maxChunkWords: chunking.maxWords,
-    ttsConcurrency: chunking.concurrency,
-    micStream,
-    onSttEndpointChange: setSttEndpoint,
-    onError: (msg) => toast.error(msg),
-  })
+  // The whole startup: the system's phase covers acquiring the devices,
+  // starting the services, loading the models and opening the connection —
+  // `starting` until the loop is live. A saved provider change re-readies a
+  // service under an already-live session, which is `reconfiguring` rather
+  // than a phase change, and it holds the same starting chrome up.
+  const voiceStarting = phase === 'starting' || (phase === 'live' && reconfiguring)
+
+  // Voice is fully live, which is what the voice-on chrome keys off: the
+  // composer's live cluster, the mobile swap to VoiceControlsMobile, the
+  // transcript padding and the spacebar mute shortcut. Holding all of them
+  // until startup finishes keeps one surface — the composer, carrying its
+  // waiting state — in front of the person for the whole wait on both
+  // desktop and mobile.
+  const voiceLoopEnabled = phase === 'live' && !reconfiguring
+  /** The controls are standing over the conversation rather than sitting in the composer. */
+  const clearingControls = voiceLoopEnabled && isMobile
+
+  // Voice turning on puts a tall block over the conversation, on the surface
+  // where it stands over it. Unlike the block merely changing height, this
+  // scrolls whether or not the user was at the bottom: they have just asked
+  // to start talking, and what was last said is the context for it.
+  useEffect(() => {
+    if (!clearingControls) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [clearingControls])
+
+  // H7: Escape re-locks the gate regardless of focus — unlike the space/
+  // slash shortcuts below, this must fire even while the composer's field
+  // has focus (arming happens with the field either state, and Escape is
+  // the standard "back out of this" key everywhere, editable fields
+  // included). A stale armed state must never persist.
+  useEffect(() => {
+    function onEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') cancelArm()
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [])
 
   // Global keyboard shortcuts — only active when the input is not focused.
-  // Space toggles mute-all; / focuses the input. Declared after useVoiceLoop so
-  // the handler closes over the current voiceLoopEnabled/toggleMuteAll.
+  // Space toggles mute-all; / focuses the input.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null
@@ -325,19 +409,6 @@ export function ChatPage(_props: Props) {
       : playbackState === 'playing' ? 'playing'
         : 'off'
 
-  // The displayed status must reflect the *whole* startup, not just service
-  // readiness. `voiceStatus` covers service start + TTS model load; the
-  // browser-side VAD/SmartTurn models (isVoiceReady) and the mic loop (micReady)
-  // load in parallel and aren't done when `voiceStatus` flips to 'ready'. Keep
-  // the indicator in 'loading' until every piece is live.
-  const voiceLoading =
-    voiceStatus === 'loading' ||
-    (speechEnabled && voiceStatus === 'ready' && (!isVoiceReady || !micReady))
-  const displayStatus: VoiceStatus =
-    voiceStatus === 'error' ? 'error'
-      : voiceLoading ? 'loading'
-        : voiceStatus
-
   return (
     <div className="flex flex-col flex-1 min-h-0 relative overflow-hidden">
       <div className="chat-ambient-wash" aria-hidden="true" />
@@ -361,80 +432,23 @@ export function ChatPage(_props: Props) {
               toast.error(msg)
             })
           }}
-          voiceControls={voiceConfig && (
-            <>
-              <span className="inline-flex h-7 w-7 items-center justify-center text-muted-foreground">
-                {displayStatus === 'loading' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {displayStatus === 'ready' && playbackState === 'playing' && <AudioLines className="h-3.5 w-3.5 text-primary" />}
-                {displayStatus === 'ready' && playbackState !== 'playing' && <AudioLines className="h-3.5 w-3.5 text-green-500" />}
-                {displayStatus === 'error' && <AudioLines className="h-3.5 w-3.5 text-destructive" />}
-              </span>
-              {voiceSelection && (
-                <VoiceSettings
-                  voiceConfig={voiceConfig}
-                  selection={voiceSelection}
-                  endpoint={ttsEndpoint}
-                  onSelectionChange={setVoiceSelection}
-                  onSave={(sel, newSttServiceId, updatedVoice) => {
-                    // Without this merge, Save writes to disk but nothing in
-                    // the running page changes until a reload — the PATCH
-                    // response is the only place the merged chunking
-                    // state (modelPrefs, global options) comes back. providers
-                    // and stt.options are kept from the local copy: the PATCH
-                    // response is raw config.voice, which lacks the
-                    // enrichment GET /api/voice adds (service names, STT
-                    // option list).
-                    setVoiceConfig(prev => prev ? {
-                      ...prev,
-                      ...(updatedVoice.enabled !== undefined && { enabled: updatedVoice.enabled }),
-                      tts: {
-                        ...prev.tts,
-                        ...(updatedVoice.tts?.selection && { selection: updatedVoice.tts.selection }),
-                        options: updatedVoice.tts?.options ?? prev.tts.options,
-                        modelPrefs: updatedVoice.tts?.modelPrefs ?? prev.tts.modelPrefs,
-                        settingsScope: updatedVoice.tts?.settingsScope ?? prev.tts.settingsScope,
-                      },
-                      stt: { ...prev.stt, ...(updatedVoice.stt?.serviceId && { serviceId: updatedVoice.stt.serviceId }) },
-                      debug: updatedVoice.debug ?? prev.debug,
-                    } : prev)
-
-                    const provider = voiceConfig?.tts.providers.find(p => p.serviceId === sel.serviceId)
-                    if (!provider) return
-                    if (voiceSelection && voiceSelection.serviceId !== sel.serviceId) {
-                      updateService(voiceSelection.serviceId, { lifecycle: { idleUnload: true } }).catch(() => { })
-                    }
-                    setVoiceStatus('loading')
-                    ensureTtsReady(provider.serviceId)
-                      .then(ep => {
-                        setTtsEndpoint(ep)
-                        return loadTtsModel(ep, sel.model)
-                      })
-                      .then(() => { setVoiceStatus('ready') })
-                      .catch(() => { setVoiceStatus('error') })
-
-                    if (newSttServiceId && voiceConfig && newSttServiceId !== voiceConfig.stt?.serviceId) {
-                      const oldSttId = voiceConfig.stt?.serviceId
-                      if (oldSttId) {
-                        updateService(oldSttId, { lifecycle: { idleUnload: true } }).catch(() => { })
-                      }
-                      ensureServiceReady(newSttServiceId)
-                        .then(ep => {
-                          setSttEndpoint(ep)
-                          updateService(newSttServiceId, { lifecycle: { idleUnload: false } }).catch(() => { })
-                        })
-                        .catch(() => { })
-                    }
-                  }}
-                />
-              )}
-            </>
-          )}
         />
         <DisconnectBanner connectionState={connectionState} onRetry={reconnect} />
         <CompactionIndicator phase={compactionPhase} />
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative z-[2]">
-        <div className={`max-w-4xl mx-auto w-full px-4 md:px-8 ${voiceLoopEnabled ? 'pb-[11.5rem] md:pb-0' : ''}`}>
+        {/* Measured rather than guessed: the controls block grows with the
+            readout inside it and with the phone's safe-area inset, and a
+            constant leaves the last bubble underneath the buttons the moment
+            a transcript makes the block taller. */}
+        {/* Both adjustments belong to the block that overlays the
+            conversation, and that block is mobile-only: desktop keeps its
+            controls inside the composer, with nothing standing over the last
+            message and so nothing to clear or to give up. */}
+        <div
+          className={`max-w-4xl mx-auto w-full px-4 md:px-8 ${clearingControls ? '[&>*]:!pb-0' : ''}`}
+          style={clearingControls ? { paddingBottom: `${voiceControlsHeight}px` } : undefined}
+        >
           <MessageList
             items={items}
             runActive={runActive}
@@ -447,12 +461,12 @@ export function ChatPage(_props: Props) {
         </div>
       </div>
       {voiceLoopEnabled && (
-        <div className="md:hidden absolute bottom-0 left-0 right-0 z-[2]">
+        <div ref={voiceControlsRef} className="md:hidden absolute bottom-0 left-0 right-0 z-[2]">
           {!isAtBottom && (
             <Button
               variant="default"
               size="icon"
-              className="dashboard-chrome absolute -top-12 left-1/2 -translate-x-1/2 size-9 rounded-full shadow-[0_3px_14px_3px_color-mix(in_oklch,var(--foreground)_24%,transparent)] z-10"
+              className="dashboard-chrome absolute -top-12 left-1/2 -translate-x-1/2 size-9 rounded-full shadow-float z-10"
               onClick={scrollToBottom}
               aria-label="Scroll to bottom"
               title="Scroll to bottom"
@@ -476,10 +490,10 @@ export function ChatPage(_props: Props) {
             currentModel={currentModel}
             onModelChange={handleModelChange}
             onPreventScreenLock={
-              voiceStatus === 'ready' && speechEnabled
-                ? () => setUnattended(true)
-                : undefined
+              phase === 'live' ? toggleUnattended : undefined
             }
+            unattended={unattended}
+            readout={<SpokenReadout />}
           />
         </div>
       )}
@@ -494,7 +508,7 @@ export function ChatPage(_props: Props) {
           <Button
             variant="default"
             size="icon"
-            className={`dashboard-chrome absolute -top-12 left-1/2 -translate-x-1/2 size-9 rounded-full shadow-[0_3px_14px_3px_color-mix(in_oklch,var(--foreground)_24%,transparent)] z-10 ${voiceLoopEnabled ? 'md:flex hidden' : ''}`}
+            className={`dashboard-chrome absolute -top-12 left-1/2 -translate-x-1/2 size-9 rounded-full shadow-float z-10 ${voiceLoopEnabled ? 'md:flex hidden' : ''}`}
             onClick={scrollToBottom}
             aria-label="Scroll to bottom"
             title="Scroll to bottom"
@@ -503,12 +517,13 @@ export function ChatPage(_props: Props) {
           </Button>
         )}
         <div className={voiceLoopEnabled ? 'md:block hidden' : ''}>
-          <ChatComposer
+          <ComposerDock
             onSend={handleSend}
             onStop={stop}
             isStreaming={runActive}
             disabled={inputDisabled}
             voiceOn={voiceLoopEnabled}
+            voiceStarting={voiceStarting}
             onVoiceToggle={handleSpeechToggle}
             speechMuted={speechMuted}
             toggleSpeechMuted={toggleSpeechMuted}
@@ -529,20 +544,30 @@ export function ChatPage(_props: Props) {
           />
         </div>
       </div>
-      {unattended && (
-        <button
-          type="button"
-          onClick={() => setUnattended(false)}
-          className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center gap-3 text-center px-8 text-foreground cursor-pointer"
-          aria-label="Exit screen lock prevention"
-        >
-          <EyeClosed className="h-16 w-16 opacity-40" />
-          <span className="text-lg font-medium">Screen lock prevented — tap anywhere to exit</span>
-          <span className="max-w-xs text-lg font-normal text-muted-foreground">
-            Voice chat stays connected while your screen is kept from sleeping.
-          </span>
-        </button>
-      )}
+      <AlertDialog
+        open={lastEnd?.reason === 'held'}
+        onOpenChange={(open) => { if (!open) voiceSystem.clearLastEnd() }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Voice server in use</AlertDialogTitle>
+            <AlertDialogDescription>
+              Another session is using the voice server. Take it over? That session's voice will end.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => voiceSystem.clearLastEnd()}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                voiceSystem.clearLastEnd()
+                voiceOn({ takeover: true })
+              }}
+            >
+              Take over
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

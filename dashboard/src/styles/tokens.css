@@ -50,6 +50,8 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  --shadow-float: var(--float);
 }
 
 :root {
@@ -136,6 +138,13 @@
      in this skin — oklch(primary-L + 0.05, primary-C * 0.5, primary-H)
      collapses to pure gray once primary-C is 0. Static, not time-of-day. */
   --wash-top: oklch(0.40 0 0);
+
+  /* Halo for chrome that floats over scrolling content (the chat
+     scroll-to-bottom button) rather than sitting on the page — a
+     color-mix against --foreground rather than a fixed tint, so it holds
+     the same soft-black weight in both themes with no separate dark
+     override, the same approach --dashboard-chrome:hover already uses. */
+  --float: 0 3px 14px 3px color-mix(in oklch, var(--foreground) 24%, transparent);
 }
 
 .dark {

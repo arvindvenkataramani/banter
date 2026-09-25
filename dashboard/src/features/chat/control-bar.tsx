@@ -63,7 +63,6 @@ interface Props {
   sessions: SessionListEntry[]
   currentSessionName: string
   onSelectSession: (name: string) => void
-  voiceControls?: React.ReactNode
 }
 
 export function ControlBar({
@@ -79,7 +78,6 @@ export function ControlBar({
   sessions,
   currentSessionName,
   onSelectSession,
-  voiceControls,
 }: Props) {
   const [sessionOpen, setSessionOpen] = useState(false)
 
@@ -150,13 +148,7 @@ export function ControlBar({
       {/* Data, not a control — stays mono so digits don't jitter, but sized to
           sit on the same line as the pills. */}
       {contextUsage && (
-        <span className={`font-mono text-[11.5px] whitespace-nowrap px-1.5 ${contextWarning ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>{contextUsage}</span>
-      )}
-
-      {voiceControls && (
-        <div className="ml-auto flex items-center gap-2">
-          {voiceControls}
-        </div>
+        <span className={`ml-auto font-mono text-[11.5px] whitespace-nowrap px-1.5 ${contextWarning ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>{contextUsage}</span>
       )}
     </div>
   )

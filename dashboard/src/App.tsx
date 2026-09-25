@@ -5,6 +5,14 @@ import { NavBar } from '@/components/nav-bar'
 import { ServicesPage } from '@/features/services/page'
 import { ChatPage } from '@/features/chat/page'
 import { GatewayProvider } from '@/lib/gateway-context'
+import { cancelArm } from '@/lib/media-voice-mode'
+import { voiceSystem } from '@/lib/voice/system'
+import { preloadTones } from '@/lib/voice/system/tones'
+
+// The browser's VAD/smart-turn models and the tones load once, at page load,
+// so the first tap rarely waits on either.
+voiceSystem.preload()
+void preloadTones()
 
 function readRoute() {
   const path = window.location.pathname || '/'
@@ -26,10 +34,14 @@ export function App() {
     }
     history.pushState(null, '', url.toString())
     setRoute({ path: newPath, filter: newFilter ?? '' })
+    cancelArm()
   }, [])
 
   useEffect(() => {
-    function onPop() { setRoute(readRoute()) }
+    function onPop() {
+      setRoute(readRoute())
+      cancelArm()
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])

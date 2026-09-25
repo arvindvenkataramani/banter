@@ -3,8 +3,8 @@ import {
   CHUNKING,
   resolveChunkingFields,
   diffGlobalOptions,
-} from './chunking-setting'
-import type { ChunkingDraft, ChunkingSet } from './chunking-setting'
+} from './agent/chunking-setting'
+import type { ChunkingDraft, ChunkingSet } from './agent/chunking-setting'
 import {
   normalizeOverride,
   editField,
