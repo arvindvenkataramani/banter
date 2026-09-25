@@ -2,7 +2,7 @@
 
 Registry and config snippets for each text-to-speech model in [models.md](models.md#text-to-speech-models-recommended). Kokoro is covered in that page's [Quick start](models.md#quick-start) instead of here.
 
-Every snippet assumes the service has already been installed: `requirements.txt` (Python services), its own `BUILD.md` (Voxtral), or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
+Every snippet assumes the service has already been installed: `requirements.txt` (this repo's Python adapters), `pip install mlx-audio` (Pocket TTS), or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
 
 Each `roster.providers` snippet below is a new key to add to that object — alongside the `fluid-tts`/`fluid-stt` entries already there if you started from the shipped registry, not replacing them.
 
@@ -69,63 +69,6 @@ Point `voice.tts.selection` at it in `config.json`:
   }
 }
 ```
-
----
-
-## Voxtral
-
-Build first per [`tts/mlx-voxtral-swift`'s BUILD.md](../services/tts/mlx-voxtral-swift/BUILD.md) — this one compiles a Swift binary rather than installing a pip package.
-
-Add this entry to `registry.json`'s `services`:
-
-```json
-{
-  "id": "tts-voxtral",
-  "name": "Voxtral",
-  "capabilityId": "tts",
-  "hostId": "<your-host-id>",
-  "permissions": { "enabled": true, "protected": false },
-  "runner": {
-    "type": "process",
-    "main": "bin/VoxtralHTTPServer --model tts-4b-6bit --host 127.0.0.1 --port 8003"
-  },
-  "ops": { "env": { "workingDirectory": "~/services/tts/mlx-voxtral-swift" } },
-  "network": { "port": 8003, "healthPath": "/health" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000, "startupTime": 120000 }
-}
-```
-
-Then add a `roster.providers` entry for it in `registry.json`, and point `voice.tts.selection` at it in `config.json`:
-
-```json
-"roster": {
-  "providers": {
-    "tts-voxtral": {
-      "responseFormat": "wav",
-      "ttsModels": [
-        {
-          "id": "tts-4b-6bit",
-          "name": "Voxtral 4B (6-bit)",
-          "key": "tts-4b-6bit",
-          "presetVoices": [{ "id": "neutralFemale", "name": "Neutral Female" }]
-        }
-      ]
-    }
-  }
-}
-```
-
-Voxtral's server always returns `audio/wav`, hence `responseFormat: "wav"` above — leaving it out defaults to `mp3` and the dashboard would try to decode wav bytes as mp3.
-
-```json
-"voice": {
-  "tts": {
-    "selection": { "serviceId": "tts-voxtral", "model": "tts-4b-6bit", "voice": "neutralFemale" }
-  }
-}
-```
-
-`--model` accepts any ID in `VoxtralTTSRegistry` — `tts-4b-4bit`, `tts-4b-6bit`, `tts-4b-mlx` (bf16) among them. `tts-4b-6bit` is the one worth starting from for realtime use; bf16 is too slow for a voice conversation. The `startupTime` above gives the health check longer to wait — loading the larger variants into GPU memory can take a while.
 
 ---
 

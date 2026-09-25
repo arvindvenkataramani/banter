@@ -6,7 +6,7 @@ Adapter code and install docs for the STT/TTS model servers this repo is built a
 
 Two kinds of entries here:
 
-- **Ours** — adapter server code we wrote, committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server; `services/fluid` and `tts/mlx-voxtral-swift` are Swift and you build them yourself. `mlx-voxtral-swift` ships only our diff against a pinned upstream commit (see its `BUILD.md`); `services/fluid` is a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/STT.md`](fluid/STT.md) and, for the vendored FluidAudio patches it pins, [`services/fluid/patches/README.md`](fluid/patches/README.md).
+- **Ours** — adapter server code we wrote, committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server; `services/fluid` is Swift and you build it yourself: a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/STT.md`](fluid/STT.md) and, for the vendored FluidAudio patches it pins, [`services/fluid/patches/README.md`](fluid/patches/README.md).
 - **Third-party, pip-installable** — servers we don't vendor at all, just document how to wire in.
 
 ## Ours
@@ -14,11 +14,10 @@ Two kinds of entries here:
 | Service | Capability | Endpoints | Install |
 |---|---|---|---|
 | `stt/whisper` | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
-| `tts/kokoro` | TTS | `GET /health`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
+| `tts/kokoro` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
 | `tts/neutts-air` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt`, then install NeuTTS itself per [neuphonic/neutts](https://github.com/neuphonic/neutts) upstream instructions — it's editable-installed from source, not on PyPI, so there's no pip name to add to `requirements.txt` |
 | `fluid` (`fluid-stt`) | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`, `WS /v1/audio/stream`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — `scripts/fluid-build.sh` |
 | `fluid` (`fluid-tts`) | TTS | `GET /healthz`, `POST /v1/audio/speech`, `WS /v1/audio/stream`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — `scripts/fluid-build.sh` |
-| `tts/mlx-voxtral-swift` | TTS | `GET /health`, `POST /v1/audio/speech` | Swift — see `BUILD.md` |
 
 Registry `runner.main` examples (Python adapters run under a venv's interpreter directly; ports are whatever you choose — these match each server's own default):
 
@@ -33,12 +32,6 @@ Registry `runner.main` examples (Python adapters run under a venv's interpreter 
 ```
 .build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
 .build/release/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
-```
-
-For `tts/mlx-voxtral-swift`, build first per its `BUILD.md` — clone the pinned upstream commit, `git apply upstream.patch`, copy in our `Sources/` addition, then the packaged `build.sh`. The resulting binary's own `--host`/`--port` flags become the registry `runner.main` line, e.g.:
-
-```
-./bin/VoxtralHTTPServer --model tts-4b-6bit --host 127.0.0.1 --port 8003          # mlx-voxtral-swift
 ```
 
 ## Third-party, pip-installable

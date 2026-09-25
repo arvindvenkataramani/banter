@@ -2,7 +2,7 @@
 
 Which speech-to-text and text-to-speech models to run, and what each one needs. For ready-to-copy registry/config snippets once you've chosen, see [tts-setup.md](tts-setup.md) and [stt-setup.md](stt-setup.md); for what those registry fields mean in general, see [configuration.md](configuration.md); for the adapter code itself, see [../services/README.md](../services/README.md).
 
-Most of what this repo builds and ships — the fluid servers, `stt/whisper`, `tts/mlx-voxtral-swift`, and every MLX-based option (`parakeet-mlx-fastapi`, `mlx-audio`) — is Apple Silicon only. Each model and adapter below says so where it applies. For a Linux install, see [docs/linux-speech-servers.md](linux-speech-servers.md).
+Most of what this repo builds and ships — the fluid servers, `stt/whisper`, and every MLX-based option (`parakeet-mlx-fastapi`, `mlx-audio`) — is Apple Silicon only. Each model and adapter below says so where it applies. For a Linux install, see [docs/linux-speech-servers.md](linux-speech-servers.md).
 
 Neither the model nor the framework matters to Banter. Any server is usable if it:
 
@@ -171,7 +171,7 @@ These models are recommended because they're suitable for realtime or near-realt
 |---|---|---|---|
 | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) | Linux and macOS (no MLX/CUDA dependency) | this repo's adapter ([`tts/kokoro`](../services/tts/kokoro)) | 82M parameters, small by current TTS standards. Preset voices only, no cloning. |
 | [NeuTTS Air](https://huggingface.co/neuphonic/neutts-air) | Linux and macOS — NeuTTS itself runs on CPU, CUDA, or ROCm; nothing MLX-specific in this adapter | this repo's adapter ([`tts/neutts-air`](../services/tts/neutts-air)) | 0.7B parameters. Voice cloning from a few seconds of reference audio. Output length for identical input text can vary run to run, and quality degrades on longer passages — sentence-level chunking helps. |
-| [Voxtral](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603) | Apple Silicon (MLX) | this repo's adapter ([`tts/mlx-voxtral-swift`](../services/tts/mlx-voxtral-swift)) | 4B parameters. 20 preset voices across 9 languages, with voice cloning from a reference sample. Ships in several quantizations (4-bit through bf16); the 6-bit build is the pick for realtime use — full bf16 is too slow for a voice conversation. |
+| [Voxtral](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603) | Apple Silicon (MLX) | `mlx-audio` | 4B parameters. 20 preset voices across 9 languages, with voice cloning from a reference sample. Ships in several quantizations (4-bit through bf16); the 6-bit build is the pick for realtime use — full bf16 is too slow for a voice conversation. |
 | [Pocket TTS](https://huggingface.co/kyutai/pocket-tts) | this repo's `fluid-tts` is Apple Silicon; `mlx-audio` is Apple Silicon too — see the model's own docs for other runtimes | `fluid-tts` ([`services/fluid`](../services/fluid)), `mlx-audio`, or a third-party OpenAI-compatible wrapper | 100M parameters, ~30MB weights. Voice cloning from a few seconds of reference audio, plus a handful of preset voices. Sub-50ms first-chunk latency. |
 | [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) | — | needs an adapter — none in this repo | Voice cloning and voice design (describe a voice by attributes like gender, age, or accent) across 600+ languages. Reference usage returns a complete audio array rather than a stream. |
 | Anything OpenAI-compatible | whatever the server runs on | either | Any server that exposes `POST /v1/audio/speech` plus a health endpoint meets the contract, whatever model it's actually running. |
@@ -180,7 +180,7 @@ These models are recommended because they're suitable for realtime or near-realt
 
 **NeuTTS Air.** `requirements.txt` covers the adapter's own dependencies; NeuTTS itself is installed per [neuphonic/neutts](https://github.com/neuphonic/neutts) upstream instructions, editable from source — see that project's own docs for CPU/CUDA/ROCm setup.
 
-**Voxtral.** This repo's adapter is a Swift build against MLX — see its `BUILD.md`, including which quantized variant to pass as `--model`. Apple Silicon only.
+**Voxtral.** Not set up in this repo — listed for reference. `mlx-audio` can serve its MLX weights (`mlx-community/Voxtral-4B-TTS-2603-mlx-6bit` and siblings) if you want to try it. Apple Silicon only.
 
 **Pocket TTS.** [kyutai-labs](https://github.com/kyutai-labs/pocket-tts), CPU-first by design — the official package doesn't require a GPU build of PyTorch. Its own `serve` command exposes a web interface, not an OpenAI-compatible API, so it needs a server in front: this repo's `fluid-tts` (Apple Silicon, CoreML — see [`services/fluid`](../services/fluid)), `mlx-audio` (Apple Silicon), a third-party OpenAI-compatible wrapper mentioned in the project's README, or an adapter you write yourself.
 
@@ -215,7 +215,7 @@ Two other runtimes can serve the same model, neither this repo's code nor `mlx-w
 
 ## Getting the models
 
-How a model reaches disk depends on the adapter — check each one's own instructions rather than assume. The Python adapters (`tts/kokoro`, `tts/neutts-air`, `stt/whisper`) fetch from Hugging Face on first run, into `~/.cache/huggingface`; the Swift ones have their own model-loading path — `tts/mlx-voxtral-swift` has a `BUILD.md`, and `services/fluid` (`fluid-stt`, `fluid-tts`) is covered by [`services/fluid/README.md`](../services/fluid/README.md) and [`services/fluid/STT.md`](../services/fluid/STT.md). Either way, the first start after installing an adapter is typically slow and needs network, and every start afterwards is neither.
+How a model reaches disk depends on the adapter — check each one's own instructions rather than assume. The Python adapters (`tts/kokoro`, `tts/neutts-air`, `stt/whisper`) fetch from Hugging Face on first run, into `~/.cache/huggingface`; `mlx-audio` does the same for its models; `services/fluid` (`fluid-stt`, `fluid-tts`) has its own model-loading path, covered by [`services/fluid/README.md`](../services/fluid/README.md) and [`services/fluid/STT.md`](../services/fluid/STT.md). Either way, the first start after installing an adapter is typically slow and needs network, and every start afterwards is neither.
 
 Two consequences worth knowing for the Hugging Face–backed adapters specifically:
 

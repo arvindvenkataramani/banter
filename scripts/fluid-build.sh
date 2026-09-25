@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Build the FluidServer binaries (services/fluid) in this repo's working tree.
 #
-# Builds only. Installing them is shard-install-services.sh, which reads the
-# fluid-stt and fluid-tts entries' ops.install from the shard registry:
+# Builds only. Installing them is control-install-services.sh on a single
+# machine, or shard-install-services.sh on a shard; both read the fluid-stt and
+# fluid-tts entries' ops.install from that node's registry:
 #
-#   scripts/fluid-build.sh && scripts/shard-install-services.sh
+#   scripts/fluid-build.sh && scripts/control-install-services.sh
 #
-# The servers read the roster section of the registry the shard deploy
-# installs, so a change to the roster's shape ships with a shard deploy and a
-# server build.
+# The servers read the roster section of the deployed registry, so a change to
+# the roster's shape ships with a deploy and a server build.
 #
 # Checked before the build starts, each printing what is missing and the
 # command that installs it: Apple Silicon, macOS 15+, a Swift 6 toolchain, and
