@@ -80,8 +80,11 @@ if [[ -f "$REGISTRY" ]]; then
 fi
 
 # Reload after any unit changes above — including the control plane's own unit,
-# which is installed outside the registry-driven block.
-systemctl --user daemon-reload
+# which is installed outside the registry-driven block. Skipped where there is
+# no systemd (macOS), so the artifact install below still runs there.
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user daemon-reload
+fi
 
 # --- built artifacts (registry-driven) ---
 # A failure here is reported at the end, after everything else is installed.
