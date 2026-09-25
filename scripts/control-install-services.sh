@@ -109,7 +109,7 @@ fi
 if [[ -d "$SERVICES_SRC" ]]; then
   echo "[install-services] Syncing service scripts from $SERVICES_SRC..."
 
-  find "$SERVICES_SRC" -type f -name '*.sh' | while read -r src_file; do
+  find "$SERVICES_SRC" -name .build -prune -o -type f -name '*.sh' -print | while read -r src_file; do
     rel="${src_file#$SERVICES_SRC/}"
     dest="$SERVICES_DEST/$rel"
     dest_dir="$(dirname "$dest")"
@@ -124,7 +124,7 @@ if [[ -d "$SERVICES_SRC" ]]; then
   done
 
   # Ensure logs directories exist for each service
-  find "$SERVICES_SRC" -mindepth 2 -maxdepth 3 -type d | while read -r src_dir; do
+  find "$SERVICES_SRC" -mindepth 2 -maxdepth 3 -name .build -prune -o -mindepth 2 -maxdepth 3 -type d -print | while read -r src_dir; do
     rel="${src_dir#$SERVICES_SRC/}"
     dest_dir="$SERVICES_DEST/$rel"
     if [[ -d "$dest_dir" ]]; then

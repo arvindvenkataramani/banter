@@ -82,7 +82,7 @@ fi
 
 echo "[install-services] Syncing service scripts from $SERVICES_SRC..."
 
-find "$SERVICES_SRC" -type f \( -name '*.sh' -o -name '*.plist' \) | while read -r src_file; do
+find "$SERVICES_SRC" -name .build -prune -o -type f \( -name '*.sh' -o -name '*.plist' \) -print | while read -r src_file; do
   rel="${src_file#$SERVICES_SRC/}"
   dest="$SERVICES_DEST/$rel"
   dest_dir="$(dirname "$dest")"
