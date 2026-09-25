@@ -190,11 +190,11 @@ One row per model, each with more than one server option. For registry/config sn
 
 | Model | Served via | Notes |
 |---|---|---|
-| [Parakeet TDT](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) | third-party ([`parakeet-mlx-fastapi`](https://pypi.org/project/parakeet-mlx-fastapi/)) or this repo's adapter ([`stt/fluid-audio`](../services/stt/fluid-audio)) | 0.6B parameters, FastConformer/Conformer architecture. 25 languages. |
+| [Parakeet](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) | third-party ([`parakeet-mlx-fastapi`](https://pypi.org/project/parakeet-mlx-fastapi/)) or this repo's adapter (`fluid-stt`, in [`services/fluid`](../services/fluid)) | 0.6B parameters, FastConformer/Conformer architecture. 25 languages. `fluid-stt` also offers streaming variants (Parakeet Unified, Nemotron) — see [`services/fluid/STT.md`](../services/fluid/STT.md). |
 | [Whisper](https://huggingface.co/openai/whisper-large-v3-turbo) | this repo's adapter ([`stt/whisper`](../services/stt/whisper)), faster-whisper, or whisper.cpp | 809M parameters (large-v3-turbo). 99 languages. A pruned variant of large-v3 — fewer decoder layers, faster inference, slight accuracy loss. |
 | Anything OpenAI-compatible | either | Any server that exposes `POST /v1/audio/transcriptions` plus a health endpoint meets the contract, whatever model it's actually running. |
 
-**Parakeet TDT.** Two ways to run the same underlying model — `parakeet-mlx-fastapi` (third-party, pip, MLX; the Quick Start's default) or `stt/fluid-audio` (this repo's adapter, a patch against a pinned upstream commit — see its `BUILD.md`). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path.
+**Parakeet.** Two ways to run it — `parakeet-mlx-fastapi` (third-party, pip, MLX; the Quick Start's default) or `fluid-stt` (this repo's adapter, the default in the shipped registry examples; build with `scripts/fluid-build.sh`, see [`services/fluid/STT.md`](../services/fluid/STT.md)). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path, and also serves Parakeet Unified and Nemotron's streaming variants alongside the batch model.
 
 **Whisper.** [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) is the checkpoint `stt/whisper` defaults to — this repo's adapter around `mlx-whisper`. Choose a different Whisper checkpoint with `--model` to trade accuracy for speed and memory.
 
@@ -203,7 +203,7 @@ Two other runtimes can serve the same model, neither this repo's code nor `mlx-w
 - **faster-whisper**, built on CTranslate2 — CPU or CUDA, not GPU-only. Has no server of its own; several projects wrap it in an OpenAI-compatible one: [fedirz/faster-whisper-server](https://github.com/fedirz/faster-whisper-server), [hwdsl2/docker-whisper](https://github.com/hwdsl2/docker-whisper) (Docker, CUDA, multi-arch), [hwdsl2/whisper-install](https://github.com/hwdsl2/whisper-install) (installer for Debian/Ubuntu/RHEL family).
 - **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)**, a dependency-free C/C++ port — Mac, Linux, Windows, mobile, and more, with Metal/CUDA/ROCm/Vulkan acceleration depending on platform. Ships its own [`whisper-server` example](https://github.com/ggml-org/whisper.cpp/tree/master/examples/server) with an OpenAI-like transcription API.
 
-**Anything OpenAI-compatible.** The STT contract is `POST /v1/audio/transcriptions` and a health endpoint. The browser calls this server directly, so its CORS allowlist must include wherever you reach the dashboard (e.g. `http://localhost:4200`) — `stt/whisper`, `stt/fluid-audio`, and `parakeet-mlx-fastapi` each take this as an env var: `WHISPER_CORS_ORIGINS`, `FLUID_CORS_ORIGINS`, `PARAKEET_CORS_ORIGINS`.
+**Anything OpenAI-compatible.** The STT contract is `POST /v1/audio/transcriptions` and a health endpoint. The browser calls this server directly, so its CORS allowlist must include wherever you reach the dashboard (e.g. `http://localhost:4200`) — `stt/whisper`, `fluid-stt`, and `parakeet-mlx-fastapi` each take this as an env var: `WHISPER_CORS_ORIGINS`, `FLUID_CORS_ORIGINS`, `PARAKEET_CORS_ORIGINS`.
 
 ---
 

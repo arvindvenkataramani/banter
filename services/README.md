@@ -6,7 +6,7 @@ Adapter code and install docs for the STT/TTS model servers this repo is built a
 
 Two kinds of entries here:
 
-- **Ours** — adapter server code we wrote, committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server; the Swift adapters ship only our diff against a pinned upstream commit (see each `BUILD.md`) — you build them yourself, this repo never runs `swift build` for you.
+- **Ours** — adapter server code we wrote, committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server; `services/fluid` and `tts/mlx-voxtral-swift` are Swift and you build them yourself. `mlx-voxtral-swift` ships only our diff against a pinned upstream commit (see its `BUILD.md`); `services/fluid` is a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/STT.md`](fluid/STT.md) and, for the vendored FluidAudio patches it pins, [`services/fluid/patches/README.md`](fluid/patches/README.md).
 - **Third-party, pip-installable** — servers we don't vendor at all, just document how to wire in.
 
 ## Ours
@@ -16,7 +16,8 @@ Two kinds of entries here:
 | `stt/whisper` | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
 | `tts/kokoro` | TTS | `GET /health`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
 | `tts/neutts-air` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt`, then install NeuTTS itself per [neuphonic/neutts](https://github.com/neuphonic/neutts) upstream instructions — it's editable-installed from source, not on PyPI, so there's no pip name to add to `requirements.txt` |
-| `stt/fluid-audio` | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — see `BUILD.md` |
+| `fluid` (`fluid-stt`) | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`, `WS /v1/audio/stream`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — `scripts/fluid-build.sh` |
+| `fluid` (`fluid-tts`) | TTS | `GET /healthz`, `POST /v1/audio/speech`, `WS /v1/audio/stream`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — `scripts/fluid-build.sh` |
 | `tts/mlx-voxtral-swift` | TTS | `GET /health`, `POST /v1/audio/speech` | Swift — see `BUILD.md` |
 
 Registry `runner.main` examples (Python adapters run under a venv's interpreter directly; ports are whatever you choose — these match each server's own default):
@@ -27,10 +28,16 @@ Registry `runner.main` examples (Python adapters run under a venv's interpreter 
 .venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766   # whisper
 ```
 
-For the Swift adapters, build first per each `BUILD.md` — clone the pinned upstream commit, `git apply upstream.patch`, copy in our `Sources/` addition, then `swift build -c release` (fluid-audio) or the packaged `build.sh` (mlx-voxtral-swift). The resulting binary's own `--host`/`--port` flags become the registry `runner.main` line, e.g.:
+`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt` and `fluid-tts` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags — what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/voices-and-models.md](../docs/voices-and-models.md)). The shipped example registry runs them as:
 
 ```
-.build/release/fluidserver --model-version v3 --port 8767 --host 127.0.0.1        # fluid-audio
+.build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
+.build/release/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
+```
+
+For `tts/mlx-voxtral-swift`, build first per its `BUILD.md` — clone the pinned upstream commit, `git apply upstream.patch`, copy in our `Sources/` addition, then the packaged `build.sh`. The resulting binary's own `--host`/`--port` flags become the registry `runner.main` line, e.g.:
+
+```
 ./bin/VoxtralHTTPServer --model tts-4b-6bit --host 127.0.0.1 --port 8003          # mlx-voxtral-swift
 ```
 

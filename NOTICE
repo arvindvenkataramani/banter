@@ -4,8 +4,9 @@ https://github.com/arvindvenkataramani/banter
 
 Licensed under the Apache License, Version 2.0. See LICENSE.
 
-Vendored third-party patches keep their upstream licenses: services/stt/fluid-audio
-(Apache-2.0), services/tts/mlx-voxtral-swift (MIT). See each BUILD.md.
+Vendored third-party patches keep their upstream licenses: services/fluid/patches
+(Apache-2.0, against FluidAudio; see services/fluid/patches/README.md),
+services/tts/mlx-voxtral-swift (MIT; see its BUILD.md).
 
 Bundled third-party model assets in dashboard/public/models/ keep their upstream
 licenses, and are redistributed here unmodified:

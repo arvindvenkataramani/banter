@@ -2,7 +2,7 @@
 
 Registry and config snippets for each text-to-speech model in [models.md](models.md#text-to-speech-models-recommended). Kokoro is covered in that page's [Quick start](models.md#quick-start-kokoro-and-parakeet) instead of here.
 
-Every snippet assumes the service has already been installed per its `BUILD.md` (Swift services) or `requirements.txt` (Python services). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
+Every snippet assumes the service has already been installed: `requirements.txt` (Python services), its own `BUILD.md` (Voxtral), or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
 
 Each `roster.providers` snippet below is a new key to add to that object — alongside the `fluid-tts`/`fluid-stt` entries already there if you started from the shipped registry, not replacing them.
 

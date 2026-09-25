@@ -2,47 +2,52 @@
 
 Registry and config snippets for each speech-to-text model in [models.md](models.md#speech-to-text-models-recommended). `parakeet-mlx-fastapi` is covered in that page's [Quick start](models.md#quick-start-kokoro-and-parakeet) instead of here.
 
-Every snippet assumes the service has already been installed per its `BUILD.md` (Swift services) or `requirements.txt` (Python services). See [configuration.md](configuration.md) for what each registry field means. `voice.stt.serviceId` is validated against the registry directly and needs no roster entry; a roster `sttModels` list is only how `fluid-stt` itself declares what it can load — see [voices-and-models.md](voices-and-models.md) if you're adding a model there.
+Every snippet assumes the service has already been installed: `requirements.txt` (Python services) or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means. `voice.stt.serviceId` is validated against the registry directly and needs no roster entry; a roster `sttModels` list is only how `fluid-stt` itself declares what it can load — see [voices-and-models.md](voices-and-models.md) if you're adding a model there.
 
 ---
 
-## Parakeet TDT via fluid-audio
+## Parakeet via fluid-stt
 
-The alternative to the Quick Start's `parakeet-mlx-fastapi` — same underlying model, served through this repo's CoreML adapter instead of MLX. Build first per [`stt/fluid-audio`'s BUILD.md](../services/stt/fluid-audio/BUILD.md).
+The default in the shipped examples — served through `services/fluid`'s CoreML adapter (the alternative to the Quick Start's MLX-served `parakeet-mlx-fastapi`). Build first with `scripts/fluid-build.sh`; see [`services/fluid/STT.md`](../services/fluid/STT.md) for what the server does and [`services/README.md`](../services/README.md) for the build.
 
-Add this entry to `registry.json`'s `services`:
+The `fluid-stt` entry is already in `control/control-plane/data/registry.example.json`:
 
 ```json
 {
-  "id": "stt-fluid-audio",
-  "name": "Parakeet (fluid-audio)",
+  "id": "fluid-stt",
+  "name": "Fluid STT",
   "capabilityId": "stt",
-  "hostId": "<your-host-id>",
+  "hostId": "this-machine",
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".build/release/fluidserver --model-version v3 --host 127.0.0.1 --port 8767"
+    "main": ".build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
   },
   "ops": {
     "env": {
-      "workingDirectory": "~/services/stt/fluid-audio",
-      "variables": { "FLUID_CORS_ORIGINS": "http://localhost:4200" }
+      "workingDirectory": "~/services/fluid/fluid-stt",
+      "variables": {
+        "PATH": "/opt/homebrew/bin:$PATH",
+        "FLUID_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173"
+      }
     }
   },
   "network": { "port": 8767, "healthPath": "/healthz" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "shutdown": true, "idleUnload": true, "idleTimeout": 1800000, "restartOnCrash": true, "maxRestarts": 3 }
 }
 ```
 
-Then add this to `config.json`'s `voice.stt` block:
+`--registry` and `--provider` are required — `fluid-stt` reads the `fluid-stt` provider's `sttModels` from the registry's `roster` section rather than taking a model on the command line. The shipped roster declares `parakeet-tdt-v3` (batch), `parakeet-unified-0.6b` (both batch and streaming), and `nemotron-streaming-en-0.6b` (streaming, at three chunk sizes) — see [voices-and-models.md](voices-and-models.md) for what a roster `sttModels` entry looks like and how to add or change one.
+
+`config.example.json` already points at it:
 
 ```json
 "voice": {
-  "stt": { "serviceId": "stt-fluid-audio" }
+  "stt": { "serviceId": "fluid-stt", "model": "parakeet-unified-0.6b", "preferStreaming": true }
 }
 ```
 
-`--model-version` accepts `v2`, `v3`, or `tdt-ctc-110m`; `v3` matches the Quick Start's MLX-served model. Replace the CORS origin with wherever the dashboard is actually reached.
+Replace the CORS origins with wherever the dashboard is actually reached if it isn't `localhost`.
 
 ---
 

@@ -40,7 +40,7 @@ Garbled fragments mean `0001` is still needed. A pause before the last words of 
 
 `verification/` holds what is needed to re-prove any of this on a FluidAudio checkout.
 
-- `PocketTtsChunkProbeTests.swift` prints what the model is given, chunk by chunk, for `passage-1.txt` and `passage-2.txt`, with the model's real tokenizer. Copy it into `Tests/FluidAudioTests/TTS/PocketTTS/`, run `swift test --filter PocketTtsChunkProbeTests`, then delete it. A chunk flagged `PER-CHARACTER` has as many tokens as characters and will be spoken as garble; unpatched upstream flags three chunks of passage 2, and any build with `0001` flags none. The probe calls the chunker directly, so it shows 50-token chunking even on a build with `0003`, whose whole-sentence limit is passed in by the synthesizer.
+- `PocketTtsChunkProbeTests.swift` prints what the model is given, chunk by chunk, for `passage-1.txt` and `passage-2.txt`, with the model's real tokenizer. Copy it into `Tests/FluidAudioTests/TTS/PocketTTS/`, run `POCKET_PROBE_DIR=<this directory> swift test --filter PocketTtsChunkProbeTests`, then delete it. A chunk flagged `PER-CHARACTER` has as many tokens as characters and will be spoken as garble; unpatched upstream flags three chunks of passage 2, and any build with `0001` flags none. The probe calls the chunker directly, so it shows 50-token chunking even on a build with `0003`, whose whole-sentence limit is passed in by the synthesizer.
 - `tokenizer_parity.py` prints the token ids Google's `sentencepiece` gives for each line of `tokenizer-parity-input.txt`. With `0001`, FluidAudio's ids are identical.
 - Passage 1 is the `extended` text of the TTS benchmark; its third sentence follows a paragraph break. Passage 2 has a bracketed aside, an ellipsis, a spaced hyphen, and one sentence with no punctuation.
 
@@ -50,4 +50,4 @@ Never use a `fluidaudiocli` binary from a shared working clone as the "before": 
 
 - Investigation, measurements, and the state of the upstream filings: the vault note below, and issues #931/#933/#934 with PRs #932 and #935.
 - Listening samples and the issue drafts: `$WORKSPACE/system/projects/benchmarks/voice/tts/pocket-tts-chunking.md`.
-- The same commits on the fork `arvindvenkataramani/FluidAudio`, as `fix/pocket-tts-tokenizer-unknown-characters`, `feat/pocket-tts-cut-placement` and `local/pocket-tts-whole-sentences`; and as local branches `pocket-tts/1-tokenizer-fix`, `2-cut-placement`, `3-whole-sentences` in `~/Code/contrib/fluid-audio-main` on chintamani.
+- The same commits on the fork `arvindvenkataramani/FluidAudio`, as `fix/pocket-tts-tokenizer-unknown-characters`, `feat/pocket-tts-cut-placement` and `local/pocket-tts-whole-sentences`.

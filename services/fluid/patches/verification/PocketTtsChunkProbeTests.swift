@@ -20,11 +20,9 @@ final class PocketTtsChunkProbeTests: XCTestCase {
         }
         let tokenizer = try SentencePieceTokenizer(modelData: Data(contentsOf: tokenizerURL))
 
-        let directory =
-            ProcessInfo.processInfo.environment["POCKET_PROBE_DIR"]
-            ?? home.appendingPathComponent(
-                "Code/airavatha/sutradhara/platform/services/fluid/patches/verification"
-            ).path
+        guard let directory = ProcessInfo.processInfo.environment["POCKET_PROBE_DIR"] else {
+            throw XCTSkip("set POCKET_PROBE_DIR to this repo's services/fluid/patches/verification")
+        }
         let files = try FileManager.default.contentsOfDirectory(atPath: directory)
             .filter { $0.hasPrefix("passage-") && $0.hasSuffix(".txt") }.sorted()
 
