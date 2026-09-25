@@ -208,7 +208,9 @@ curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
   -H 'Access-Control-Request-Method: POST' | grep -i allow-origin
 ```
 
-An `access-control-allow-origin` line back means you are set. Nothing back means the browser will refuse the server even though `curl` reaches it. The fluid servers take this as `FLUID_CORS_ORIGINS`, already set in the shipped registry; other servers vary — check their own docs.
+An `access-control-allow-origin` line back means you are set. Nothing back means the browser will refuse the server even though `curl` reaches it. The fluid servers take this as `FLUID_CORS_ORIGINS`; `scripts/install.sh` already sets it to the dashboard's origins in a fresh registry. Other servers vary — check their own docs.
+
+The OpenClaw gateway checks browser origins too, separately from any speech server — `install.sh` prints the line to add to `gateway.controlUi.allowedOrigins` for your gateway. See [docs/configuration.md#cors](docs/configuration.md#cors) for both.
 
 ### 3. Add or change voices and models
 

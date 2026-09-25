@@ -91,6 +91,8 @@ A service entry answers four questions: what it is, where it runs, how to start 
 
 `capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and `voice.tts.selection.serviceId` both refer to these.
 
+A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry with at least one model and one voice able to reach it. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` list is still how `fluid-stt` declares what it can load. See [docs/voices-and-models.md#adding-another-model-or-another-speech-server](voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
+
 ### Choosing a runner
 
 | `runner.type` | Use when | Needs |
@@ -129,17 +131,21 @@ If most of your services are https, set it once for the whole registry:
 
 The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
 
-The TTS adapters here (`tts/kokoro`, `tts/neutts-air`) are permissive and need no configuration. The STT ones read a comma-separated environment variable — `WHISPER_CORS_ORIGINS` for `stt/whisper`, `FLUID_CORS_ORIGINS` for `stt/fluid-audio`, `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`:
+Both fluid servers (`fluid-stt`, `fluid-tts`) read one comma-separated environment variable, `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all — not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` sets it for you from the registry's own `control` service port, covering both `localhost` and `127.0.0.1` on that port and on Vite's `5173`:
 
 ```json
 "ops": {
   "env": {
-    "variables": { "WHISPER_CORS_ORIGINS": "https://box.local:4200" }
+    "variables": { "FLUID_CORS_ORIGINS": "http://localhost:4200,http://127.0.0.1:4200,http://localhost:5173,http://127.0.0.1:5173" }
   }
 }
 ```
 
+Other servers vary — `tts/kokoro` and `tts/neutts-air` are permissive and need no configuration; `WHISPER_CORS_ORIGINS` for `stt/whisper`, `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`, `--allowed-origins` for `mlx-audio`. Check a server's own docs for the name.
+
 A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Note that Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
+
+**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/gateway/openclaw/gateway-session-lifecycle.md](gateway/openclaw/gateway-session-lifecycle.md#browser-origin-check).
 
 ---
 
@@ -249,4 +255,8 @@ To start over from the examples instead — a registry edited into a state that 
 
 ## Reloading
 
-The dashboard's settings menu has a **Reload config** action, which re-reads `config.json` without restarting. Registry changes need a restart.
+The dashboard's settings menu has a **Reload config** action, which hits `POST /api/config/reload`: it re-reads both `config.json` and `registry.json` without restarting the control plane.
+
+The registry's `services`, `hosts`, `capabilities` and `defaults` all reload the same way — the in-memory copy is replaced from the file. A service already running keeps running as it was until you restart it; a service removed from the registry while still running is only reported, not stopped. The `shards` list is the one part reload never applies: a changed entry is reported but the running list is left as it was, so adding or removing a shard needs a restart of the control plane itself.
+
+A registry roster's `voices[]` — which voices exist and what they map to — takes effect on that reload alone, since the control plane assembles voices fresh on every request. A changed `providers` section — a new model, a changed preset list, and so on — does not: `fluid-stt` and `fluid-tts` read their provider's roster section once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. See [docs/voices-and-models.md#applying-an-edit](voices-and-models.md#applying-an-edit).

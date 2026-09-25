@@ -43,26 +43,37 @@ Add this entry to `registry.json`'s `services`:
 }
 ```
 
-Then add this to `config.json`'s `voice.tts` block — `config.example.json` already carries exactly this, so this half is done if you copied it:
+Then add a `roster.providers` entry for it in `registry.json` — alongside the `fluid-tts`/`fluid-stt` entries already there, not replacing them — naming its model and at least one preset voice, and point `config.json`'s `voice.tts.selection` at it:
+
+```json
+"roster": {
+  "providers": {
+    "tts-kokoro": {
+      "responseFormat": "wav",
+      "ttsModels": [
+        {
+          "id": "hexgrad/Kokoro-82M",
+          "name": "Kokoro",
+          "key": "hexgrad/Kokoro-82M",
+          "presetVoices": [{ "id": "af_heart", "name": "Heart" }]
+        }
+      ]
+    }
+  }
+}
+```
+
+Kokoro's server always returns `audio/wav`, hence `responseFormat: "wav"` above — `responseFormat` absent defaults to `mp3`, which would make the dashboard try to decode wav bytes as mp3.
 
 ```json
 "voice": {
   "tts": {
-    "providers": [
-      {
-        "serviceId": "tts-kokoro",
-        "name": "Kokoro",
-        "models": [
-          { "id": "hexgrad/Kokoro-82M", "name": "Kokoro", "voices": [{ "id": "af_heart", "name": "Heart" }] }
-        ]
-      }
-    ],
     "selection": { "serviceId": "tts-kokoro", "model": "hexgrad/Kokoro-82M", "voice": "af_heart" }
   }
 }
 ```
 
-The `providers` list is what the settings dialog offers; a model missing from it cannot be selected, however well the server runs.
+The roster is the catalogue the settings dialog offers; a model or voice missing from it cannot be selected, however well the server runs. See [docs/voices-and-models.md](voices-and-models.md) for what a provider, model and voice are, and how to add more.
 
 Start it once by hand before relying on demand-loading, so the first-run model download happens where you can see it:
 

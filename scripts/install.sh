@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # First-time setup: everything the README's Install section covers up through
 # a running, reachable control plane. Speech models are the next step after
-# this and are intentionally not automated here — see the README's "Choose
-# and install speech models" section once this script finishes.
+# this and are intentionally not automated here — see the README's "Connect
+# your speech servers" section once this script finishes.
 #
 # Usage: scripts/install.sh
 #
