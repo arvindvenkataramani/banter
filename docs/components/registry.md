@@ -167,7 +167,7 @@ Health-monitored but not managed. Start/stop API calls return 400.
 "install": { "artifacts": [ { "from": "services/fluid/.build/release/fluid-stt", "to": ".build/release/fluid-stt" } ] }
 ```
 
-What the install scripts copy into place. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running platform.
+What the install scripts copy into place: a file, or a whole directory such as a resource bundle a binary loads from beside itself. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running platform.
 
 #### `lifecycle`
 

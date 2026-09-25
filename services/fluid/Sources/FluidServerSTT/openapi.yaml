@@ -15,7 +15,7 @@ info:
     naming a model that is not loaded is refused rather than silently switched.
 
     Two endpoints are deliberately absent, both documented in
-    services/fluid/STT.md instead. The streaming endpoint is a WebSocket at
+    docs/speech-server-api.md and services/fluid/DEVELOPING.md instead. The streaming endpoint is a WebSocket at
     /v1/audio/stream, and OpenAPI has no WebSocket concept. The transcription
     endpoint at /v1/audio/transcriptions accepts `timestamp_granularities[]` as
     well as `timestamp_granularities`, because OpenAI clients send the
@@ -379,4 +379,4 @@ components:
           type: string
           description: |
             States the condition. The calls that resolve it are in
-            services/fluid/STT.md.
+            services/fluid/DEVELOPING.md.

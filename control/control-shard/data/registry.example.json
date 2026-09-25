@@ -161,6 +161,10 @@
             {
               "from": "services/fluid/.build/release/fluid-tts",
               "to": ".build/release/fluid-tts"
+            },
+            {
+              "from": "services/fluid/.build/release/FluidAudio_FluidAudio.bundle",
+              "to": ".build/release/FluidAudio_FluidAudio.bundle"
             }
           ]
         }

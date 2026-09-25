@@ -127,7 +127,7 @@ A voice can mix a preset link on one model and a `clone` link on another — the
 
 **Another model on an existing provider:** append to that provider's `ttsModels` or `sttModels` in the registry. A TTS model needs `id`, `name`, `key`, and (if it can clone) a `cloning` block; preset voices go in `presetVoices`. An STT model needs `id`, `name`, `key`, and `kind` (`"batch"`, `"streaming"`, or `"both"`).
 
-**Another speech server:** add a `services` entry for it — capability `tts` or `stt`, its own host, port and health path — the same as any other service (see [configuration.md](configuration.md#adding-a-service)). Then add a `roster.providers` entry keyed by that service's id, with at least one model:
+**Another speech server:** it has to answer the routes in [speech-server-api.md](speech-server-api.md). Add a `services` entry for it — capability `tts` or `stt`, its own host, port and health path — the same as any other service (see [configuration.md](configuration.md#adding-a-service)). Then add a `roster.providers` entry keyed by that service's id, with at least one model:
 
 ```json
 "services": [

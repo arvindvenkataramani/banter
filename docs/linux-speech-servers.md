@@ -1,19 +1,10 @@
 # Speech servers on Linux
 
-The fluid servers (`services/fluid`) are Apple Silicon only — a Swift package targeting macOS 15+, built with `scripts/fluid-build.sh`. On Linux, connect a different server. This page covers the contract it needs to meet, the roster entry that makes it usable, and servers known to run on Linux.
+The [fluid servers](../services/fluid/README.md) are Apple Silicon only — a Swift package targeting macOS 15+, built with `scripts/fluid-build.sh`. On Linux, connect a different server. This page covers the roster entry that makes it usable, and servers known to run on Linux.
 
 ## The contract
 
-Taken from what the dashboard actually calls, not a general OpenAI-API description:
-
-- **Batch transcription** — `POST {endpoint}/audio/transcriptions`, multipart with a `file` field carrying WAV audio ([`dashboard/src/lib/voice/human/stt-client.ts`](../dashboard/src/lib/voice/human/stt-client.ts)). `fluid-stt` and `stt/whisper` also answer the same route under `/v1/audio/transcriptions`; the dashboard uses the bare path.
-- **Synthesis** — `POST {endpoint}/v1/audio/speech`, JSON body `{ model, input, voice, speed, stream, response_format, ...extra }` ([`dashboard/src/lib/voice/system/playback-engine.ts`](../dashboard/src/lib/voice/system/playback-engine.ts)). `response_format` comes from the roster's `responseFormat` for that provider (`mp3` if absent) — the dashboard requests that format and decodes the response as it, so the two have to agree with what the server actually returns.
-- **TTS model load** — `POST {endpoint}/v1/models?model_name=<id>`, called once when a voice session starts, before the first synthesis request ([`dashboard/src/lib/voice/system/voice-system.ts`](../dashboard/src/lib/voice/system/voice-system.ts) calling [`voice-service.ts`](../dashboard/src/lib/voice/voice-service.ts)). Kokoro and NeuTTS Air (this repo's two Python TTS adapters) implement it. A server without it fails the call (unlike `DELETE`, this one isn't swallowed), which fails the whole session start with a "Voice failed to start" notice. `DELETE {endpoint}/v1/models?model_name=<id>` unloads a model, but only when you change the selected model in the dashboard's settings dialog, not automatically at session end — and its failure is swallowed rather than surfaced, so a server without `DELETE` still works, it just never gets told to release the old model.
-- **STT model load, and the streaming socket, only if you set `voice.stt.model`.** Leaving it unset skips both entirely — the dashboard falls back to plain batch transcription (the `/audio/transcriptions` call above) and never calls `/v1/models/load` or opens the socket. This is the simplest way to use a server that has neither. If you do set `voice.stt.model`: `POST {endpoint}/v1/models/load` with `{ model, mode?, chunkMs? }` loads it before the first utterance, and `WS {endpoint}/v1/audio/stream?model=<id>&format=<fmt>[&session=<id>][&takeover=1]` is used when the roster model's `kind` is `"streaming"` or `"both"` and streaming is preferred. See [`services/fluid/STT.md`](../services/fluid/STT.md) for the socket's frame protocol — it's `fluid-stt`'s own documentation, but the contract in it is what any streaming-capable server has to speak, since that's what `stt-socket.ts` sends.
-- **A health path** answering 2xx when ready — whatever you register in `network.healthPath`.
-- **CORS.** The browser calls these servers directly, so each one's CORS configuration must allow the dashboard's origin, or requests are refused with no explanation the browser will show you.
-
-None of this requires a specific model or runtime — only these routes, in this shape. The simplest usable server implements batch transcription, `POST /v1/audio/speech`, `POST /v1/models` for TTS, a health path, and CORS — nothing streaming-specific required.
+Any server Banter talks to has to answer the routes in [speech-server-api.md](speech-server-api.md): batch transcription or synthesis, `POST /v1/models?model_name=<id>` for TTS, a health path, and CORS. The streaming socket and the STT load calls are optional; leave `voice.stt.model` unset and the dashboard transcribes in batch without them.
 
 ## The roster entry that makes it visible
 

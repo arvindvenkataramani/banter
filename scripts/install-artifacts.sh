@@ -46,6 +46,35 @@ _install_sha256() {
   fi
 }
 
+# An artifact is a file or a directory — a binary, or a resource bundle the
+# binary loads from beside itself. These three treat both alike.
+_install_present() {
+  [[ -f "$1" || -d "$1" ]]
+}
+
+_install_same() {
+  if [[ -d "$1" ]]; then
+    [[ -d "$2" ]] && diff -rq "$1" "$2" >/dev/null 2>&1
+  else
+    cmp -s "$1" "$2"
+  fi
+}
+
+# One digest for a directory: each file's digest and path, in a fixed order,
+# digested together.
+_install_digest() {
+  local path="$1" f
+  if [[ -d "$path" ]]; then
+    (cd "$path" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do
+      echo "$(_install_sha256 "$f")  $f"
+    done) > "${TMPDIR:-/tmp}/install-digest.$$"
+    _install_sha256 "${TMPDIR:-/tmp}/install-digest.$$"
+    rm -f "${TMPDIR:-/tmp}/install-digest.$$"
+  else
+    _install_sha256 "$path"
+  fi
+}
+
 # A path from the registry that stays where it is put: non-empty, relative, no
 # `..`. The TypeScript validator enforces the same rule, but these scripts read
 # registry.json directly, so a hand-edited file reaches them unchecked.
@@ -106,9 +135,9 @@ install_service_artifacts() {
         continue
       fi
       pairs+=("$from"$'\t'"$to")
-      if [[ ! -f "$src/$from" ]]; then
+      if ! _install_present "$src/$from"; then
         missing="$from"
-      elif ! cmp -s "$src/$from" "$wd/$to"; then
+      elif ! _install_same "$src/$from" "$wd/$to"; then
         changed=1
       fi
     done < <("$JQ" -r '.artifacts[] | [(.from // ""), (.to // "")] | @tsv' <<<"$entry")
@@ -135,16 +164,26 @@ install_service_artifacts() {
     fi
 
     # Copy beside the target, then rename over it: a process still holding the
-    # old file keeps it, and nothing ever sees a half-written artifact.
+    # old file keeps it, and nothing ever sees a half-written artifact. A
+    # directory can't be renamed over another, so the old one is moved aside
+    # first and removed once the new one is in place.
     local pair target
     for pair in "${pairs[@]}"; do
       from="${pair%%$'\t'*}"
       to="${pair#*$'\t'}"
       target="$wd/$to"
-      if ! cmp -s "$src/$from" "$target"; then
+      if ! _install_same "$src/$from" "$target"; then
         mkdir -p "$(dirname "$target")"
-        cp -p "$src/$from" "$target.new"
-        mv -f "$target.new" "$target"
+        if [[ -d "$src/$from" ]]; then
+          rm -rf "$target.new" "$target.old"
+          cp -Rp "$src/$from" "$target.new"
+          [[ -e "$target" ]] && mv "$target" "$target.old"
+          mv "$target.new" "$target"
+          rm -rf "$target.old"
+        else
+          cp -p "$src/$from" "$target.new"
+          mv -f "$target.new" "$target"
+        fi
         echo "[install] $id: $to"
       fi
     done
@@ -155,7 +194,7 @@ install_service_artifacts() {
     local recorded="[]" sum
     for pair in "${pairs[@]}"; do
       to="${pair#*$'\t'}"
-      sum="$(_install_sha256 "$wd/$to")"
+      sum="$(_install_digest "$wd/$to")"
       recorded="$("$JQ" -c --arg p "$to" --arg s "$sum" '. + [{path: $p, sha256: $s}]' <<<"$recorded")"
     done
     mkdir -p "$(dirname "$events")"

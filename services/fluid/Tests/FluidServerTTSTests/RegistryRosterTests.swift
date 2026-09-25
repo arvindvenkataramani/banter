@@ -59,13 +59,17 @@ final class RegistryRosterTests: XCTestCase {
         }
     }
 
-    /// The registry the shard deploys is the one this server is launched with.
-    func testTheCommittedShardRegistryLoads() throws {
-        let file = URL(fileURLWithPath: #filePath)
+    /// An install copies one of the shipped examples to the registry this server
+    /// is launched with, so each has to load.
+    func testTheShippedExampleRegistriesLoad() throws {
+        let repo = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("../../control/control-shard/data/registry.json")
-            .standardizedFileURL
-        let roster = try TtsRoster.load(registry: file, provider: "fluid-tts")
-        XCTAssertFalse(roster.models.isEmpty)
+            .appendingPathComponent("../..")
+        for node in ["control-plane", "control-shard"] {
+            let file = repo.appendingPathComponent("control/\(node)/data/registry.example.json")
+                .standardizedFileURL
+            let roster = try TtsRoster.load(registry: file, provider: "fluid-tts")
+            XCTAssertFalse(roster.models.isEmpty, node)
+        }
     }
 }

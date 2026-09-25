@@ -251,7 +251,7 @@ actor SynthesisQueue {
                     sample_rate: begun.sampleRate, utterance: id))
 
             for try await chunk in bufferedChunks(
-                begun.stream, interval: voiceLoopInterval, sampleRate: begun.sampleRate)
+                begun.stream, interval: defaultStreamingInterval, sampleRate: begun.sampleRate)
             {
                 if Task.isCancelled { break }
                 let encoded = try encoder.encode(chunk)
@@ -309,8 +309,3 @@ actor SynthesisQueue {
         }
     }
 }
-
-/// What the voice loop asks for, where the measurements put the floor: below
-/// about 1.0s TTFB stops tracking the interval and settles near 0.3s, so 0.5s
-/// sits at the floor without paying for twice the chunks.
-private let voiceLoopInterval = 0.5

@@ -8,7 +8,7 @@ Every snippet assumes the service has already been installed: `requirements.txt`
 
 ## Parakeet via fluid-stt
 
-The default in the shipped examples — served through `services/fluid`'s CoreML adapter (the alternative to the Quick Start's MLX-served `parakeet-mlx-fastapi`). Build first with `scripts/fluid-build.sh`; see [`services/fluid/STT.md`](../services/fluid/STT.md) for what the server does and [`services/README.md`](../services/README.md) for the build.
+The default in the shipped examples — served through `services/fluid`'s CoreML adapter (the alternative to the Quick Start's MLX-served `parakeet-mlx-fastapi`). Build first with `scripts/fluid-build.sh`; see [`services/fluid`](../services/fluid/README.md) for what the server offers and how to install it.
 
 The `fluid-stt` entry is already in `control/control-plane/data/registry.example.json`:
 

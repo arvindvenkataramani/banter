@@ -14,7 +14,7 @@ Anything satisfying that can be registered, health-checked, and demand-started t
 
 ## Quick start
 
-**On Apple Silicon**, the shipped registry and config examples already default to `fluid-stt`/`fluid-tts` — see [`services/fluid`](../services/fluid). `scripts/install.sh` offers to build them, or run `scripts/fluid-build.sh` yourself; nothing in this section is needed on that path. See [docs/voices-and-models.md](voices-and-models.md) to add or change a voice or model on top of it.
+**On Apple Silicon**, the shipped registry and config examples already default to `fluid-stt`/`fluid-tts` — see [`services/fluid`](../services/fluid/README.md) for what they offer. `scripts/install.sh` offers to build them, or run `scripts/fluid-build.sh` yourself; nothing in this section is needed on that path. See [docs/voices-and-models.md](voices-and-models.md) to add or change a voice or model on top of it.
 
 **On Linux**, the fluid servers don't build — the package targets macOS 15+ on Apple Silicon only. See [docs/linux-speech-servers.md](linux-speech-servers.md) for what runs there instead.
 
@@ -186,7 +186,7 @@ These models are recommended because they're suitable for realtime or near-realt
 
 **OmniVoice.** [k2-fsa](https://github.com/k2-fsa/OmniVoice), built on the Qwen3-0.6B architecture, PyTorch. Ships no server of its own, and this repo has no adapter for it — an experimental MLX conversion and runtime exist ([mlx-community/OmniVoice](https://huggingface.co/mlx-community/OmniVoice), [ailuntx/OmniVoice-MLX](https://github.com/ailuntx/OmniVoice-MLX)), but the runtime has no HTTP server either, so either path needs adapter code written before Banter can use it.
 
-**Anything OpenAI-compatible.** The TTS contract is `POST /v1/audio/speech` plus a health endpoint. A server meeting that can be registered without any adapter code here, subject to the same CORS caveat as speech-to-text, below.
+**Anything OpenAI-compatible.** The TTS contract is `POST /v1/audio/speech`, `POST /v1/models?model_name=<id>` and a health endpoint — see [speech-server-api.md](speech-server-api.md). A server meeting that can be registered without any adapter code here, subject to the same CORS caveat as speech-to-text, below.
 
 ---
 
@@ -196,11 +196,11 @@ One row per model, each with more than one server option. For registry/config sn
 
 | Model | Platform | Served via | Notes |
 |---|---|---|---|
-| [Parakeet](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) | `parakeet-mlx-fastapi` is Apple Silicon (MLX); `fluid-stt` is Apple Silicon (CoreML); Linux options exist but need an adapter — see [docs/linux-speech-servers.md](linux-speech-servers.md) | third-party ([`parakeet-mlx-fastapi`](https://pypi.org/project/parakeet-mlx-fastapi/)) or this repo's adapter (`fluid-stt`, in [`services/fluid`](../services/fluid)) | 0.6B parameters, FastConformer/Conformer architecture. 25 languages. `fluid-stt` also offers streaming variants (Parakeet Unified, Nemotron) — see [`services/fluid/STT.md`](../services/fluid/STT.md). |
+| [Parakeet](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) | `parakeet-mlx-fastapi` is Apple Silicon (MLX); `fluid-stt` is Apple Silicon (CoreML); Linux options exist but need an adapter — see [docs/linux-speech-servers.md](linux-speech-servers.md) | third-party ([`parakeet-mlx-fastapi`](https://pypi.org/project/parakeet-mlx-fastapi/)) or this repo's adapter (`fluid-stt`, in [`services/fluid`](../services/fluid)) | 0.6B parameters, FastConformer/Conformer architecture. 25 languages. `fluid-stt` also offers streaming variants (Parakeet Unified, Nemotron) — see [`services/fluid`](../services/fluid/README.md). |
 | [Whisper](https://huggingface.co/openai/whisper-large-v3-turbo) | `stt/whisper` is Apple Silicon (MLX); faster-whisper and whisper.cpp run on Linux too | this repo's adapter ([`stt/whisper`](../services/stt/whisper)), faster-whisper, or whisper.cpp | 809M parameters (large-v3-turbo). 99 languages. A pruned variant of large-v3 — fewer decoder layers, faster inference, slight accuracy loss. |
 | Anything OpenAI-compatible | whatever the server runs on | either | Any server that exposes `POST /v1/audio/transcriptions` plus a health endpoint meets the contract, whatever model it's actually running. |
 
-**Parakeet.** Two ways to run it on Apple Silicon — `parakeet-mlx-fastapi` (third-party, pip, MLX; the Quick Start's pip alternative) or `fluid-stt` (this repo's adapter, the default in the shipped registry examples; build with `scripts/fluid-build.sh`, see [`services/fluid/STT.md`](../services/fluid/STT.md)). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path, and also serves Parakeet Unified and Nemotron's streaming variants alongside the batch model. For Linux, see [docs/linux-speech-servers.md](linux-speech-servers.md).
+**Parakeet.** Two ways to run it on Apple Silicon — `parakeet-mlx-fastapi` (third-party, pip, MLX; the Quick Start's pip alternative) or `fluid-stt` (this repo's adapter, the default in the shipped registry examples; build with `scripts/fluid-build.sh`, see [`services/fluid`](../services/fluid/README.md)). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path, and also serves Parakeet Unified and Nemotron's streaming variants alongside the batch model. For Linux, see [docs/linux-speech-servers.md](linux-speech-servers.md).
 
 **Whisper.** [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) is the checkpoint `stt/whisper` (this repo's adapter, built on `mlx-whisper`, Apple Silicon only) defaults to. Choose a different Whisper checkpoint with `--model` to trade accuracy for speed and memory.
 
@@ -209,13 +209,13 @@ Two other runtimes can serve the same model, neither this repo's code nor `mlx-w
 - **faster-whisper**, built on CTranslate2 — CPU or CUDA, not GPU-only. Has no server of its own; several projects wrap it in an OpenAI-compatible one: [fedirz/faster-whisper-server](https://github.com/fedirz/faster-whisper-server), [hwdsl2/docker-whisper](https://github.com/hwdsl2/docker-whisper) (Docker, CUDA, multi-arch), [hwdsl2/whisper-install](https://github.com/hwdsl2/whisper-install) (installer for Debian/Ubuntu/RHEL family).
 - **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)**, a dependency-free C/C++ port — Mac, Linux, Windows, mobile, and more, with Metal/CUDA/ROCm/Vulkan acceleration depending on platform. Ships its own [`whisper-server` example](https://github.com/ggml-org/whisper.cpp/tree/master/examples/server) with an OpenAI-like transcription API.
 
-**Anything OpenAI-compatible.** The STT contract is `POST /v1/audio/transcriptions` and a health endpoint. The browser calls this server directly, so its CORS allowlist must include wherever you reach the dashboard (e.g. `http://localhost:4200`) — `stt/whisper`, `fluid-stt`, and `parakeet-mlx-fastapi` each take this as an env var: `WHISPER_CORS_ORIGINS`, `FLUID_CORS_ORIGINS`, `PARAKEET_CORS_ORIGINS`.
+**Anything OpenAI-compatible.** The STT contract is `POST /audio/transcriptions` and a health endpoint — see [speech-server-api.md](speech-server-api.md). The browser calls this server directly, so its CORS allowlist must include wherever you reach the dashboard (e.g. `http://localhost:4200`) — `stt/whisper`, `fluid-stt`, and `parakeet-mlx-fastapi` each take this as an env var: `WHISPER_CORS_ORIGINS`, `FLUID_CORS_ORIGINS`, `PARAKEET_CORS_ORIGINS`.
 
 ---
 
 ## Getting the models
 
-How a model reaches disk depends on the adapter — check each one's own instructions rather than assume. The Python adapters (`tts/kokoro`, `tts/neutts-air`, `stt/whisper`) fetch from Hugging Face on first run, into `~/.cache/huggingface`; `mlx-audio` does the same for its models; `services/fluid` (`fluid-stt`, `fluid-tts`) has its own model-loading path, covered by [`services/fluid/README.md`](../services/fluid/README.md) and [`services/fluid/STT.md`](../services/fluid/STT.md). Either way, the first start after installing an adapter is typically slow and needs network, and every start afterwards is neither.
+How a model reaches disk depends on the adapter — check each one's own instructions rather than assume. The Python adapters (`tts/kokoro`, `tts/neutts-air`, `stt/whisper`) fetch from Hugging Face on first run, into `~/.cache/huggingface`; `mlx-audio` does the same for its models; `services/fluid` (`fluid-stt`, `fluid-tts`) has its own model-loading path, downloading each model on its first load — see [`services/fluid`](../services/fluid/README.md). Either way, the first start after installing an adapter is typically slow and needs network, and every start afterwards is neither.
 
 Two consequences worth knowing for the Hugging Face–backed adapters specifically:
 

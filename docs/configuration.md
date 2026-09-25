@@ -131,7 +131,7 @@ If most of your services are https, set it once for the whole registry:
 
 The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
 
-Both fluid servers (`fluid-stt`, `fluid-tts`) read one comma-separated environment variable, `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all — not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` sets it for you from the registry's own `control` service port, covering both `localhost` and `127.0.0.1` on that port and on Vite's `5173`:
+Both [fluid servers](../services/fluid/README.md) (`fluid-stt`, `fluid-tts`) read one comma-separated environment variable, `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all — not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` sets it for you from the registry's own `control` service port, covering both `localhost` and `127.0.0.1` on that port and on Vite's `5173`:
 
 ```json
 "ops": {

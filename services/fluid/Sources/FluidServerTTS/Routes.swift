@@ -164,9 +164,13 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
     return router
 }
 
-/// The interval mlx-audio's server defaults to, and the field name it accepts.
-/// One `bench.yaml` drives both, so a sweep that works there works here.
-let defaultStreamingInterval = 2.0
+/// The streaming interval when a request names none, for the HTTP route and the
+/// socket alike. Where the measurements put the floor: below about 1.0s TTFB
+/// stops tracking the interval and settles near 0.3s, so 0.5s sits at the floor
+/// without paying for twice the chunks. The dashboard never names one, so this
+/// is what the voice loop gets. `streaming_interval` is the field mlx-audio
+/// accepts, so one `bench.yaml` drives both and a sweep sets it explicitly.
+let defaultStreamingInterval = 0.5
 
 /// Encode a whole utterance as one response body.
 func wholeResponse(samples: [Float], sampleRate: Int, format: AudioFormat) throws -> Response {

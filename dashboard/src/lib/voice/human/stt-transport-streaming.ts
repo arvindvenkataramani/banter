@@ -36,7 +36,7 @@ export interface StreamingTransportOptions {
 export interface StreamingCloseInfo {
   /** Requests still awaiting a final when the socket ended. Their words are lost. */
   dropped: number
-  /** The protocol error code (services/fluid/STT.md) when the server named
+  /** The protocol error code (docs/speech-server-api.md) when the server named
    *  one; null otherwise. */
   code: string | null
 }
