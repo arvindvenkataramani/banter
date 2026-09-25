@@ -37,5 +37,8 @@ tailscale serve --bg --https="$BANTER_CONTROL_PORT" localhost:"$BANTER_CONTROL_P
 # Exec into bun — it becomes PID 1 of the service, systemd manages it directly.
 # BANTER_CONTROL_PORT is passed explicitly so the server binds the same port we just
 # handed to Tailscale Serve, rather than falling back to its own default.
+# bun is found the way the deploy scripts find it: on PATH, then its own
+# installer's location, then Homebrew's and Linuxbrew's.
+BUN="$(platform_find_bun)" || exit 1
 cd "$PROD/control/control-plane"
-exec env DASHBOARD_DIST="$PROD/dashboard/dist" BANTER_CONTROL_PORT="$BANTER_CONTROL_PORT" "$HOME/.bun/bin/bun" run src/index.ts
+exec env DASHBOARD_DIST="$PROD/dashboard/dist" BANTER_CONTROL_PORT="$BANTER_CONTROL_PORT" "$BUN" run src/index.ts
