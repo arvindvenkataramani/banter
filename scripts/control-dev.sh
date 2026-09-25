@@ -83,12 +83,12 @@ echo "[dev] Starting control plane (port $BANTER_DEV_CONTROL_PORT) and Vite (por
 DEV_EVENTS="$REPO/control/control-plane/data/events.dev.jsonl"
 
 (cd "$REPO/control" && DEBUG=1 BANTER_CONTROL_PORT="$BANTER_DEV_CONTROL_PORT" BANTER_CONFIG_PATH="$CONFIG_LIVE" BANTER_REGISTRY_PATH="$REGISTRY_LIVE" BANTER_EVENTS_PATH="$DEV_EVENTS" DASHBOARD_DIST="$REPO/dashboard/dist" bun run --watch control-plane/src/index.ts) &
-(cd "$REPO/dashboard" && VITE_PROXY_TARGET="http://localhost:$BANTER_DEV_CONTROL_PORT" bun run dev -- --strictPort) &
+(cd "$REPO/dashboard" && VITE_PROXY_TARGET="http://localhost:$BANTER_DEV_CONTROL_PORT" bun run dev -- --port "$VITE_PORT" --strictPort) &
 
 # Wait for Vite to bind before setting up tailscale serve
 echo "[dev] Waiting for Vite to start on port $VITE_PORT..."
 for i in $(seq 1 30); do
-  if ss -tln | grep -q ":${VITE_PORT} "; then
+  if curl -s -o /dev/null "http://localhost:${VITE_PORT}/"; then
     break
   fi
   sleep 0.5
