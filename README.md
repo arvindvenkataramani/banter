@@ -61,7 +61,7 @@ The steps below are shared by every OS; the only part that differs is how the co
 - A way to reach the dashboard from your phone when you are **away from your home network**, if you want that. Banter only needs endpoints it can reach, however you arrange that; [Tailscale](https://tailscale.com) is the one it has built-in support for — see **Networking** above. On your own network a LAN address is enough.
 - An **[OpenClaw](https://github.com/openclaw/openclaw) gateway** to talk to.
 
-Your speech servers bring their own prerequisites, whatever those happen to be — Banter needs none of them, and nothing here installs them. See **Connect your speech servers** below.
+Your speech servers bring their own prerequisites, whatever those happen to be — Banter needs none of them to run itself. The one exception is the fluid servers shipped in the examples: on Apple Silicon, `scripts/install.sh` offers to build those for you. Anything else, nothing here installs. See **Connect your speech servers** below.
 
 ### Clone it
 
@@ -76,11 +76,13 @@ cd banter
 
 ### Fast path: `scripts/install.sh`
 
-Everything from here through a running, reachable control plane — dependencies, model assets, config, and installing it as a service on Linux or macOS — in one script. It prompts for your OpenClaw gateway URL and token (or read them from `OPENCLAW_GATEWAY_URL`/`OPENCLAW_GATEWAY_TOKEN` for a non-interactive run) and leaves `registry.json` at its shipped defaults, since the control plane itself needs no speech services to start.
+Everything from here through a running, reachable control plane — dependencies, model assets, config, and installing it as a service on Linux or macOS — in one script. It prompts for your OpenClaw gateway URL and token (or read them from `OPENCLAW_GATEWAY_URL`/`OPENCLAW_GATEWAY_TOKEN` for a non-interactive run). The registry it writes already declares `fluid-stt`/`fluid-tts`, but the control plane itself doesn't need their binaries built to start.
 
 ```bash
 scripts/install.sh
 ```
+
+**On Apple Silicon**, once the control plane is up, it offers to build the fluid speech servers for you (`scripts/fluid-build.sh`, then `scripts/control-install-services.sh` to install the binaries) — say yes, or run those two commands yourself later. **On Linux**, the fluid servers don't build; the script points you at [docs/linux-speech-servers.md](docs/linux-speech-servers.md) instead.
 
 When it finishes, skip ahead to **Connect your speech servers** below. The rest of this section is the same steps by hand, for anything the script doesn't cover for your setup or if something goes wrong and you want to see where.
 
@@ -131,7 +133,7 @@ scripts/control-deploy.sh
 
 Untested. I run the control plane on Linux, so this path is what the scripts say should happen rather than something I have done. The deployed tree is a plain directory and starts from one script, so the fallback below is sound, but expect to work out the supervisor part yourself.
 
-`control-deploy.sh` builds, copies, and installs dependencies portably, then calls `systemctl --user` to register and start the unit. Without systemd it should fail there — inside `control-install-services.sh`, after the deployed tree is complete and before any service is registered. So let it run, then supervise the result yourself:
+`control-deploy.sh` builds, copies, and installs dependencies portably, then calls `systemctl --user` to register and start the unit. Without systemd it should fail there — in `control-deploy.sh` itself, at its own `daemon-reload`/`enable`/`restart` calls, after `control-install-services.sh` has already finished (that script skips its own systemd calls when `systemctl` is absent, so the deployed tree and any speech-server binaries are still installed). So let it run, then supervise the result yourself:
 
 ```bash
 scripts/control-deploy.sh || true   # expected to fail at the systemd step
@@ -174,7 +176,7 @@ Reverses exactly what `control-deploy.sh` installed: tears down the Tailscale Se
 
 ## Connect your speech servers
 
-The shipped examples already list two: `fluid-stt` for transcription and `fluid-tts` for synthesis, both from the `services/fluid` package. On Apple Silicon (macOS 15+), `scripts/fluid-build.sh` builds their binaries; a deploy (`scripts/control-deploy.sh`, or `install.sh`'s first run) then copies the built binaries into the deployed tree per each service's `ops.install`. Until they're built, voice does nothing; typing still works.
+The shipped examples already list two: `fluid-stt` for transcription and `fluid-tts` for synthesis, both from the `services/fluid` package. On Apple Silicon (macOS 15+), `scripts/fluid-build.sh` builds their binaries; `scripts/control-install-services.sh` (or a full `scripts/control-deploy.sh`) then copies the built binaries into the deployed tree per each service's `ops.install` — `scripts/install.sh` offers to run both for you. Until they're built, voice does nothing; typing still works.
 
 Which models and voices each server offers — Kokoro's presets, Pocket-TTS, cloned voices, and so on — is declared in the registry's `roster` section, not in `config.json`. See [docs/voices-and-models.md](docs/voices-and-models.md) for how to change the default voice, add or remove a voice, or add a model.
 
@@ -189,14 +191,16 @@ Which models and voices each server offers — Kokoro's presets, Pocket-TTS, clo
 
 ### 1. Build the fluid servers (Apple Silicon)
 
+`scripts/install.sh` already offered to do this — if you said yes there, skip to step 2. Otherwise:
+
 ```bash
 scripts/fluid-build.sh
-scripts/control-deploy.sh   # or, on the macOS fallback path: `|| true`, per "macOS, or Linux without systemd" above
+scripts/control-install-services.sh
 ```
 
-`fluid-build.sh` compiles `fluid-stt` and `fluid-tts`. A deploy afterward copies the built binaries into the deployed tree per each service's `ops.install`. Re-run this after any future `git pull` that changes the fluid sources, too.
+`fluid-build.sh` compiles `fluid-stt` and `fluid-tts`, checking its own prerequisites (Swift 6 toolchain, `libopus`) first and naming what's missing. `control-install-services.sh` then copies the built binaries into the deployed tree per each service's `ops.install`. Re-run both after any future `git pull` that changes the fluid sources.
 
-Not on Apple Silicon, or want a different server? Skip to step 4 — any OpenAI-compatible speech server works, it just needs its own service and roster entries.
+Not on Apple Silicon? See [docs/linux-speech-servers.md](docs/linux-speech-servers.md). Want a different server regardless? Skip to step 4 — any OpenAI-compatible speech server works, it just needs its own service and roster entries.
 
 ### 2. Check CORS
 
@@ -273,12 +277,14 @@ Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:` — se
 ## Documentation
 
 - [docs/models.md](docs/models.md) — which speech models to run, and what each needs
+- [docs/linux-speech-servers.md](docs/linux-speech-servers.md) — the contract a speech server must meet, and servers known to run on Linux
 - [docs/voices-and-models.md](docs/voices-and-models.md) — the roster: providers, models, voices, and how to customise them
 - [docs/configuration.md](docs/configuration.md) — the minimum config, adding services, adding a shard
 - [docs/shard-setup.md](docs/shard-setup.md) — adding shards on other machines
 - [docs/remote-access.md](docs/remote-access.md) — reaching the dashboard from outside your network with Tailscale
 - [docs/architecture/](docs/architecture/README.md) — how the system works
 - [docs/gateway/](docs/gateway/) — agent backend protocols, one directory per vendor: [OpenClaw](docs/gateway/openclaw/) is what Banter speaks, [OpenCode](docs/gateway/opencode/) is a second server it could attach to. The starting point for adapting this to a different agent harness
+- [docs/adapting.md](docs/adapting.md) — putting Banter's voice in front of another harness, or reusing the voice pipeline elsewhere
 - [docs/api-reference.md](docs/api-reference.md) — generated HTTP API reference
 - [scripts/README.md](scripts/README.md) — deployment, lifecycle, and diagnostic scripts
 
@@ -288,6 +294,7 @@ Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:` — se
 - `onnxruntime-web` is pinned to `1.18.0`. Versions ≥1.19 drop single-threaded WASM and require cross-origin isolation headers (`COOP`/`COEP`) this stack doesn't set. The `onnxruntime-web/experimental` bundle (`ort.all`) is required for the quantized operators smart-turn's model uses — the default import omits `QuantizeLinear`/`DequantizeLinear`.
 - The browser's model assets (~10MB) are committed to this repo, so a clone needs no download step for them: [Silero VAD](https://github.com/snakers4/silero-vad) (MIT), [pipecat smart-turn](https://huggingface.co/pipecat-ai/smart-turn-v3) (BSD-2-Clause), and [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny) (Apache-2.0, used only for its preprocessor config) — see NOTICE. Each is pinned by SHA-256 in `dashboard/scripts/fetch-models.ts`; `cd dashboard && bun run setup` re-verifies them against those pins and re-fetches if one is missing. This does not apply to the speech models themselves, which are large and download on first run.
 - `parakeet-mlx-fastapi` (a pip-installable STT option) and `services/stt/whisper` (this repo's own adapter) offer the same API shape — see [models.md](docs/models.md#speech-to-text-models-recommended) for the tradeoffs between them.
+- **No tool-use or action-approval UX.** The gateway connection requests the `operator.approvals` scope in its handshake, but nothing here ever renders an approval request or answers one — whether a tool call runs unconfirmed is between your agent and its own configuration. This is deliberate: tool-permission approval design is still evolving, and a hastily built gate in a voice interface would be insecure and could cause real damage, so this repository doesn't attempt one. If your harness needs approvals, build your own — see [docs/adapting.md](docs/adapting.md#no-tool-approvals) for two working references.
 
 ## Hardening
 

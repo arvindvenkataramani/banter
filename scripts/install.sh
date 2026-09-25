@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # First-time setup: everything the README's Install section covers up through
-# a running, reachable control plane. Speech models are the next step after
-# this and are intentionally not automated here — see the README's "Connect
-# your speech servers" section once this script finishes.
+# a running, reachable control plane. On Apple Silicon, this script goes on to
+# offer building the fluid speech servers too; on Linux, it points at the
+# README's "Connect your speech servers" section and docs/linux-speech-servers.md
+# once it finishes, since nothing here builds for you on that platform.
 #
 # Usage: scripts/install.sh
 #
@@ -146,6 +147,36 @@ case "$OS" in
     ;;
 esac
 
+# --- offer to build the fluid speech servers (Apple Silicon only) -----------
+
+FLUID_BUILT=""
+if [[ "$OS" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  BUILD_FLUID=""
+  if [[ -t 0 ]]; then
+    echo ""
+    read -rp "Build the fluid speech servers now? [y/N] " REPLY
+    [[ "$REPLY" =~ ^[Yy]$ ]] && BUILD_FLUID=1
+  fi
+
+  if [[ -n "$BUILD_FLUID" ]]; then
+    # fluid-build.sh checks its own prerequisites (Swift 6, libopus) and dies
+    # naming what's missing — that's a reason to skip the build, not to fail
+    # an install that already succeeded.
+    if scripts/fluid-build.sh; then
+      log "Installing the built binaries into the deployed tree..."
+      if scripts/control-install-services.sh; then
+        FLUID_BUILT=1
+      else
+        log "warning: fluid-build.sh succeeded but control-install-services.sh did not."
+        log "Run it by hand once you've looked at the output above: scripts/control-install-services.sh"
+      fi
+    else
+      log "warning: scripts/fluid-build.sh did not complete — see its output above."
+      log "Run it by hand once resolved, then scripts/control-install-services.sh."
+    fi
+  fi
+fi
+
 # --- done -------------------------------------------------------------------
 
 echo ""
@@ -153,7 +184,17 @@ log "Control plane is running: http://localhost:$BANTER_PORT"
 log "Your OpenClaw gateway refuses browser origins it doesn't list: add"
 log "\"http://localhost:$BANTER_PORT\" to gateway.controlUi.allowedOrigins in openclaw.json"
 log "(and any https://…ts.net origin you open the dashboard from), then restart the gateway."
-log "Next: on Apple Silicon, run scripts/fluid-build.sh to build the speech servers"
-log "already declared in $REGISTRY, then re-deploy to install the binaries."
+
+if [[ "$OS" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  if [[ -n "$FLUID_BUILT" ]]; then
+    log "fluid-stt and fluid-tts are built and installed."
+  else
+    log "Next: build the fluid speech servers with scripts/fluid-build.sh, then"
+    log "scripts/control-install-services.sh to install the binaries."
+  fi
+elif [[ "$OS" == "Linux" ]]; then
+  log "Next: the fluid speech servers don't build on Linux — see"
+  log "docs/linux-speech-servers.md for a server that runs here."
+fi
 log "To customise voices and models, or connect a different speech server, see"
 log "docs/voices-and-models.md. See the README's \"Connect your speech servers\" section for the rest."

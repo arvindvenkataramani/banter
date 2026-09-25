@@ -1,6 +1,6 @@
 # STT setup
 
-Registry and config snippets for each speech-to-text model in [models.md](models.md#speech-to-text-models-recommended). `parakeet-mlx-fastapi` is covered in that page's [Quick start](models.md#quick-start-kokoro-and-parakeet) instead of here.
+Registry and config snippets for each speech-to-text model in [models.md](models.md#speech-to-text-models-recommended). `parakeet-mlx-fastapi` is covered in that page's [Quick start](models.md#quick-start) instead of here.
 
 Every snippet assumes the service has already been installed: `requirements.txt` (Python services) or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means. `voice.stt.serviceId` is validated against the registry directly and needs no roster entry; a roster `sttModels` list is only how `fluid-stt` itself declares what it can load — see [voices-and-models.md](voices-and-models.md) if you're adding a model there.
 

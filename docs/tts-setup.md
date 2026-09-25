@@ -1,6 +1,6 @@
 # TTS setup
 
-Registry and config snippets for each text-to-speech model in [models.md](models.md#text-to-speech-models-recommended). Kokoro is covered in that page's [Quick start](models.md#quick-start-kokoro-and-parakeet) instead of here.
+Registry and config snippets for each text-to-speech model in [models.md](models.md#text-to-speech-models-recommended). Kokoro is covered in that page's [Quick start](models.md#quick-start) instead of here.
 
 Every snippet assumes the service has already been installed: `requirements.txt` (Python services), its own `BUILD.md` (Voxtral), or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
 
@@ -16,7 +16,7 @@ Install:
 cp -r <banter>/services/tts/neutts-air ~/services/tts/neutts-air
 cd ~/services/tts/neutts-air
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
-# then install NeuTTS itself per neuphonic/neutts upstream instructions — see BUILD.md
+# then install NeuTTS itself per neuphonic/neutts upstream instructions (github.com/neuphonic/neutts)
 ```
 
 Add this entry to `registry.json`'s `services`:
