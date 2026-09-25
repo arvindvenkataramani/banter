@@ -1,5 +1,5 @@
 {
-  "_comment": "Minimal starting registry: this machine, the control plane, and one entry each for your speech-to-text and text-to-speech servers. Replace the placeholder ids, ports and health paths with your own — see the README's \"Connect your speech servers\". runner.type \"external\" means the platform only health-checks a service and never starts or stops it; switch to a \"process\" runner (with runner.main and ops.env.workingDirectory) if you want it started on demand and unloaded when idle. Add more hosts, capabilities and shards as you need them; docs/configuration.md covers every field.",
+  "_comment": "Single-machine starting registry: this machine, the control plane, and the fluid speech servers (fluid-stt for transcription, fluid-tts for synthesis) from services/fluid. Both are process runners: the control plane starts each on first use, from the binary scripts/fluid-build.sh builds and the install step copies into ops.env.workingDirectory. The roster section declares what each server offers — its models and the stock voices that need no reference recording — and is what voice mode's choices are built from. Add more hosts, capabilities, services and shards as you need them; docs/configuration.md covers every field.",
   "version": 2,
   "type": "control",
   "hosts": [
@@ -49,8 +49,9 @@
       }
     },
     {
-      "id": "stt-yours",
-      "name": "Your STT",
+      "id": "fluid-stt",
+      "name": "Fluid STT",
+      "notes": "Transcription from the services/fluid package. Shares FluidServerKit with fluid-tts and pins the patched FluidAudio fork.",
       "capabilityId": "stt",
       "hostId": "this-machine",
       "permissions": {
@@ -58,16 +59,44 @@
         "protected": false
       },
       "runner": {
-        "type": "external"
+        "type": "process",
+        "main": ".build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/services/fluid/fluid-stt",
+          "variables": {
+            "PATH": "/opt/homebrew/bin:$PATH",
+            "FLUID_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173"
+          }
+        },
+        "install": {
+          "artifacts": [
+            {
+              "from": "services/fluid/.build/release/fluid-stt",
+              "to": ".build/release/fluid-stt"
+            }
+          ]
+        }
       },
       "network": {
-        "port": 8765,
+        "port": 8767,
         "healthPath": "/healthz"
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
       }
     },
     {
-      "id": "tts-yours",
-      "name": "Your TTS",
+      "id": "fluid-tts",
+      "name": "Fluid TTS",
+      "notes": "Synthesis over HTTP and WebSocket from the services/fluid package. AAC by default, WAV on request.",
       "capabilityId": "tts",
       "hostId": "this-machine",
       "permissions": {
@@ -75,12 +104,208 @@
         "protected": false
       },
       "runner": {
-        "type": "external"
+        "type": "process",
+        "main": ".build/release/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/services/fluid/fluid-tts",
+          "variables": {
+            "PATH": "/opt/homebrew/bin:$PATH",
+            "FLUID_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173"
+          }
+        },
+        "install": {
+          "artifacts": [
+            {
+              "from": "services/fluid/.build/release/fluid-tts",
+              "to": ".build/release/fluid-tts"
+            }
+          ]
+        }
       },
       "network": {
-        "port": 8002,
-        "healthPath": "/health"
+        "port": 8769,
+        "healthPath": "/healthz"
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
       }
     }
-  ]
+  ],
+  "roster": {
+    "providers": {
+      "fluid-tts": {
+        "responseFormat": "aac",
+        "sessions": true,
+        "ttsModels": [
+          {
+            "id": "pocket-tts",
+            "name": "Pocket-TTS",
+            "key": "pocket-tts",
+            "cloning": {
+              "available": true,
+              "requiresText": false
+            },
+            "chunkProfile": {
+              "words": 75,
+              "chars": 400
+            },
+            "realtime": true,
+            "streaming": true
+          },
+          {
+            "id": "kokoro-ane",
+            "name": "Kokoro 82M (ANE)",
+            "key": "kokoro-ane",
+            "presetVoices": [
+              {
+                "id": "af_heart",
+                "name": "Heart"
+              },
+              {
+                "id": "af_nicole",
+                "name": "Nicole"
+              },
+              {
+                "id": "bf_isabella",
+                "name": "Isabella"
+              },
+              {
+                "id": "bf_lily",
+                "name": "Lily"
+              }
+            ],
+            "realtime": true,
+            "streaming": false
+          },
+          {
+            "id": "luxtts",
+            "name": "LuxTTS",
+            "key": "luxtts",
+            "cloning": {
+              "available": true,
+              "requiresText": true
+            },
+            "realtime": true,
+            "streaming": false
+          }
+        ]
+      },
+      "fluid-stt": {
+        "sessions": true,
+        "sttModels": [
+          {
+            "id": "parakeet-tdt-v3",
+            "name": "Parakeet TDT v3",
+            "key": "parakeet-tdt-v3",
+            "kind": "batch"
+          },
+          {
+            "id": "parakeet-unified-0.6b",
+            "name": "Parakeet Unified 0.6B",
+            "key": "parakeet-unified-0.6b",
+            "kind": "both"
+          },
+          {
+            "id": "nemotron-streaming-en-0.6b",
+            "name": "Nemotron Streaming EN 0.6B",
+            "key": "nemotron-streaming-en-0.6b",
+            "kind": "streaming",
+            "params": [
+              {
+                "name": "chunkMs",
+                "values": [
+                  560,
+                  1120,
+                  2240
+                ]
+              }
+            ],
+            "variants": [
+              {
+                "id": "560ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 560
+                  }
+                ]
+              },
+              {
+                "id": "1120ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 1120
+                  }
+                ]
+              },
+              {
+                "id": "2240ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 2240
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "voices": [
+      {
+        "id": "heart",
+        "name": "Heart",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_heart"
+          }
+        ]
+      },
+      {
+        "id": "nicole",
+        "name": "Nicole",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_nicole"
+          }
+        ]
+      },
+      {
+        "id": "isabella",
+        "name": "Isabella",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_isabella"
+          }
+        ]
+      },
+      {
+        "id": "lily",
+        "name": "Lily",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_lily"
+          }
+        ]
+      }
+    ]
+  }
 }

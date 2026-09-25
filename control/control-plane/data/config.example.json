@@ -18,24 +18,12 @@
   "voice": {
     "enabled": true,
     "tts": {
-      "providers": [
-        {
-          "serviceId": "tts-yours",
-          "name": "Your TTS",
-          "models": [
-            {
-              "id": "YOUR-MODEL-ID",
-              "name": "Your Model",
-              "voices": [
-                {
-                  "id": "YOUR-VOICE-ID",
-                  "name": "Your Voice"
-                }
-              ]
-            }
-          ]
-        }
-      ],
+      "selection": {
+        "serviceId": "fluid-tts",
+        "model": "kokoro-ane",
+        "voice": "heart",
+        "speed": 1
+      },
       "options": {
         "chunkStrategy": "greedy",
         "minChunkWords": 15,
@@ -45,8 +33,21 @@
       "modelPrefs": {}
     },
     "stt": {
-      "serviceId": "stt-yours",
+      "serviceId": "fluid-stt",
+      "model": "parakeet-unified-0.6b",
+      "preferStreaming": true,
       "maxRecordingMs": 300000,
+      "settleOnStopMs": 1500,
+      "pauseFlushMs": 1500,
+      "reveal": {
+        "minIntervalMs": 55,
+        "maxIntervalMs": 200
+      },
+      "reconnect": {
+        "attempts": 3,
+        "delayMs": 1000,
+        "stableMs": 10000
+      },
       "vad": {
         "minSpeechDurationS": 0.75,
         "minSpeechProb": 0.9

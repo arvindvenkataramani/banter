@@ -1,7 +1,7 @@
 {
   "version": 2,
   "type": "shard",
-  "servicesRoot": "~/Services",
+  "servicesRoot": "~/services",
   "defaults": {
     "permissions": {
       "protected": false
@@ -9,7 +9,10 @@
     "lifecycle": {
       "loadStrategy": "startup",
       "idleUnload": false,
-      "idleTimeout": 300000
+      "idleTimeout": 300000,
+      "startupTime": 30000,
+      "serveRetryAttempts": 3,
+      "serveRetryDelay": 250
     },
     "network": {
       "scheme": "https"
@@ -26,7 +29,8 @@
       "id": "home-server",
       "name": "home-server",
       "hostname": "home-server.your-tailnet.ts.net",
-      "role": "control"
+      "role": "control",
+      "port": 4200
     }
   ],
   "capabilities": [
@@ -85,44 +89,9 @@
       }
     },
     {
-      "id": "tts-kokoro",
-      "name": "Kokoro",
-      "capabilityId": "tts",
-      "hostId": "gpu-machine",
-      "permissions": {
-        "enabled": true,
-        "protected": false
-      },
-      "runner": {
-        "type": "process",
-        "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002"
-      },
-      "ops": {
-        "env": {
-          "workingDirectory": "~/Services/tts/kokoro",
-          "variables": {
-            "HF_HUB_OFFLINE": "1"
-          }
-        }
-      },
-      "network": {
-        "port": 8002,
-        "healthPath": "/health",
-        "tailscaleServe": true
-      },
-      "lifecycle": {
-        "loadStrategy": "demand",
-        "autoStart": false,
-        "shutdown": true,
-        "idleUnload": true,
-        "idleTimeout": 1800000,
-        "restartOnCrash": true,
-        "maxRestarts": 3
-      }
-    },
-    {
-      "id": "stt-parakeet",
-      "name": "Parakeet",
+      "id": "fluid-stt",
+      "name": "Fluid STT",
+      "notes": "Transcription from the services/fluid package. Shares FluidServerKit with fluid-tts and pins the patched FluidAudio fork.",
       "capabilityId": "stt",
       "hostId": "gpu-machine",
       "permissions": {
@@ -131,19 +100,27 @@
       },
       "runner": {
         "type": "process",
-        "main": ".venv/bin/parakeet-server --model mlx-community/parakeet-tdt-0.6b-v3 --host 127.0.0.1 --port 8765"
+        "main": ".build/release/fluid-stt --port 8767 --registry ~/services/shard/registry.json --provider fluid-stt"
       },
       "ops": {
         "env": {
-          "workingDirectory": "~/Services/stt/parakeet",
+          "workingDirectory": "~/services/fluid/fluid-stt",
           "variables": {
-            "HF_HUB_OFFLINE": "1",
-            "PARAKEET_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
+            "PATH": "/opt/homebrew/bin:$PATH",
+            "FLUID_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
           }
+        },
+        "install": {
+          "artifacts": [
+            {
+              "from": "services/fluid/.build/release/fluid-stt",
+              "to": ".build/release/fluid-stt"
+            }
+          ]
         }
       },
       "network": {
-        "port": 8765,
+        "port": 8767,
         "healthPath": "/healthz",
         "tailscaleServe": true
       },
@@ -158,9 +135,10 @@
       }
     },
     {
-      "id": "stt-whisper",
-      "name": "Whisper",
-      "capabilityId": "stt",
+      "id": "fluid-tts",
+      "name": "Fluid TTS",
+      "notes": "Synthesis over HTTP and WebSocket from the services/fluid package. AAC by default, WAV on request.",
+      "capabilityId": "tts",
       "hostId": "gpu-machine",
       "permissions": {
         "enabled": true,
@@ -168,19 +146,27 @@
       },
       "runner": {
         "type": "process",
-        "main": ".venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766"
+        "main": ".build/release/fluid-tts --port 8769 --registry ~/services/shard/registry.json --provider fluid-tts"
       },
       "ops": {
         "env": {
-          "workingDirectory": "~/Services/stt/whisper",
+          "workingDirectory": "~/services/fluid/fluid-tts",
           "variables": {
-            "HF_HUB_OFFLINE": "1",
-            "WHISPER_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
+            "PATH": "/opt/homebrew/bin:$PATH",
+            "FLUID_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
           }
+        },
+        "install": {
+          "artifacts": [
+            {
+              "from": "services/fluid/.build/release/fluid-tts",
+              "to": ".build/release/fluid-tts"
+            }
+          ]
         }
       },
       "network": {
-        "port": 8766,
+        "port": 8769,
         "healthPath": "/healthz",
         "tailscaleServe": true
       },
@@ -194,5 +180,174 @@
         "maxRestarts": 3
       }
     }
-  ]
+  ],
+  "roster": {
+    "providers": {
+      "fluid-tts": {
+        "responseFormat": "aac",
+        "sessions": true,
+        "ttsModels": [
+          {
+            "id": "pocket-tts",
+            "name": "Pocket-TTS",
+            "key": "pocket-tts",
+            "cloning": {
+              "available": true,
+              "requiresText": false
+            },
+            "chunkProfile": {
+              "words": 75,
+              "chars": 400
+            },
+            "realtime": true,
+            "streaming": true
+          },
+          {
+            "id": "kokoro-ane",
+            "name": "Kokoro 82M (ANE)",
+            "key": "kokoro-ane",
+            "presetVoices": [
+              {
+                "id": "af_heart",
+                "name": "Heart"
+              },
+              {
+                "id": "af_nicole",
+                "name": "Nicole"
+              },
+              {
+                "id": "bf_isabella",
+                "name": "Isabella"
+              },
+              {
+                "id": "bf_lily",
+                "name": "Lily"
+              }
+            ],
+            "realtime": true,
+            "streaming": false
+          },
+          {
+            "id": "luxtts",
+            "name": "LuxTTS",
+            "key": "luxtts",
+            "cloning": {
+              "available": true,
+              "requiresText": true
+            },
+            "realtime": true,
+            "streaming": false
+          }
+        ]
+      },
+      "fluid-stt": {
+        "sessions": true,
+        "sttModels": [
+          {
+            "id": "parakeet-tdt-v3",
+            "name": "Parakeet TDT v3",
+            "key": "parakeet-tdt-v3",
+            "kind": "batch"
+          },
+          {
+            "id": "parakeet-unified-0.6b",
+            "name": "Parakeet Unified 0.6B",
+            "key": "parakeet-unified-0.6b",
+            "kind": "both"
+          },
+          {
+            "id": "nemotron-streaming-en-0.6b",
+            "name": "Nemotron Streaming EN 0.6B",
+            "key": "nemotron-streaming-en-0.6b",
+            "kind": "streaming",
+            "params": [
+              {
+                "name": "chunkMs",
+                "values": [
+                  560,
+                  1120,
+                  2240
+                ]
+              }
+            ],
+            "variants": [
+              {
+                "id": "560ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 560
+                  }
+                ]
+              },
+              {
+                "id": "1120ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 1120
+                  }
+                ]
+              },
+              {
+                "id": "2240ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 2240
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "voices": [
+      {
+        "id": "heart",
+        "name": "Heart",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_heart"
+          }
+        ]
+      },
+      {
+        "id": "nicole",
+        "name": "Nicole",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_nicole"
+          }
+        ]
+      },
+      {
+        "id": "isabella",
+        "name": "Isabella",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_isabella"
+          }
+        ]
+      },
+      {
+        "id": "lily",
+        "name": "Lily",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_lily"
+          }
+        ]
+      }
+    ]
+  }
 }

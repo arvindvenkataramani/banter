@@ -53,7 +53,11 @@ CONFIG="control/control-plane/data/config.json"
 if [[ -f "$REGISTRY" || -f "$CONFIG" ]]; then
   log "control/control-plane/data/{registry,config}.json already exist — leaving them as-is."
 else
-  cp control/control-plane/data/registry.example.json "$REGISTRY"
+  # A service's working directory is used as given — nothing downstream expands
+  # "~" — so the example's "~/..." becomes this user's home here, once.
+  jq --arg home "$HOME" \
+    '(.services[] | select((.ops.env.workingDirectory? // "") | startswith("~/")) | .ops.env.workingDirectory) |= ($home + .[1:])' \
+    control/control-plane/data/registry.example.json > "$REGISTRY"
   cp control/control-plane/data/config.example.json    "$CONFIG"
   log "Created registry.json and config.json from the shipped examples."
 
