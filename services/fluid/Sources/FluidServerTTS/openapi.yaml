@@ -1,0 +1,301 @@
+openapi: "3.1.0"
+info:
+  title: fluid-tts
+  version: "1.0.0"
+  description: |
+    An OpenAI-compatible speech synthesis server over FluidAudio's CoreML
+    backends.
+
+    One model is resident at a time, and one operation runs against it.
+    FluidAudio issue #661 reports EXC_BAD_ACCESS in libBNNS when two managers
+    predict concurrently, and upstream's Architecture.md states CoreML is not
+    reentrant. Streaming makes that constraint sharper: synthesis returns its
+    stream immediately and keeps predicting after the call returns, so the
+    resident slot is held until the work actually ends rather than until its
+    caller walks away.
+
+    The model lifecycle here matches the transcription server's, endpoint for
+    endpoint and shape for shape, because a client written against one and
+    pointed at the other should not have to tell them apart.
+
+    Two endpoints are deliberately absent. Streaming synthesis for the voice
+    loop is a WebSocket at /v1/audio/stream, and OpenAPI has no WebSocket
+    concept. And /v1/audio/speech takes the union of what nine backends accept,
+    each reading the parameters it has and ignoring the rest, so a schema would
+    either reject a field some backend needs or document a shape no backend
+    implements. Both are described in BUILD.md.
+
+    What /v1/audio/speech returns: one container per response, whether or not
+    `stream` is set. `response_format` selects `aac` (the default, AAC-LC in
+    ADTS) or `wav`, and anything else is refused rather than silently
+    substituted. With `stream: true` the body arrives in pieces as synthesis
+    produces them; without it, in one piece. A backend that cannot stream is
+    served whole either way, so a client never branches on which model it is
+    talking to.
+
+servers:
+  - url: http://127.0.0.1:8769
+    description: local
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness, and which model is resident.
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/models:
+    get:
+      operationId: listModels
+      summary: Every model this server can load, and which one is loaded.
+      responses:
+        "200":
+          description: The listing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+    delete:
+      operationId: unloadModel
+      summary: Drop the resident model.
+      description: |
+        Unloading when nothing is loaded is a no-op rather than an error: the
+        caller wanted it gone, and it is. Refused while work is in flight —
+        waiting out the slot's deadline would hide a caller's mistake behind a
+        stall.
+      responses:
+        "200":
+          description: Nothing is resident.
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: loadModelByName
+      summary: Make a model resident, naming it in the query.
+      description: |
+        The spelling mlx-audio answers, and so the one the dashboard sends to
+        every synthesis provider. Identical to `POST /v1/models/load` with the
+        id in the body; the transcription server answers it the same way.
+      parameters:
+        - $ref: "#/components/parameters/ModelName"
+      responses:
+        "200":
+          description: The model is loaded and ready.
+        "400":
+          description: No such model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/models/load:
+    post:
+      operationId: loadModel
+      summary: Make a model resident.
+      description: |
+        Returns when the model is ready to serve. Loading the model already
+        loaded is a no-op rather than an error. A failed load leaves nothing
+        resident, which is the honest state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelRequest"
+      responses:
+        "200":
+          description: The model is loaded and ready.
+        "400":
+          description: No such model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  parameters:
+    ModelName:
+      name: model_name
+      in: query
+      required: true
+      schema:
+        type: string
+      description: A model id, as listed by /v1/models.
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        model:
+          type: [string, "null"]
+          description: The resident model, or null when none is loaded.
+
+    Model:
+      type: object
+      required: [id, name, object, created, owned_by, loaded, loadable, kind, transport, present]
+      description: |
+        OpenAI's model shape — id, object, created, owned_by — so a client
+        written against any OpenAI-compatible server reads this without special
+        cases. `loaded` and `loadable` are added rather than substituted: this
+        server holds one model resident at a time, which OpenAI's shape cannot
+        express. A client that ignores both sees a standard listing.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: |
+            What to call this model in a listing. Carried from the roster: a
+            client asking what this server serves should not have to complete
+            the answer from somewhere else.
+        object:
+          type: string
+        created:
+          type: integer
+          description: |
+            Seconds since the epoch. These models are not created by this
+            server, so it reports process start rather than fabricating a
+            per-request timestamp.
+        owned_by:
+          type: string
+        loaded:
+          type: boolean
+          description: Whether this model is the resident one.
+        loadable:
+          type: boolean
+          description: |
+            Whether this model can be made resident over /v1/models/load. Every
+            model in the roster is, so this is constant — it is kept because
+            OpenAI-compatible clients read it, not because it discriminates.
+        kind:
+          type: string
+          enum: [batch, streaming, both]
+          description: |
+            What the model is. Every synthesis model is `both`: the same driver
+            answers a one-shot request and drives a stream, unlike
+            transcription where the two are separate managers.
+        transport:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [http, websocket]
+          description: |
+            The routes this model is reached over. Both, on one port — the file
+            consumer posts, the voice loop upgrades. Reported rather than
+            assumed, so a client reads it instead of knowing it.
+        present:
+          type: boolean
+          description: |
+            Whether this model's weights are in the cache root its own runtime
+            reads, which for synthesis is not where the transcription models
+            live. Not availability — that is a platform fact — but the one
+            input only this server can contribute.
+        canClone:
+          type: boolean
+          description: |
+            Whether this model can render a voice from a reference recording.
+        requiresRefText:
+          type: boolean
+          description: |
+            Whether cloning under this model needs a transcript alongside the
+            audio. False for a model that cannot clone at all.
+        cloning:
+          type: object
+          description: |
+            The full terms this model puts on a cloning reference. `canClone`
+            and `requiresRefText` are the two a caller reads most often;
+            everything the roster states is here, so a consumer deciding
+            whether a recording will be accepted has the whole rule rather
+            than the common half of it.
+          properties:
+            available:
+              type: boolean
+            requiresText:
+              type: boolean
+            minDurationS:
+              type: number
+            maxDurationS:
+              type: number
+            sampleRate:
+              type: integer
+        chunkProfile:
+          type: object
+          description: |
+            The model's own chunker constraint. Reported because a caller
+            sending more text than the model tolerates gets degraded audio
+            and no error — the chunking belongs to the model, not to whoever
+            is calling it.
+          required: [words, chars]
+          properties:
+            words:
+              type: integer
+            chars:
+              type: integer
+        presetVoices:
+          type: array
+          description: |
+            Voices this model already knows by name, needing no reference
+            recording. A client offering a choice of voice reads these rather
+            than being told them separately.
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+
+    ModelList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Model"
+
+    ModelRequest:
+      type: object
+      required: [model]
+      properties:
+        model:
+          type: string
+          description: A model id, as listed by /v1/models.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: |
+            States the condition: an unknown model, an unproducible
+            response_format, or a model already busy.

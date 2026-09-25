@@ -3,15 +3,26 @@
 # - Reads registry.json to find services with installCommand
 # - Copies only the referenced .plist files to ~/Library/LaunchAgents/
 # - Copies .sh and .plist files from services/ to ~/Services/ (only where target dir exists)
+# - Installs the built artifacts each service declares in ops.install
+#   (install-artifacts.sh)
 # - Never touches venvs, app code, or models
 #
 # Usage:
-#   shard-install-services.sh              — install from repo working tree
-#   shard-install-services.sh /path/to/src — install from a specific source tree
+#   shard-install-services.sh                               — install from repo working tree
+#   shard-install-services.sh /path/to/src                  — install from a specific source tree
+#   shard-install-services.sh --no-artifacts [/path/to/src] — everything but artifacts, as a
+#                                                           deploy from main does
 set -euo pipefail
+
+INSTALL_ARTIFACTS=true
+if [[ "${1:-}" == "--no-artifacts" ]]; then
+  INSTALL_ARTIFACTS=false
+  shift
+fi
 
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 source "$(dirname "$0")/deploy-env.sh"
+source "$(dirname "$0")/install-artifacts.sh"
 REGISTRY="$SRC/control/control-shard/data/registry.json"
 SERVICES_SRC="$SRC/services"
 SERVICES_DEST="$BANTER_SHARD_SERVICES_DEST"
@@ -40,9 +51,32 @@ if [[ -f "$REGISTRY" ]]; then
       done
 fi
 
+# --- built artifacts (registry-driven) ---
+# A failure here is reported at the end, after everything else is installed.
+# The shard's control API is on this same node, so localhost with the port the
+# registry declares for "control-shard" — its own id — is always the right
+# address; this script is never run against a registry that isn't the one
+# deployed here.
+ARTIFACTS_FAILED=false
+if $INSTALL_ARTIFACTS && [[ -f "$REGISTRY" ]]; then
+  echo "[install-services] Installing built artifacts..."
+  SHARD_CONTROL_PORT="$(jq -r '.services[] | select(.id == "control-shard") | .network.port' "$REGISTRY")"
+  if [[ -n "$SHARD_CONTROL_PORT" && "$SHARD_CONTROL_PORT" != "null" ]]; then
+    install_service_artifacts "$SRC" "$REGISTRY" "http://localhost:$SHARD_CONTROL_PORT" "$BANTER_SHARD_EVENTS_PATH" \
+      || ARTIFACTS_FAILED=true
+  else
+    echo "[install-services] error: no 'control-shard' service with network.port in $REGISTRY" >&2
+    ARTIFACTS_FAILED=true
+  fi
+fi
+
 # --- service lifecycle scripts ---
 if [[ ! -d "$SERVICES_SRC" ]]; then
   echo "[install-services] No services/ directory in $SRC, skipping scripts."
+  if $ARTIFACTS_FAILED; then
+    echo "[install-services] Done, but installing built artifacts needs attention (see the errors above)." >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -75,4 +109,8 @@ if [[ -f "$REGISTRY" ]]; then
   done
 fi
 
+if $ARTIFACTS_FAILED; then
+  echo "[install-services] Done, but installing built artifacts needs attention (see the errors above)." >&2
+  exit 1
+fi
 echo "[install-services] Done."

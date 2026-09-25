@@ -1,0 +1,382 @@
+openapi: "3.1.0"
+info:
+  title: fluidserver
+  version: "1.0.0"
+  description: |
+    An OpenAI-compatible transcription server over FluidAudio's CoreML models.
+
+    One model is resident at a time. FluidAudio issue #661 reports EXC_BAD_ACCESS
+    in libBNNS when two managers predict concurrently, and upstream's
+    Architecture.md states CoreML is not reentrant, so loading and transcription
+    are serialised and only one model is ever held.
+
+    Loading is always an explicit call. A load costs around thirteen seconds,
+    which has no business hiding inside a transcription request, so a request
+    naming a model that is not loaded is refused rather than silently switched.
+
+    Two endpoints are deliberately absent, both documented in
+    services/fluid/STT.md instead. The streaming endpoint is a WebSocket at
+    /v1/audio/stream, and OpenAPI has no WebSocket concept. The transcription
+    endpoint at /v1/audio/transcriptions accepts `timestamp_granularities[]` as
+    well as `timestamp_granularities`, because OpenAI clients send the
+    bracketed spelling and a schema cannot describe two names for one field;
+    its hand-written parser takes either, and the harness depends on the
+    response shape it produces.
+
+servers:
+  - url: http://127.0.0.1:8767
+    description: local
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness, and which model is resident.
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/models:
+    delete:
+      operationId: dropResidentModel
+      summary: Drop whatever model is resident.
+      description: |
+        The spelling OpenAI-compatible clients use, and what the synthesis
+        server answers on the same path. Dropping when nothing is loaded is a
+        no-op. Refused while work is in flight — waiting out the slot's deadline
+        would hide a caller's mistake behind a stall.
+      responses:
+        "200":
+          description: Nothing is resident.
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      operationId: listModels
+      summary: Every model this server can load, and which one is loaded.
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+    post:
+      operationId: loadModelByName
+      summary: Make a model resident, naming it in the query.
+      description: |
+        The spelling mlx-audio answers and the synthesis server shares, so a
+        client written against either reads this one. It carries no mode,
+        variant or parameters: a model that needs any of them is refused, and
+        `POST /v1/models/load` is the form that states them.
+      parameters:
+        - $ref: "#/components/parameters/ModelName"
+      responses:
+        "200":
+          description: The model is loaded and ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelAction"
+        "400":
+          description: The id is unknown, or the model needs a mode or variant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/models/load:
+    post:
+      operationId: loadModel
+      summary: Make a model resident.
+      description: |
+        Unloads whatever is resident, loads the requested model, and returns once
+        it is ready to serve. Loading the model already loaded is a no-op rather
+        than a reload.
+
+        A failed load leaves no model resident: the previous one is unloaded
+        first, so that two are never held at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelRequest"
+      responses:
+        "200":
+          description: The model is loaded and ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelAction"
+        "400":
+          description: No model id in the body, or the id is unknown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/models/unload:
+    post:
+      operationId: unloadModel
+      summary: Release a model, naming it.
+      description: |
+        Drops the model if it is the resident one. Unloading a model that is not
+        loaded is a no-op rather than an error: the caller wanted it gone, and it
+        already is.
+
+        `DELETE /v1/models` does the same thing without naming a model, and is
+        the spelling OpenAI-compatible clients use. Name the model here when the
+        caller believes it knows what is resident and wants that asserted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelRequest"
+      responses:
+        "200":
+          description: The model is not resident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelAction"
+        "400":
+          description: No model id in the body, or the id is unknown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  parameters:
+    ModelName:
+      name: model_name
+      in: query
+      required: true
+      schema:
+        type: string
+      description: A model id, as listed by /v1/models.
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        model:
+          type: [string, "null"]
+          description: The resident model, or null when none is loaded.
+        variant:
+          type: [string, "null"]
+          description: The resident model's variant, or null when it has only its implicit one.
+
+    Model:
+      type: object
+      required: [id, name, object, created, owned_by, loaded, loadable, kind, transport, present]
+      description: |
+        OpenAI's model shape — id, object, created, owned_by — so a client
+        written against any OpenAI-compatible server reads this without special
+        cases. `loaded` and `loadable` are added rather than substituted: this
+        server holds one model resident at a time, which OpenAI's shape cannot
+        express. A client that ignores both sees a standard listing.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: |
+            What to call this model in a listing. Carried from the roster: a
+            client asking what this server serves should not have to complete
+            the answer from somewhere else.
+        object:
+          type: string
+        created:
+          type: integer
+          description: |
+            Seconds since the epoch. These models are not created by this
+            server, so it reports process start rather than fabricating a
+            per-request timestamp.
+        owned_by:
+          type: string
+        loaded:
+          type: boolean
+          description: Whether this model is the resident one.
+        loadable:
+          type: boolean
+          description: |
+            Whether this model can be made resident over /v1/models/load. Every
+            model in the roster is, so this is constant — it is kept because
+            OpenAI-compatible clients read it, not because it discriminates.
+        kind:
+          type: string
+          enum: [batch, streaming, both]
+          description: |
+            What the model is. `both` is one model with two encoders over one
+            set of weights, not two models: the decoder, joint and vocabulary
+            are shared. Reported separately from `transport` — one says what
+            the model is, the other how it is reached, and the API does not
+            assert a coupling it cannot guarantee.
+        transport:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [http, websocket]
+          description: |
+            The routes this model is reached over. A set rather than one value,
+            because a model that does both is genuinely served over the
+            transcription endpoint and the socket.
+        present:
+          type: boolean
+          description: |
+            Whether every component this model needs is on disk, in the cache
+            root its own runtime reads. Not availability — that is a platform
+            fact about registered services and reachable nodes — but the one
+            input only this server can contribute.
+        params:
+          type: array
+          items:
+            $ref: "#/components/schemas/Param"
+          description: |
+            What a load of this model accepts, each with the values it may
+            take, as the roster declares them. Reported so a caller can
+            discover the choice rather than learn it from a refusal.
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variant"
+          description: |
+            The distinct sets of weights under this id, each with the
+            parameter values that select it. Absent for a model with only its
+            implicit variant.
+        variant:
+          type: string
+          description: |
+            Which variant is resident, for the loaded model that has several.
+        modes:
+          type: array
+          items:
+            type: string
+            enum: [batch, streaming]
+          description: |
+            Which modes are currently resident, for the loaded model. A model
+            that serves both can have either half up, or both, and a boolean
+            cannot say which.
+
+    ModelList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Model"
+
+    ModelRequest:
+      type: object
+      required: [model]
+      properties:
+        model:
+          type: string
+          description: A model id, as listed by /v1/models.
+        mode:
+          type: string
+          enum: [batch, streaming, both]
+          description: |
+            Which mode to make resident. Required for a model reporting kind
+            `both`, and refused for a model that does not serve what it names.
+            A model with a choice to make is never defaulted: the wrong choice
+            would surface as unexplained latency rather than as an error.
+        variant:
+          type: string
+          description: |
+            Which of the model's variants to load, by id. Given with
+            parameters that select a different variant, the load is refused.
+        chunkMs:
+          type: integer
+          description: |
+            The `chunkMs` parameter, for a model declaring it. Where the
+            roster maps a value to a variant, giving it selects that variant.
+
+    ModelAction:
+      type: object
+      required: [object, loaded]
+      properties:
+        object:
+          type: string
+        loaded:
+          type: string
+        variant:
+          type: string
+          description: The variant now resident, for a model that has several.
+
+    Param:
+      type: object
+      required: [name, values]
+      properties:
+        name:
+          type: string
+        values:
+          type: array
+          items:
+            type: integer
+
+    ParamBinding:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: integer
+
+    Variant:
+      type: object
+      required: [id, params]
+      properties:
+        id:
+          type: string
+        params:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParamBinding"
+          description: The parameter values that select this variant.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: |
+            States the condition. The calls that resolve it are in
+            services/fluid/STT.md.

@@ -116,7 +116,12 @@ systemctl --user stop "$BANTER_UNIT" 2>/dev/null || true
 # removed along with everything else.
 CONFIG_STASH="$(mktemp -d "${TMPDIR:-/tmp}/banter-config-stash.XXXXXX")"
 CLEANUP_DIRS+=("$CONFIG_STASH")
-bash "$SCRIPTS_DIR/deploy-preserve-config.sh" save "$PROD" "$CONFIG_STASH"
+# A refusal comes before anything is copied, so the old deployment restarts intact.
+if ! bash "$SCRIPTS_DIR/deploy-preserve-config.sh" save "$PROD" "$CONFIG_STASH"; then
+  echo "[control-deploy] Deploy refused — restarting the existing control plane." >&2
+  systemctl --user start "$BANTER_UNIT"
+  exit 1
+fi
 
 echo "[control-deploy] Copying files to $PROD..."
 mkdir -p "$PROD" "$PROD/control"
@@ -164,7 +169,13 @@ echo "[control-deploy] Making wrapper scripts executable..."
 chmod +x "$PROD/scripts/"*.sh
 
 echo "[control-deploy] Installing service units and scripts..."
-bash "$PROD/scripts/control-install-services.sh" "$SRC"
+# A deploy from main installs no built artifacts: its git archive holds none.
+# A service install that needs attention must not stop the control plane from
+# coming back up; it is reported at the end.
+INSTALL_FAILED=false
+INSTALL_ARGS=("$SRC")
+[[ "$SRC" != "$REPO" ]] && INSTALL_ARGS=(--no-artifacts "$SRC")
+bash "$PROD/scripts/control-install-services.sh" "${INSTALL_ARGS[@]}" || INSTALL_FAILED=true
 
 echo "[control-deploy] Starting control plane..."
 systemctl --user daemon-reload
@@ -173,4 +184,8 @@ systemctl --user restart "$BANTER_UNIT"
 
 echo "[control-deploy] Status:"
 systemctl --user is-active --quiet "$BANTER_UNIT" && echo "  control plane: active" || echo "  control plane: FAILED"
+if $INSTALL_FAILED; then
+  echo "[control-deploy] Done, but a service install needs attention — see the [install] errors above." >&2
+  exit 1
+fi
 echo "[control-deploy] Done."

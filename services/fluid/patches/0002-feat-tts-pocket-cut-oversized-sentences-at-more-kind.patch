@@ -1,0 +1,321 @@
+From ba3c873e9de4eae116ebb1eab98525184e811dc4 Mon Sep 17 00:00:00 2001
+From: Arvind Venkataramani
+ <250267+arvindvenkataramani@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 02:06:54 -0700
+Subject: [PATCH 2/3] feat(tts/pocket): cut oversized sentences at more kinds
+ of punctuation and balance word splits
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- splitAtClauseBoundaries: dashes, ellipses and the edges of a bracketed aside are clause boundaries alongside , ; : — hyphenated words, numeric ranges and punctuation trailing a closing bracket stay whole
+- splitAtWordBoundaries: text needing n parts aims each at a 1/n share of its tokens instead of filling to the limit, so no short tail is stranded ("…the first drops hit" + "the pavement.")
+- splitSentences: a run of sentence punctuation ("...", "?!") ends one sentence once, so the text reaches the model as written
+- normalizeText: a trailing dash is stripped from a sentence-start chunk as trailing , ; : already are
+---
+ .../Pipeline/PocketTtsSynthesizer.swift       |  98 ++++++++++----
+ .../PocketTtsCutPlacementTests.swift          | 120 ++++++++++++++++++
+ 2 files changed, 195 insertions(+), 23 deletions(-)
+ create mode 100644 Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsCutPlacementTests.swift
+
+diff --git a/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift b/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift
+index 93ca17e2..db44b356 100644
+--- a/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift
++++ b/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift
+@@ -825,9 +825,9 @@ public struct PocketTtsSynthesizer {
+                 language: language))
+ 
+         if !isMidSentence {
+-            // Strip trailing clause punctuation (commas, semicolons, colons)
++            // Strip trailing clause punctuation (commas, semicolons, colons, dashes)
+             // before adding sentence-ending punctuation
+-            while let last = result.last, ",;:".contains(last) {
++            while let last = result.last, ",;:\u{2014}\u{2013}-".contains(last) {
+                 result = String(result.dropLast())
+             }
+             result = result.trimmingCharacters(in: .whitespaces)
+@@ -1019,19 +1019,50 @@ public struct PocketTtsSynthesizer {
+         return result.isEmpty ? [text] : result
+     }
+ 
+-    /// Split text at clause punctuation (commas, semicolons, colons).
++    /// Split text at clause punctuation: commas, semicolons, colons, dashes,
++    /// ellipses, and the edges of a bracketed aside.
+     ///
+-    /// Does not split at commas within numbers (e.g., "3,500").
++    /// These are the places a speaker pauses, so a chunk seam there is covered
++    /// by a pause the listener already expects. Exceptions keep tokens whole:
++    /// - A comma between digits ("3,500") does not split.
++    /// - An en dash or hyphen splits only with a space on each side, so
++    ///   hyphenated words and numeric ranges stay whole. An em dash always splits.
++    /// - An opening bracket splits before itself; a closing bracket or ellipsis
++    ///   splits after itself, and only when a space follows, so trailing
++    ///   punctuation ("aside)," or "…?") stays attached.
+     static func splitAtClauseBoundaries(_ text: String) -> [String] {
+-        let clauseBreaks: Set<Character> = [",", ";", ":"]
++        let breakAfter: Set<Character> = [",", ";", ":", "\u{2014}"]
++        let breakAfterWhenSpaced: Set<Character> = ["\u{2013}", "-"]
++        let breakAfterBeforeSpace: Set<Character> = [")", "]", "\u{2026}"]
++        let breakBefore: Set<Character> = ["(", "["]
+         var parts: [String] = []
+         var current = ""
+         let chars = Array(text)
+ 
++        func flush() {
++            let trimmed = current.trimmingCharacters(in: .whitespaces)
++            if !trimmed.isEmpty {
++                parts.append(trimmed)
++            }
++            current = ""
++        }
++
+         for (i, char) in chars.enumerated() {
++            if breakBefore.contains(char) {
++                flush()
++            }
+             current.append(char)
+ 
+-            guard clauseBreaks.contains(char) else { continue }
++            let prevIsSpace = i > 0 && chars[i - 1] == " "
++            let nextIsSpace = i + 1 < chars.count && chars[i + 1] == " "
++
++            if breakAfterWhenSpaced.contains(char) {
++                guard prevIsSpace && nextIsSpace else { continue }
++            } else if breakAfterBeforeSpace.contains(char) {
++                guard nextIsSpace else { continue }
++            } else {
++                guard breakAfter.contains(char) else { continue }
++            }
+ 
+             // Don't split at commas between digits (e.g., "3,500")
+             if char == "," {
+@@ -1042,26 +1073,24 @@ public struct PocketTtsSynthesizer {
+                 }
+             }
+ 
+-            let trimmed = current.trimmingCharacters(in: .whitespaces)
+-            if !trimmed.isEmpty {
+-                parts.append(trimmed)
+-            }
+-            current = ""
+-        }
+-
+-        let trimmed = current.trimmingCharacters(in: .whitespaces)
+-        if !trimmed.isEmpty {
+-            parts.append(trimmed)
++            flush()
+         }
+ 
++        flush()
+         return parts
+     }
+ 
+     /// Split text at word boundaries to fit within the token limit.
+     ///
+-    /// Avoids orphaning a single trailing word ("…stations-service de" +
+-    /// "TotalEnergies") by pre-budgeting one word back from the head chunk
+-    /// when the tail would otherwise be a single short word. See issue #584.
++    /// Parts are balanced: text needing `n` parts aims each at a `1/n` share of
++    /// its tokens. Filling every part to the limit instead leaves whatever
++    /// spills past the last full part as a short tail ("…the first drops hit" +
++    /// "the pavement."), and a two-word chunk is synthesized with a prosodic
++    /// start of its own. No part exceeds `maxTokens`.
++    ///
++    /// Also avoids orphaning a single trailing word ("…stations-service de" +
++    /// "TotalEnergies") by donating one word back from the preceding chunk.
++    /// See issue #584.
+     static func splitAtWordBoundaries(
+         _ text: String,
+         tokenizer: SentencePieceTokenizer,
+@@ -1070,18 +1099,37 @@ public struct PocketTtsSynthesizer {
+         let words = text.split(separator: " ").map(String.init)
+         guard words.count > 1 else { return [text] }
+ 
++        let totalTokens = tokenizer.encode(text).count
++        let partCount = max(1, (totalTokens + maxTokens - 1) / maxTokens)
++        let target = min(maxTokens, (totalTokens + partCount - 1) / partCount)
++
+         var chunks: [String] = []
+         var currentWords: [String] = []
++        var currentTokens = 0
+ 
+         for word in words {
+             let candidate = (currentWords + [word]).joined(separator: " ")
+             let tokens = tokenizer.encode(candidate).count
+ 
+-            if tokens > maxTokens && !currentWords.isEmpty {
++            // The last part takes what remains, up to the hard limit. Earlier
++            // parts close at whichever word boundary lies nearest the target.
++            let isLastPart = chunks.count >= partCount - 1
++            let closesPart: Bool
++            if tokens > maxTokens {
++                closesPart = true
++            } else if isLastPart || tokens <= target {
++                closesPart = false
++            } else {
++                closesPart = tokens - target >= target - currentTokens
++            }
++
++            if closesPart && !currentWords.isEmpty {
+                 chunks.append(currentWords.joined(separator: " "))
+                 currentWords = [word]
++                currentTokens = tokenizer.encode(word).count
+             } else {
+                 currentWords.append(word)
++                currentTokens = tokens
+             }
+         }
+ 
+@@ -1089,9 +1137,8 @@ public struct PocketTtsSynthesizer {
+             chunks.append(currentWords.joined(separator: " "))
+         }
+ 
+-        // If the tail is a single short word (likely orphaned by the greedy
+-        // split), shift one word back from the preceding chunk so the tail
+-        // has at least two words and prosody is less jarring. Only applies
++        // If the tail is a single short word, shift one word back from the
++        // preceding chunk so the tail has at least two words. Only applies
+         // when the preceding chunk has multiple words to give up.
+         if chunks.count >= 2, let tail = chunks.last,
+             tail.split(separator: " ").count == 1
+@@ -1169,6 +1216,11 @@ public struct PocketTtsSynthesizer {
+ 
+             guard ".!?".contains(char) else { continue }
+ 
++            // A run of sentence punctuation ("...", "?!") ends one sentence, once.
++            if i + 1 < chars.count, ".!?".contains(chars[i + 1]) {
++                continue
++            }
++
+             // For periods, check if this is an abbreviation
+             if char == "." {
+                 let trimmed = current.trimmingCharacters(in: .whitespaces)
+diff --git a/Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsCutPlacementTests.swift b/Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsCutPlacementTests.swift
+new file mode 100644
+index 00000000..40338f22
+--- /dev/null
++++ b/Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsCutPlacementTests.swift
+@@ -0,0 +1,120 @@
++import Foundation
++import XCTest
++
++@testable import FluidAudio
++
++final class PocketTtsCutPlacementTests: XCTestCase {
++
++    /// One token per word, so token counts equal word counts.
++    private func makeTokenizer(words: [String]) throws -> SentencePieceTokenizer {
++        let letters = "abcdefghijklmnopqrstuvwxyz".map { String($0) }
++        return try SentencePieceTestModel.tokenizer(
++            pieces: ["<unk>", "\u{2581}"] + words.map { "\u{2581}" + $0 } + letters)
++    }
++
++    private let numberWords = [
++        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
++        "eleven", "twelve",
++    ]
++
++    // MARK: - Dashes as clause boundaries
++
++    func testSpacedEmDashEndsAClause() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("that precedes rain \u{2014} a mix of ozone"),
++            ["that precedes rain \u{2014}", "a mix of ozone"])
++    }
++
++    func testUnspacedEmDashEndsAClause() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("precedes rain\u{2014}a mix"),
++            ["precedes rain\u{2014}", "a mix"])
++    }
++
++    func testSpacedHyphenAndEnDashEndAClause() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("one thing - another"),
++            ["one thing -", "another"])
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("one thing \u{2013} another"),
++            ["one thing \u{2013}", "another"])
++    }
++
++    func testHyphenatedWordsAndRangesStayWhole() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("a well-known seventy-two degree day").count, 1)
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("see pages 10\u{2013}12 for more").count, 1)
++    }
++
++    func testBracketedAsideSplitsAtBothEdges() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("the ridge (which faces west) catches the rain"),
++            ["the ridge", "(which faces west)", "catches the rain"])
++    }
++
++    func testClosingBracketKeepsTrailingPunctuation() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("the ridge (which faces west), and the valley"),
++            ["the ridge", "(which faces west),", "and the valley"])
++    }
++
++    func testEllipsisEndsAClause() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtClauseBoundaries("and then\u{2026} nothing happened"),
++            ["and then\u{2026}", "nothing happened"])
++    }
++
++    func testSentenceStartChunkDoesNotKeepATrailingDash() {
++        let (text, _) = PocketTtsSynthesizer.normalizeText(
++            "the air carries a charge that precedes rain \u{2014}")
++        XCTAssertEqual(text, "The air carries a charge that precedes rain.")
++    }
++
++    // MARK: - Runs of sentence punctuation
++
++    func testRunOfSentencePunctuationEndsOneSentence() {
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitSentences("back from the lab... and then it failed. Did it matter?! Yes."),
++            ["back from the lab...", "and then it failed.", "Did it matter?!", "Yes."])
++    }
++
++    // MARK: - Balanced word-boundary splitting
++
++    func testOversizedTextSplitsIntoBalancedParts() throws {
++        // 12 tokens against a limit of 10 needs two parts. Filling to the
++        // limit gives 10 + 2; balancing gives 6 + 6.
++        let tokenizer = try makeTokenizer(words: numberWords)
++        let parts = PocketTtsSynthesizer.splitAtWordBoundaries(
++            numberWords.joined(separator: " "), tokenizer: tokenizer, maxTokens: 10)
++        XCTAssertEqual(
++            parts,
++            [
++                "one two three four five six",
++                "seven eight nine ten eleven twelve",
++            ])
++    }
++
++    func testNoPartExceedsTheLimitOrStrandsAShortTail() throws {
++        let tokenizer = try makeTokenizer(words: numberWords)
++        let text = (numberWords + numberWords + ["one"]).joined(separator: " ")
++        let parts = PocketTtsSynthesizer.splitAtWordBoundaries(
++            text, tokenizer: tokenizer, maxTokens: 10)
++
++        XCTAssertEqual(parts.count, 3)
++        for part in parts {
++            let tokens = tokenizer.encode(part).count
++            XCTAssertLessThanOrEqual(tokens, 10, "part over the limit: \(part)")
++            XCTAssertGreaterThanOrEqual(tokens, 7, "part far below its share: \(part)")
++        }
++        XCTAssertEqual(parts.joined(separator: " "), text)
++    }
++
++    func testTextWithinTheLimitIsNotSplit() throws {
++        let tokenizer = try makeTokenizer(words: numberWords)
++        let text = numberWords.prefix(8).joined(separator: " ")
++        XCTAssertEqual(
++            PocketTtsSynthesizer.splitAtWordBoundaries(text, tokenizer: tokenizer, maxTokens: 10),
++            [text])
++    }
++}
+-- 
+2.55.0
+

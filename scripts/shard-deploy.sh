@@ -85,7 +85,30 @@ codesign --sign - --force "$RUNNER_BIN"
 echo "[shard-deploy]   compiled and ad-hoc signed"
 
 echo "[shard-deploy] Stopping control shard..."
+# bootout returns before the old shard exits, and the shard spends that time
+# stopping its services, removing their Serve entries as it goes. Overlapping
+# the new shard, it would tear down what the new one registers. Both the runner
+# and its shard are waited on: a runner may exit before its shard does.
+RUNNER_PID="$(launchctl print "gui/$UID_NUM/$SHARD_LABEL" 2>/dev/null | awk '/^\tpid = /{print $3}' || true)"
+OLD_PIDS=""
+if [[ -n "$RUNNER_PID" ]]; then
+  OLD_PIDS="$RUNNER_PID $(pgrep -P "$RUNNER_PID" || true)"
+fi
 launchctl bootout "gui/$UID_NUM" "$LAUNCHD_AGENTS_DIR/${SHARD_LABEL}.plist" 2>/dev/null || true
+if [[ -n "$OLD_PIDS" ]]; then
+  waited=0
+  for pid in $OLD_PIDS; do
+    while kill -0 "$pid" 2>/dev/null; do
+      if (( waited >= 60 )); then
+        echo "[shard-deploy] Old shard (pid $pid) still running after 60s; not deploying over it." >&2
+        exit 1
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+  done
+  echo "[shard-deploy]   old shard exited after ${waited}s"
+fi
 
 echo "[shard-deploy] Copying files to $PROD..."
 mkdir -p "$PROD"
@@ -105,8 +128,15 @@ cp    "$SRC/bun.lock"              "$PROD/bun.lock" 2>/dev/null || true
 echo "[shard-deploy] Setting permissions..."
 chmod +x "$PROD/control/control-shard/ops/shard-runner"
 
-echo "[shard-deploy] Syncing service scripts..."
-bash "$SRC/scripts/shard-install-services.sh" "$SRC"
+echo "[shard-deploy] Installing services..."
+# A deploy from main is the shard only: its git archive holds no builds, so
+# compiled services are installed from a working tree, after a build.
+# The shard is stopped at this point, so a service install that needs attention
+# must not stop the deploy from bringing it back; it is reported at the end.
+INSTALL_FAILED=false
+INSTALL_ARGS=("$SRC")
+[[ "$SRC" != "$REPO" ]] && INSTALL_ARGS=(--no-artifacts "$SRC")
+bash "$SRC/scripts/shard-install-services.sh" "${INSTALL_ARGS[@]}" || INSTALL_FAILED=true
 
 echo "[shard-deploy] Installing dependencies..."
 cd "$PROD"
@@ -127,4 +157,8 @@ sleep 2
 
 echo "[shard-deploy] Status:"
 launchctl list | grep "$SHARD_LABEL" && echo "  control shard: active" || echo "  control shard: FAILED (not loaded)"
+if $INSTALL_FAILED; then
+  echo "[shard-deploy] Done, but a service install needs attention — see the [install] errors above." >&2
+  exit 1
+fi
 echo "[shard-deploy] Done."

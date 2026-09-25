@@ -1,0 +1,269 @@
+From 6843a35b46da4f79a653bafe2cb09624eb07dca1 Mon Sep 17 00:00:00 2001
+From: Arvind Venkataramani
+ <250267+arvindvenkataramani@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 02:07:57 -0700
+Subject: [PATCH 3/3] feat(tts/pocket): keep a sentence whole when it fits the
+ KV cache, and never generate past the cache
+
+- chunkTextWithMetadata takes maxWholeSentenceTokens: a sentence over maxTokensPerChunk stays whole when it is within that limit, as the reference split_into_best_sentences does; longer sentences are still cut
+- maxWholeSentenceTokens(voiceSlots:) derives the limit from kvCacheMaxLen, the voice's cache footprint, cacheReserveSlots and generationFramesPerTokenBudget (4 slots of audio per text token; 75 tokens for a 125-frame voice)
+- generationStepLimit caps all four generation loops at the slots left in the cache; the cache write index wraps, so a step past the last slot overwrites the voice prompt
+- PocketTtsVoiceData.cacheSlots reports the voice's footprint for shipped and cloned voices
+- Local experiment resting on an assumed speaking rate; a larger cache export would remove the assumption
+---
+ .../Assets/PocketTtsConstantsLoader.swift     |  7 ++
+ .../PocketTTS/Pipeline/PocketTtsSession.swift | 14 +++-
+ .../Pipeline/PocketTtsSynthesizer.swift       | 39 +++++++++-
+ .../TTS/PocketTTS/PocketTtsConstants.swift    |  9 +++
+ .../PocketTtsWholeSentenceTests.swift         | 74 +++++++++++++++++++
+ 5 files changed, 136 insertions(+), 7 deletions(-)
+ create mode 100644 Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsWholeSentenceTests.swift
+
+diff --git a/Sources/FluidAudio/TTS/PocketTTS/Assets/PocketTtsConstantsLoader.swift b/Sources/FluidAudio/TTS/PocketTTS/Assets/PocketTtsConstantsLoader.swift
+index c06a1367..d427a877 100644
+--- a/Sources/FluidAudio/TTS/PocketTTS/Assets/PocketTtsConstantsLoader.swift
++++ b/Sources/FluidAudio/TTS/PocketTTS/Assets/PocketTtsConstantsLoader.swift
+@@ -44,6 +44,13 @@ public struct PocketTtsVoiceData: Sendable {
+     }
+ }
+ 
++extension PocketTtsVoiceData {
++    /// KV cache slots the voice occupies before any text is prefilled.
++    public var cacheSlots: Int {
++        cacheSnapshot?.layers.first?.offset ?? (promptLength + 1)
++    }
++}
++
+ /// Pre-baked KV cache snapshot for v2 voice packs.
+ ///
+ /// One `LayerCache` per LM transformer layer, in layer order. Each
+diff --git a/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSession.swift b/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSession.swift
+index 83d0418c..895326eb 100644
+--- a/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSession.swift
++++ b/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSession.swift
+@@ -223,9 +223,15 @@ public actor PocketTtsSession {
+                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                 guard !trimmed.isEmpty else { continue }
+ 
++                let voiceSlots =
++                    voiceKVSnapshot.map { PocketTtsSynthesizer.cachePosition(of: $0) }
++                    ?? stateVoiceData?.cacheSlots ?? PocketTtsConstants.voicePromptLength
+                 let chunks = PocketTtsSynthesizer.chunkTextWithMetadata(
+                     trimmed, tokenizer: constants.tokenizer,
+-                    maxTokens: maxTokensPerChunk, language: language
++                    maxTokens: maxTokensPerChunk,
++                    maxWholeSentenceTokens: PocketTtsSynthesizer.maxWholeSentenceTokens(
++                        voiceSlots: voiceSlots),
++                    language: language
+                 )
+                 Self.logger.info(
+                     "Session enqueued '\(trimmed)', \(chunks.count) chunk(s)")
+@@ -296,7 +302,8 @@ public actor PocketTtsSession {
+         )
+ 
+         // Generation loop
+-        let maxGenLen = PocketTtsSynthesizer.estimateMaxFrames(text: text)
++        let maxGenLen = PocketTtsSynthesizer.generationStepLimit(
++            text: text, cachePosition: PocketTtsSynthesizer.cachePosition(of: kvState))
+         var eosStep: Int?
+         var sequence = try PocketTtsSynthesizer.createBosStartSequence(
+             bosEmbedding: constants.bosEmbedding,
+@@ -468,7 +475,8 @@ public actor PocketTtsSession {
+         // Generation loop. BOS = the BOS latent passed as `sequence`
+         // (the fused graph has no NaN-BOS protocol — same contract as the
+         // rank-4 `.ane` models).
+-        let maxGenLen = PocketTtsSynthesizer.estimateMaxFrames(text: text)
++        let maxGenLen = PocketTtsSynthesizer.generationStepLimit(
++            text: text, cachePosition: Int(await engine.position))
+         var eosStep: Int?
+         var sequence = constants.bosEmbedding
+         let totalFramesAfterEos = framesAfterEos + PocketTtsConstants.extraFramesAfterDetection
+diff --git a/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift b/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift
+index db44b356..d17edda9 100644
+--- a/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift
++++ b/Sources/FluidAudio/TTS/PocketTTS/Pipeline/PocketTtsSynthesizer.swift
+@@ -238,7 +238,9 @@ public struct PocketTtsSynthesizer {
+         let constants = try await store.constants()
+         let chunks = chunkTextWithMetadata(
+             text, tokenizer: constants.tokenizer,
+-            maxTokens: maxTokensPerChunk, language: language)
++            maxTokens: maxTokensPerChunk,
++            maxWholeSentenceTokens: maxWholeSentenceTokens(voiceSlots: voiceData.cacheSlots),
++            language: language)
+         let condModel = try await store.condStep()
+         let hasCondPrefill = await store.hasCondPrefill()
+         let stepModel = try await store.flowlmStep()
+@@ -524,7 +526,9 @@ public struct PocketTtsSynthesizer {
+                         useFastPrefill: useCondPrefill
+                     )
+ 
+-                    let maxGenLen = PocketTtsSynthesizer.estimateMaxFrames(text: chunk.text)
++                    let maxGenLen = PocketTtsSynthesizer.generationStepLimit(
++                        text: chunk.text,
++                        cachePosition: PocketTtsSynthesizer.cachePosition(of: kvState))
+                     var eosStep: Int?
+                     var sequence = try PocketTtsSynthesizer.createBosStartSequence(
+                         bosEmbedding: constants.bosEmbedding,
+@@ -638,7 +642,9 @@ public struct PocketTtsSynthesizer {
+                         layerKeys: condLayerKeys, prefillModel: condPrefillModel,
+                         prefillLayerKeys: condPrefillLayerKeys, useFastPrefill: useCondPrefill)
+ 
+-                    let maxGenLen = PocketTtsSynthesizer.estimateMaxFrames(text: chunk.text)
++                    let maxGenLen = PocketTtsSynthesizer.generationStepLimit(
++                        text: chunk.text,
++                        cachePosition: PocketTtsSynthesizer.cachePosition(of: kvState))
+                     var eosStep: Int?
+                     var sequence = try PocketTtsSynthesizer.createBosStartSequence(
+                         bosEmbedding: constants.bosEmbedding,
+@@ -888,6 +894,7 @@ public struct PocketTtsSynthesizer {
+         _ text: String,
+         tokenizer: SentencePieceTokenizer,
+         maxTokens: Int = PocketTtsConstants.maxTokensPerChunk,
++        maxWholeSentenceTokens: Int? = nil,
+         language: PocketTtsLanguage = .english
+     ) -> [TextChunk] {
+         // Size chunks on the text the model is given. `normalizeText` collapses
+@@ -915,8 +922,11 @@ public struct PocketTtsSynthesizer {
+         // doesn't capitalize them or append a period.
+         var pieces: [TextChunk] = []
+         for sentence in sentences {
++            // `maxTokens` governs how many sentences share a chunk. One sentence
++            // over it still travels whole when it fits the KV cache, because a
++            // cut inside a sentence restarts prosody mid-phrase.
+             let sentenceTokens = tokenizer.encode(sentence).count
+-            if sentenceTokens <= maxTokens {
++            if sentenceTokens <= max(maxTokens, maxWholeSentenceTokens ?? 0) {
+                 pieces.append(TextChunk(text: sentence, isMidSentence: false))
+             } else {
+                 let subPieces = splitOversizedSentence(
+@@ -1291,6 +1301,27 @@ public struct PocketTtsSynthesizer {
+     ///
+     /// At 80ms per frame, 12.5 frames ≈ 1 second of audio per word.
+     /// The +2 adds margin for pauses and trailing silence.
++    /// Largest sentence, in tokens, that fits the KV cache whole beside a voice
++    /// occupying `voiceSlots`: the voice, the text, and the frames the text is
++    /// budgeted to generate must all fit in `kvCacheMaxLen`.
++    static func maxWholeSentenceTokens(voiceSlots: Int) -> Int {
++        let free =
++            PocketTtsConstants.kvCacheMaxLen - voiceSlots - PocketTtsConstants.cacheReserveSlots
++        return max(0, free / (1 + PocketTtsConstants.generationFramesPerTokenBudget))
++    }
++
++    /// Next write slot of a prefilled KV cache.
++    static func cachePosition(of state: KVCacheState) -> Int {
++        state.positions.first.map { Int($0[0].floatValue) } ?? 0
++    }
++
++    /// Generation steps a chunk may run: the word-count estimate, capped at the
++    /// slots left in the KV cache. The cache is circular, so a step past the
++    /// last slot overwrites the voice prompt and garbles the rest of the chunk.
++    static func generationStepLimit(text: String, cachePosition: Int) -> Int {
++        min(estimateMaxFrames(text: text), max(0, PocketTtsConstants.kvCacheMaxLen - cachePosition))
++    }
++
+     static func estimateMaxFrames(text: String) -> Int {
+         let wordCount = text.split(separator: " ").count
+         let genLenSec = Double(wordCount) + 2.0
+diff --git a/Sources/FluidAudio/TTS/PocketTTS/PocketTtsConstants.swift b/Sources/FluidAudio/TTS/PocketTTS/PocketTtsConstants.swift
+index 9deacc38..de3f2c09 100644
+--- a/Sources/FluidAudio/TTS/PocketTTS/PocketTtsConstants.swift
++++ b/Sources/FluidAudio/TTS/PocketTTS/PocketTtsConstants.swift
+@@ -47,6 +47,15 @@ public enum PocketTtsConstants {
+     public static let shortTextWordThreshold: Int = 5
+     /// Max text tokens per chunk — keeps total KV cache usage under kvCacheMaxLen.
+     public static let maxTokensPerChunk: Int = 50
++    /// Cache slots budgeted per text token for the audio a chunk generates, used
++    /// to decide whether a sentence over `maxTokensPerChunk` still fits the KV
++    /// cache whole. Each generated 80 ms frame takes one slot. Slow speech of two
++    /// words a second is about 3.6 frames per token; the v2.1 English pack
++    /// measures 1.7 to 2.4.
++    public static let generationFramesPerTokenBudget: Int = 4
++    /// Slots held back from the whole-sentence budget for BOS and the frames
++    /// generated after EOS is detected.
++    public static let cacheReserveSlots: Int = 8
+ 
+     // MARK: - KV cache
+ 
+diff --git a/Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsWholeSentenceTests.swift b/Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsWholeSentenceTests.swift
+new file mode 100644
+index 00000000..8108ca11
+--- /dev/null
++++ b/Tests/FluidAudioTests/TTS/PocketTTS/PocketTtsWholeSentenceTests.swift
+@@ -0,0 +1,74 @@
++import Foundation
++import XCTest
++
++@testable import FluidAudio
++
++final class PocketTtsWholeSentenceTests: XCTestCase {
++
++    private let numberWords = [
++        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
++        "eleven", "twelve",
++    ]
++
++    /// One token per word and per punctuation mark.
++    private func makeTokenizer() throws -> SentencePieceTokenizer {
++        let letters = "abcdefghijklmnopqrstuvwxyz".map { String($0) }
++        return try SentencePieceTestModel.tokenizer(
++            pieces: ["<unk>", "\u{2581}", ".", ","] + numberWords.map { "\u{2581}" + $0 } + letters)
++    }
++
++    private let text = "one two three. four five six, seven eight nine ten eleven twelve."
++
++    func testSentenceOverTheChunkCapStaysWholeWhenItFitsTheCache() throws {
++        // The second sentence is 11 tokens against a chunk cap of 8.
++        let chunks = PocketTtsSynthesizer.chunkTextWithMetadata(
++            text, tokenizer: try makeTokenizer(), maxTokens: 8, maxWholeSentenceTokens: 12)
++        XCTAssertEqual(
++            chunks,
++            [
++                PocketTtsSynthesizer.TextChunk(text: "one two three.", isMidSentence: false),
++                PocketTtsSynthesizer.TextChunk(
++                    text: "four five six, seven eight nine ten eleven twelve.", isMidSentence: false),
++            ])
++    }
++
++    func testSentenceOverTheCacheBudgetIsStillCut() throws {
++        let chunks = PocketTtsSynthesizer.chunkTextWithMetadata(
++            text, tokenizer: try makeTokenizer(), maxTokens: 8, maxWholeSentenceTokens: 10)
++        // The head of the cut sentence joins the sentence before it, since the
++        // two fit the chunk cap together.
++        XCTAssertEqual(
++            chunks.map(\.text),
++            ["one two three. four five six,", "seven eight nine ten eleven twelve."])
++        XCTAssertEqual(chunks.map(\.isMidSentence), [false, true])
++    }
++
++    func testOmittingTheBudgetKeepsTheChunkCapAsTheOnlyLimit() throws {
++        let tokenizer = try makeTokenizer()
++        XCTAssertEqual(
++            PocketTtsSynthesizer.chunkTextWithMetadata(text, tokenizer: tokenizer, maxTokens: 8),
++            PocketTtsSynthesizer.chunkTextWithMetadata(
++                text, tokenizer: tokenizer, maxTokens: 8, maxWholeSentenceTokens: 0))
++    }
++
++    func testWholeSentenceBudgetComesFromTheCacheAndTheVoice() {
++        // 512 slots, 8 held back, 1 slot per token plus 4 per token for audio.
++        XCTAssertEqual(PocketTtsSynthesizer.maxWholeSentenceTokens(voiceSlots: 126), 75)
++        XCTAssertEqual(PocketTtsSynthesizer.maxWholeSentenceTokens(voiceSlots: 251), 50)
++        XCTAssertEqual(PocketTtsSynthesizer.maxWholeSentenceTokens(voiceSlots: 600), 0)
++    }
++
++    func testStepLimitNeverRunsPastTheCache() {
++        let long = Array(repeating: "word", count: 60).joined(separator: " ")
++        XCTAssertEqual(PocketTtsSynthesizer.generationStepLimit(text: long, cachePosition: 200), 312)
++        XCTAssertEqual(PocketTtsSynthesizer.generationStepLimit(text: long, cachePosition: 512), 0)
++        XCTAssertEqual(
++            PocketTtsSynthesizer.generationStepLimit(text: "two words", cachePosition: 200),
++            PocketTtsSynthesizer.estimateMaxFrames(text: "two words"))
++    }
++
++    func testVoiceFootprintCountsTheBosRowForClonedVoices() {
++        let cloned = PocketTtsVoiceData(audioPrompt: [], promptLength: 125)
++        XCTAssertEqual(cloned.cacheSlots, 126)
++    }
++}
+-- 
+2.55.0
+

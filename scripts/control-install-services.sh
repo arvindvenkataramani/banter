@@ -3,12 +3,22 @@
 # - Reads registry.json to find services with runner.type == "systemd"
 # - Copies the referenced unit files to ~/.config/systemd/user/
 # - Copies .sh scripts from services/ to ~/services/ (only where target dir exists)
+# - Installs the built artifacts each service declares in ops.install, the same
+#   way the shard does (install-artifacts.sh)
 # - Never touches venvs, app code, or models
 #
 # Usage:
-#   control-install-services.sh              — install from repo working tree
-#   control-install-services.sh /path/to/src — install from a specific source tree
+#   control-install-services.sh                               — install from repo working tree
+#   control-install-services.sh /path/to/src                  — install from a specific source tree
+#   control-install-services.sh --no-artifacts [/path/to/src] — everything but artifacts, as a
+#                                                             deploy from main does
 set -euo pipefail
+
+INSTALL_ARTIFACTS=true
+if [[ "${1:-}" == "--no-artifacts" ]]; then
+  INSTALL_ARTIFACTS=false
+  shift
+fi
 
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
@@ -16,6 +26,7 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 # Deploy location and unit name. Sourced rather than re-defaulted here, so a
 # direct invocation reads deploy.conf exactly as a full deploy does.
 source "$(dirname "$0")/deploy-env.sh"
+source "$(dirname "$0")/install-artifacts.sh"
 PROD="$BANTER_PROD"
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 REGISTRY="$SRC/control/control-plane/data/registry.json"
@@ -72,35 +83,57 @@ fi
 # which is installed outside the registry-driven block.
 systemctl --user daemon-reload
 
-# --- service lifecycle scripts ---
-if [[ ! -d "$SERVICES_SRC" ]]; then
-  echo "[install-services] No services/ directory in $SRC, skipping scripts."
-  exit 0
+# --- built artifacts (registry-driven) ---
+# A failure here is reported at the end, after everything else is installed.
+# The control API is on this same node, so localhost with the port the
+# registry itself declares for "control" — exactly how control-runner.sh finds
+# it — is always the right address; this script is never run against a
+# registry that isn't the one deployed here.
+ARTIFACTS_FAILED=false
+if $INSTALL_ARTIFACTS && [[ -f "$REGISTRY" ]]; then
+  echo "[install-services] Installing built artifacts..."
+  CONTROL_PORT="$(jq -r '.services[] | select(.id == "control") | .network.port' "$REGISTRY")"
+  if [[ -n "$CONTROL_PORT" && "$CONTROL_PORT" != "null" ]]; then
+    install_service_artifacts "$SRC" "$REGISTRY" "http://localhost:$CONTROL_PORT" "$BANTER_EVENTS_PATH" \
+      || ARTIFACTS_FAILED=true
+  else
+    echo "[install-services] error: no 'control' service with network.port in $REGISTRY" >&2
+    ARTIFACTS_FAILED=true
+  fi
 fi
 
-echo "[install-services] Syncing service scripts from $SERVICES_SRC..."
+# --- service lifecycle scripts ---
+if [[ -d "$SERVICES_SRC" ]]; then
+  echo "[install-services] Syncing service scripts from $SERVICES_SRC..."
 
-find "$SERVICES_SRC" -type f -name '*.sh' | while read -r src_file; do
-  rel="${src_file#$SERVICES_SRC/}"
-  dest="$SERVICES_DEST/$rel"
-  dest_dir="$(dirname "$dest")"
+  find "$SERVICES_SRC" -type f -name '*.sh' | while read -r src_file; do
+    rel="${src_file#$SERVICES_SRC/}"
+    dest="$SERVICES_DEST/$rel"
+    dest_dir="$(dirname "$dest")"
 
-  if [[ -d "$dest_dir" ]]; then
-    cp "$src_file" "$dest"
-    chmod +x "$dest"
-    echo "  synced: $rel"
-  else
-    echo "  skipped (target dir missing): $rel"
-  fi
-done
+    if [[ -d "$dest_dir" ]]; then
+      cp "$src_file" "$dest"
+      chmod +x "$dest"
+      echo "  synced: $rel"
+    else
+      echo "  skipped (target dir missing): $rel"
+    fi
+  done
 
-# Ensure logs directories exist for each service
-find "$SERVICES_SRC" -mindepth 2 -maxdepth 3 -type d | while read -r src_dir; do
-  rel="${src_dir#$SERVICES_SRC/}"
-  dest_dir="$SERVICES_DEST/$rel"
-  if [[ -d "$dest_dir" ]]; then
-    mkdir -p "$dest_dir/logs"
-  fi
-done
+  # Ensure logs directories exist for each service
+  find "$SERVICES_SRC" -mindepth 2 -maxdepth 3 -type d | while read -r src_dir; do
+    rel="${src_dir#$SERVICES_SRC/}"
+    dest_dir="$SERVICES_DEST/$rel"
+    if [[ -d "$dest_dir" ]]; then
+      mkdir -p "$dest_dir/logs"
+    fi
+  done
+else
+  echo "[install-services] No services/ directory in $SRC, skipping scripts."
+fi
 
+if $ARTIFACTS_FAILED; then
+  echo "[install-services] Done, but installing built artifacts needs attention (see the errors above)." >&2
+  exit 1
+fi
 echo "[install-services] Done."

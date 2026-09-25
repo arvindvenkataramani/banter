@@ -1,0 +1,5 @@
+The control plane on the Pi (which also serves the dashboard) polls the shard every fifteen minutes and merges whatever services it finds into a single response that the rest of the platform treats as the source of truth.
+
+If a health check fails once the counter simply goes up and nothing else happens… but a second failure in a row flips the service to down - and that change is written to the event log so the state can always be rebuilt later.
+
+Nobody should ever need to restart the whole machine just because one small demand loaded model ran out of memory while another bigger one was still busy answering a long question from the voice loop.
