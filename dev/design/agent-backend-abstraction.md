@@ -4,7 +4,7 @@
 
 The tool-permission approval layer (item 5 below) can be built on its own, against OpenClaw's gateway, with no ACP work.
 
-Wire-level detail lives with the protocol notes: [`docs/gateway/openclaw/`](../../docs/gateway/openclaw/) for what Banter speaks today, and [`docs/gateway/opencode/opencode-server-protocol.md`](../../docs/gateway/opencode/opencode-server-protocol.md) for a second server it could attach to.
+Wire-level detail lives with the protocol notes: [`docs/gateway/openclaw/`](../../docs/gateway/openclaw/) for what Banter speaks today, [`docs/gateway/opencode/opencode-server-protocol.md`](../../docs/gateway/opencode/opencode-server-protocol.md) for a second server it could attach to, and [`docs/gateway/dsh/dsh-web-protocol.md`](../../docs/gateway/dsh/dsh-web-protocol.md) for a third that has a native server but refuses outside clients.
 
 ---
 
@@ -66,6 +66,19 @@ From running Cicero against Claude Code (2026-09-02, torn down after):
 - **Grimoire spawns too, and scopes it properly.** It launches into the Obsidian vault, names the provider in its UI, and keeps per-provider configuration under `.grimoire/` rather than reaching into the agent's native config. This is the behaviour to copy.
 
 All three spawn, because nothing built on stdio can do otherwise. The OpenClaw path differs because the gateway is a stateful server that accepts clients, so a session is joined rather than created. No stdio ACP backend has that; OpenCode's server does. What separates the two groups is whether an agent ships a native server.
+
+### A native server that only its own UI may use
+
+DeepSeek Harness (`dsh`) ships a native server, and it carries everything a voice floor needs: token-level text deltas separated from reasoning and tool calls, a `steer` mode for speech arriving mid-turn, a cancel that records the user as its cause, turn ends that distinguish `completed` from `aborted`, and approval requests pushed to the client for an answer. Its ACP profile carries none of the deltas. By the rule above, dsh is a native-server backend.
+
+It differs from OpenClaw and OpenCode in who may dial it. The server binds loopback only, and a fence on `/api` refuses any request whose `Origin` differs from its `Host`, so only dsh's own UI, loaded from the same authority, gets through. The browser cannot dial it the way it dials OpenClaw's gateway. That leaves two shapes:
+
+- **A control-plane proxy** that talks to dsh on loopback and speaks dsh's generated RPC, with the adapter translating its frames into `RunEvent`. No dsh-side code, but Banter tracks a protocol dsh publishes no stability promise for.
+- **A dsh plugin** that registers its own WebSocket through `ctx.webServer.registerUpgrade`, drives `ctx.agents` in-process, and speaks a protocol Banter defines. dsh's internal churn stops at that plugin, and the plugin becomes code Banter maintains against a pre-1.0 project.
+
+Either way the connection is server-owned, as it is for an ACP backend, but nothing is spawned: dsh runs as its own long-lived process and sessions persist in its store.
+
+Approval requests from dsh carry a tool name and a free-text reason, and the only grant is `allowed-once`. That puts it with ACP in what a client can see, well short of OpenClaw's `SystemRunApprovalPlan`. dsh also forwards `user-questions/request`, structured questions with a `plan-review` intent, which gives a voice client a second thing to answer besides approvals.
 
 ## New work and reusable work
 
@@ -135,6 +148,6 @@ The caution: the per-agent layer is not small. OpenCode's directory runs to a do
 - Exact home for the new control-plane surface (new file vs. existing route module) — an implementation detail, punted to build time.
 - Whether `RunEvent` needs a new variant for `plan`. Grimoire's normalizer settles the other ACP-only concepts: `agent_thought_chunk` becomes a message chunk with a `thinking` role, which `kind: 'thinking'` already accepts, and `tool_call`/`tool_call_update` merge into a per-id snapshot map, the shape `run-state.ts` would need anyway. `plan` has no equivalent — Grimoire renders it as a progress stream of active and pending steps, and Banter has nowhere to put that.
 - How a conversation cold-starts on an ACP backend. OpenClaw supplies `chat.history` and OpenCode answers `GET /session/:id/message`; ACP defines no transcript-fetch equivalent, so restoring a conversation means reading the agent's own store, whose format differs per agent (Grimoire has a dedicated history service for OpenCode and parses `.claude/` JSONL for Claude Code). Grimoire's rule is worth adopting: replay history only into a genuinely cold session, and **never** replay a transcript into a replacement session, which would duplicate context the agent already holds.
-- What a barge-in means on a backend that absorbs rather than supersedes. Banter's turn manager assumes a new utterance cancels the run in flight, which OpenClaw's abort gives it. OpenCode's server does not: a prompt arriving mid-turn is folded into the running turn at the next step boundary, neither rejected nor started as a new turn, and the route declares no busy error. A client wanting supersede semantics has to abort and then send, two round-trips against a state that may have moved. Whether that is acceptable for voice, or makes such backends text-only, is undecided.
+- What a barge-in means on a backend that absorbs rather than supersedes. Banter's turn manager assumes a new utterance cancels the run in flight, which OpenClaw's abort gives it. OpenCode's server does not: a prompt arriving mid-turn is folded into the running turn at the next step boundary, neither rejected nor started as a new turn, and the route declares no busy error. A client wanting supersede semantics has to abort and then send, two round-trips against a state that may have moved. Whether that is acceptable for voice, or makes such backends text-only, is undecided. dsh offers both behaviours explicitly: `steer` absorbs at the next step boundary, and `cancel` with `keepInbox` aborts while keeping queued input, so a dsh-side plugin could supersede in one in-process step.
 - How the ACP adapter's output reaches the browser as `RunEvent` values. Nothing today carries `RunEvent` across a server→browser hop, only within the browser.
 - Whether admission and approval policy live in the control plane or a shared package under `control/shared/src` (which already holds cross-plane logic) — a natural fit given precedent, not yet checked in detail.
