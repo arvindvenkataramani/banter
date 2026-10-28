@@ -70,7 +70,7 @@ Codecs are generated per endpoint at build time (`docs/api-gateway.md` in the ds
 | { type: 'finish'; reason; replayState? }
 ```
 
-A TTS chunker takes `text-delta` and nothing else. Chunk frames are transient: a turn cancelled mid-stream commits its delivered prefix as an `assistant/message` with `interrupted: true` (`packages/core/session/src/types.ts:331-349`), so the transcript and the spoken audio agree about what was said.
+A TTS chunker takes `text-delta` and nothing else. Chunk frames are transient: a turn cancelled mid-stream commits its delivered prefix as an `assistant/message` with `interrupted: true` (`packages/core/session/src/types.ts:331-349`). That prefix is the text streamed to the client, not the text spoken: TTS runs behind the stream, so after a barge-in the transcript can hold words the user never heard.
 
 ### Turn boundaries
 
