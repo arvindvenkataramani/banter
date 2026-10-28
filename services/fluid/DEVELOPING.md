@@ -69,6 +69,8 @@ FluidAudio is pinned to a fork, `arvindvenkataramani/FluidAudio`, for the Pocket
 
 Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directory. Tests: `swift test`.
 
+`scripts/fluid-smoke.sh` checks `fluid-stt` as built, installed and running: it deploys the bundle into a scratch directory through the real install code, runs it on port 18767 under a throwaway bundle identifier, and checks health, on-demand load, batch transcription, Deepgram's `/listen` (batch and socket) and idle unload against a sentence spoken by `say`. Everything it deploys is removed on exit, including an interrupted one, and it never touches a live server or downloads weights. Exit 0 is a pass, 1 a failure, 3 a skip for missing weights or `say`. `--keep` leaves the scratch deploy for debugging.
+
 ## fluid-stt
 
 ### Loading
