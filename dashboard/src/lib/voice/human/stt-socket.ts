@@ -68,8 +68,10 @@ export type AudioFormat = 'opus' | 'pcm16'
 export interface SttSocketOptions {
   /** Service endpoint, e.g. https://host:8767. */
   endpoint: string
-  /** Asserts which model the caller believes is loaded; never selects one. */
+  /** The model to use: loaded if the server holds none, refused if it holds another. */
   model: string
+  /** The model's latency tier, so the server can load it when it holds none. */
+  chunkMs?: number
   format: AudioFormat
   /** This connection's session id. Sent only when the STT service declares
    *  `sessions: true` — omitted, it has an identity of its own. */
@@ -111,6 +113,7 @@ export class SttSocket {
   connect(opts: SttSocketOptions): void {
     let url = `${toWebSocketUrl(opts.endpoint)}/v1/audio/stream`
       + `?model=${encodeURIComponent(opts.model)}&format=${opts.format}`
+    if (opts.chunkMs !== undefined) url += `&chunkMs=${opts.chunkMs}`
     if (opts.session !== undefined) url += `&session=${encodeURIComponent(opts.session)}`
     if (opts.takeover) url += `&takeover=1`
 

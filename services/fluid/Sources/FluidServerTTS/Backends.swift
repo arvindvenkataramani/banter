@@ -511,9 +511,18 @@ actor StyleTts2Driver: TtsBackendDriver {
     static let sampleRate = 24000
 
     private let manager: StyleTTS2Manager
+    private let temporaryDirectory: URL
 
     init(modelsDirectory: URL?) async throws {
+        try await self.init(modelsDirectory: modelsDirectory, temporaryDirectory: FileManager.default.temporaryDirectory)
+    }
+
+    /// The protocol's plain initializer falls back to the shared system temp
+    /// directory; `makeDriver` calls this one with the server's own
+    /// subdirectory instead.
+    init(modelsDirectory: URL?, temporaryDirectory: URL) async throws {
         manager = StyleTTS2Manager(directory: modelsDirectory)
+        self.temporaryDirectory = temporaryDirectory
     }
 
     func load() async throws {
@@ -528,7 +537,7 @@ actor StyleTts2Driver: TtsBackendDriver {
         // `StyleTts2ReferenceTrim.requiredMelFrames` mel frames, no more and no
         // fewer. Callers pass whole reference clips, so trim here rather than
         // making every caller know the number.
-        let trimmed = try StyleTts2ReferenceTrim.trim(ref)
+        let trimmed = try StyleTts2ReferenceTrim.trim(ref, into: temporaryDirectory)
         defer { try? FileManager.default.removeItem(at: trimmed) }
         let samples = try await manager.synthesize(
             text: request.text,

@@ -21,7 +21,7 @@ The `fluid-stt` entry is already in `control/control-plane/data/registry.example
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
+    "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
   },
   "ops": {
     "env": {
@@ -37,7 +37,7 @@ The `fluid-stt` entry is already in `control/control-plane/data/registry.example
 }
 ```
 
-`--registry` and `--provider` are required — `fluid-stt` reads the `fluid-stt` provider's `sttModels` from the registry's `roster` section rather than taking a model on the command line. The shipped roster declares `parakeet-tdt-v3` (batch), `parakeet-unified-0.6b` (both batch and streaming), and `nemotron-streaming-en-0.6b` (streaming, at three chunk sizes) — see [voices-and-models.md](voices-and-models.md) for what a roster `sttModels` entry looks like and how to add or change one.
+`--registry` and `--provider` are required — `fluid-stt` reads the `fluid-stt` provider's `sttModels` from the registry's `roster` section rather than taking a model on the command line. The shipped roster declares `parakeet-tdt-v3` (batch), `parakeet-unified-0.6b` (both batch and streaming), and `nemotron-streaming-en-0.6b` (streaming, at three chunk sizes) — see [voices-and-models.md](voices-and-models.md) for what a roster `sttModels` entry looks like and how to add or change one. The same provider block's `defaultModel` (`parakeet-unified-0.6b`) is what a request naming no model loads into an empty server, and `idleUnloadMs` (30 minutes) is how long the model stays resident without work.
 
 `config.example.json` already points at it:
 

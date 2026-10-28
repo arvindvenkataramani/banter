@@ -21,7 +21,14 @@ struct APIHandlers: APIProtocol {
         -> Operations.getHealth.Output
     {
         let model = await ctx.resident.currentModel
-        return .ok(.init(body: .json(.init(status: "ok", model: model))))
+        return .ok(
+            .init(
+                body: .json(
+                    .init(
+                        status: "ok", model: model,
+                        bundleIdentifier: ctx.identity.bundleIdentifier,
+                        shortVersion: ctx.identity.shortVersion,
+                        buildVersion: ctx.identity.buildVersion))))
     }
 
     func listModels(_ input: Operations.listModels.Input) async throws

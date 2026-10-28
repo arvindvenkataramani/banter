@@ -197,6 +197,8 @@ export async function createSttTransport(opts: {
   serviceId?: string
   model?: string
   mode: 'batch' | 'streaming' | null
+  /** The model's latency tier, for a streaming model that takes one. */
+  chunkMs?: number
   /** This connection's session id. Only meaningful for a streaming
    *  transport; batch never sends one. */
   sessionId?: string
@@ -213,8 +215,8 @@ export async function createSttTransport(opts: {
 }): Promise<SttTransport> {
   if (!opts.model || opts.mode === null) {
     // Without a model named, nothing was loaded and nothing can stream: the
-    // server starts holding nothing and never loads implicitly. Say so, since
-    // the symptom otherwise is voice that works but never streams.
+    // server loads only its roster default on demand. Say so, since the
+    // symptom otherwise is voice that works but never streams.
     if (!opts.model) console.warn('[voice] no voice.stt.model configured — using the batch transport')
     return new BatchSttTransport({
       endpoint: opts.endpoint,
@@ -227,6 +229,7 @@ export async function createSttTransport(opts: {
     return new StreamingSttTransport({
       endpoint: opts.endpoint,
       model: opts.model,
+      chunkMs: opts.chunkMs,
       session: opts.sessionId,
       takeover: opts.takeover,
       onPartial: (text) => opts.onPartial?.(text),
@@ -237,6 +240,7 @@ export async function createSttTransport(opts: {
 
   return new BatchSttTransport({
     endpoint: opts.endpoint,
+    model: opts.model,
     serviceId: opts.serviceId,
     onEndpointChange: setSttEndpoint,
   })

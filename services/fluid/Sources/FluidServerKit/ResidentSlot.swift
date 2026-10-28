@@ -17,6 +17,8 @@ public enum SlotError: Error, CustomStringConvertible, Sendable {
 
     public var description: String {
         switch self {
+        case .busy(.session):
+            return "a streaming session holds the service; nothing else runs until it ends"
         case .busy(let work):
             return "the model is busy with a \(work.rawValue) request; one runs at a time"
         case .empty:
@@ -103,17 +105,20 @@ public actor ResidentSlot<Model: Sendable> {
     /// avoids for the same reason.
     ///
     /// Refuses when `id` is not what is resident: growing something that has
-    /// since been replaced would resurrect it.
-    public func replaceInPlace(id: String, model: Model) async {
-        guard loaded?.id == id else { return }
+    /// since been replaced would resurrect it. Returns whether the swap
+    /// happened, so a caller can release what it built when it did not.
+    @discardableResult
+    public func replaceInPlace(id: String, model: Model) async -> Bool {
+        guard loaded?.id == id else { return false }
         do {
             try await waitForFreeSlot()
         } catch {
             logger.warning("could not take the slot to extend \(id): \(error)")
-            return
+            return false
         }
-        guard let current = loaded, current.id == id else { return }
+        guard let current = loaded, current.id == id else { return false }
         loaded = (id: id, variant: current.variant, model: model)
+        return true
     }
     public var isBusy: Bool { active != nil || transitioning }
     public var currentWork: SlotWork? { active?.work }
@@ -152,6 +157,27 @@ public actor ResidentSlot<Model: Sendable> {
         loaded = (id: id, variant: variant, model: try await make())
         logger.info(
             "loaded \(Self.name(id, variant)) in \(String(format: "%.1f", Date().timeIntervalSince(started)))s")
+    }
+
+    /// Load `id` only if nothing is resident, and return the id resident
+    /// afterwards. Never replaces a model: a caller that finds another one
+    /// resident decides what that means.
+    public func loadIfEmpty(
+        id: String, variant: String? = nil, make: @Sendable () async throws -> Model
+    ) async throws -> String {
+        if let current = loaded { return current.id }
+        try await waitForFreeSlot()
+        // The wait yields the actor, and a load may have landed meanwhile.
+        if let current = loaded { return current.id }
+
+        transitioning = true
+        defer { transitioning = false }
+
+        let started = Date()
+        loaded = (id: id, variant: variant, model: try await make())
+        logger.info(
+            "loaded \(Self.name(id, variant)) in \(String(format: "%.1f", Date().timeIntervalSince(started)))s")
+        return id
     }
 
     private func isResident(id: String, variant: String?) -> Bool {
@@ -264,13 +290,20 @@ public actor ResidentSlot<Model: Sendable> {
         transitioning = true
         defer { transitioning = false }
 
-        let deadline = ContinuousClock.now + waitDeadline
+        // Short and separate from the queue deadline: the old owner's last call
+        // is one prediction, and the slot refuses nothing while it drains.
+        let deadline = ContinuousClock.now + .seconds(5)
         while inFlight > 0 {
             if ContinuousClock.now >= deadline {
                 active = previous
                 throw SlotError.busy(previous.work)
             }
-            try? await Task.sleep(for: .milliseconds(5))
+            do {
+                try await Task.sleep(for: .milliseconds(5))
+            } catch {
+                active = previous
+                throw error
+            }
         }
 
         counter += 1
@@ -295,16 +328,22 @@ public actor ResidentSlot<Model: Sendable> {
     ///
     /// Waiting rather than refusing, because a caller queueing behind another
     /// is ordinary use; the deadline is what separates waiting from hanging.
+    /// A session is the exception: it occupies the slot for as long as its
+    /// connection lives, so a caller behind one is refused at once, including
+    /// one already waiting when the session begins.
     private func waitForFreeSlot() async throws {
         guard active != nil || transitioning else { return }
         let deadline = ContinuousClock.now + waitDeadline
         while active != nil || transitioning {
+            if active?.work == .session { throw SlotError.busy(.session) }
             if ContinuousClock.now >= deadline {
                 throw SlotError.busy(active?.work ?? .batch)
             }
             // Yielding the actor is what lets the operation already in flight
-            // run: it needs this actor to clear `active`/`transitioning`.
-            try? await Task.sleep(for: .milliseconds(25))
+            // run: it needs this actor to clear `active`/`transitioning`. A
+            // cancelled caller (its client went away) throws out here rather
+            // than spinning until the deadline.
+            try await Task.sleep(for: .milliseconds(25))
         }
     }
 }

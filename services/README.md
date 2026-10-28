@@ -27,11 +27,11 @@ Registry `runner.main` examples (Python adapters run under a venv's interpreter 
 .venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766   # whisper
 ```
 
-`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt` and `fluid-tts` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags — what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/voices-and-models.md](../docs/voices-and-models.md)). The shipped example registry runs them as:
+`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags — what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/voices-and-models.md](../docs/voices-and-models.md)). The shipped example registry runs them as:
 
 ```
-.build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
-.build/release/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
+fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
+fluid-tts.app/Contents/MacOS/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
 ```
 
 ## Third-party, pip-installable

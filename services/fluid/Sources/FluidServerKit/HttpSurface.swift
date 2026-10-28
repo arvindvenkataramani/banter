@@ -290,12 +290,19 @@ public struct ServerArgs: Sendable {
     }
 }
 
-/// One log configuration for both servers.
-public func bootstrapLogging(label: String, level: Logger.Level = .info) -> Logger {
+/// One log configuration for both servers: stdout, as the shard runner
+/// already captures it, plus unified logging under `subsystem` so the same
+/// events show up in Console.app and `log stream`. Both handlers get the same
+/// level, so multiplexing does not change what is logged, only where.
+public func bootstrapLogging(
+    label: String, subsystem: String, level: Logger.Level = .info
+) -> Logger {
     LoggingSystem.bootstrap { label in
-        var handler = StreamLogHandler.standardOutput(label: label)
-        handler.logLevel = level
-        return handler
+        var stdout = StreamLogHandler.standardOutput(label: label)
+        stdout.logLevel = level
+        var osLog = OSLogHandler(subsystem: subsystem, label: label)
+        osLog.logLevel = level
+        return MultiplexLogHandler([stdout, osLog])
     }
     return Logger(label: label)
 }

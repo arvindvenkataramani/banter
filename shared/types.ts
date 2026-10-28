@@ -266,6 +266,10 @@ export interface Provider {
   sttModels?: SttModel[];
   /** Whether this runtime's streaming socket understands session ids and take-over. Absent means no. */
   sessions?: boolean;
+  /** The STT model a request naming none loads into an empty slot. Validated by the runtime, not here. */
+  defaultModel?: string;
+  /** How long an STT runtime's model may go without work before it is unloaded. Absent means 30 minutes. */
+  idleUnloadMs?: number;
 }
 
 export const RESPONSE_FORMATS = ["mp3", "aac", "wav"] as const;

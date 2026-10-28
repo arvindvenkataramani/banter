@@ -10,7 +10,8 @@ Any server that meets the [speech server API](../../docs/speech-server-api.md) w
 - **Replies start speaking quickly.** With Pocket TTS, `fluid-tts` streams audio as it's generated. How long first audio takes no longer depends on the reply's length: it's about 0.3 s with a short streaming interval, where a batch server took 0.7 s for a short line and 9 s for a long one.
 - **Light on the network.** Audio goes up as Opus and comes back as AAC, about a twelfth the size of WAV. That matters for a phone on a mobile connection.
 - **Memory comes back.** Each server holds one model at a time and releases it on switch or unload. That suits a control plane that starts and stops services on demand. mlx-audio, by contrast, keeps every model it has loaded.
-- **Nothing to install around them.** Each is a single native binary: no Python environment, no model server.
+- **Nothing to install around them.** Each is a single native app bundle: no Python environment, no model server.
+- **Deepgram clients work too.** `fluid-stt` answers Deepgram's `/listen`, batch and streaming, so a meeting or dictation app with a custom Deepgram endpoint can use it. See [DEVELOPING.md](DEVELOPING.md#deepgram-compatible-listen) for what it supports.
 
 The trade-offs:
 
@@ -45,12 +46,12 @@ Model weights are not bundled. The first load of each model downloads it into `~
 `scripts/install.sh` offers to build and install both servers on Apple Silicon. To do it yourself:
 
 1. **Prerequisites.** macOS 15 or later on Apple Silicon, a Swift 6 toolchain (`xcode-select --install`, or Xcode 16), and `brew install opus`.
-2. **Build:** `scripts/fluid-build.sh`. It checks the prerequisites first and names anything missing with the command to install it. The binaries land in `services/fluid/.build/release/`.
-3. **Install:** `scripts/control-install-services.sh` on a single machine, or `scripts/shard-install-services.sh` on a [shard](../../docs/shard-setup.md). Each copies the binaries to `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, as the registry entries declare. A server that is running is stopped for the swap and started again, and a binary that hasn't changed is left alone.
+2. **Build:** `scripts/fluid-build.sh`. It checks the prerequisites first and names anything missing with the command to install it. The servers land in `services/fluid/.build/release/` as `fluid-stt.app` and `fluid-tts.app`.
+3. **Install:** `scripts/control-install-services.sh` on a single machine, or `scripts/shard-install-services.sh` on a [shard](../../docs/shard-setup.md). Each copies the app bundles to `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, as the registry entries declare. A server that is running is stopped for the swap and started again, and a bundle that hasn't changed is left alone.
 
 After a code change, run the same two scripts again.
 
-The install copies everything each server needs to run into its folder: `fluid-tts` also gets `FluidAudio_FluidAudio.bundle`, the pronunciation data LuxTTS reads. Once installed, the checkout you built from can go.
+Each bundle carries everything its server needs to run: `fluid-tts.app` also holds `FluidAudio_FluidAudio.bundle`, the pronunciation data LuxTTS reads. Once installed, the checkout you built from can go.
 
 FluidAudio is pinned to a fork carrying fixes for Pocket TTS; `swift build` fetches it. [patches/README.md](patches/README.md) explains what the fixes are and what to check before moving the pin.
 
@@ -59,8 +60,8 @@ FluidAudio is pinned to a fork carrying fixes for Pocket TTS; `swift build` fetc
 The control plane starts each server on demand, using the `runner.main` line in its registry entry:
 
 ```
-.build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
-.build/release/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
+fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
+fluid-tts.app/Contents/MacOS/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
 ```
 
 - `--registry` and `--provider` are required: the server reads that provider's models from the registry's `roster` section, and refuses to start if it can't find or validate them. On a shard, `--registry` points at the shard's own `~/services/shard/registry.json`.
@@ -68,7 +69,7 @@ The control plane starts each server on demand, using the `runner.main` line in 
 - `FLUID_CORS_ORIGINS` (comma-separated origins) must include the dashboard's origin, since the browser calls these servers directly. `scripts/install.sh` fills it in from the registry's control-plane port.
 - Health is `GET /healthz`.
 
-Each server starts with no model loaded. The dashboard loads the configured model when a voice session starts.
+Each server starts with no model loaded. The dashboard loads the configured model when a voice session starts. `fluid-stt` also loads one on the first request that needs it, the requested model or the roster's `defaultModel`, and releases it after `idleUnloadMs` without work (30 minutes by default).
 
 ## More
 

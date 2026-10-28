@@ -12,16 +12,20 @@ import Logging
 public actor ResidentTtsModel {
     private let slot: ResidentSlot<any TtsBackendDriver>
     private let modelsDirectory: URL?
-    private let driverFactory: @Sendable (String, URL?) async throws -> any TtsBackendDriver
+    private let temporaryDirectory: URL
+    private let driverFactory:
+        @Sendable (String, URL?, URL) async throws -> any TtsBackendDriver
 
     public init(
         modelsDirectory: URL?,
+        temporaryDirectory: URL,
         logger: Logger,
         waitDeadline: Duration = .seconds(30),
-        makeDriver factory: @escaping @Sendable (String, URL?) async throws -> any TtsBackendDriver =
-            defaultDriverFactory
+        makeDriver factory: @escaping @Sendable (String, URL?, URL) async throws ->
+            any TtsBackendDriver = defaultDriverFactory
     ) {
         self.modelsDirectory = modelsDirectory
+        self.temporaryDirectory = temporaryDirectory
         self.driverFactory = factory
         self.slot = ResidentSlot(waitDeadline: waitDeadline, logger: logger)
     }
@@ -44,9 +48,10 @@ public actor ResidentTtsModel {
 
     public func load(_ id: String) async throws {
         let directory = modelsDirectory
+        let tempDir = temporaryDirectory
         let factory = driverFactory
         try await slot.load(id: id) {
-            let driver = try await factory(id, directory)
+            let driver = try await factory(id, directory, tempDir)
             try await driver.load()
             return driver
         }
@@ -94,17 +99,23 @@ public actor ResidentTtsModel {
 /// What the server builds drivers with. Tests substitute a fake here, so the
 /// lifecycle can be exercised without loading CoreML weights.
 public let defaultDriverFactory:
-    @Sendable (String, URL?) async throws -> any TtsBackendDriver = { id, dir in
-        try await makeDriver(id, modelsDirectory: dir)
+    @Sendable (String, URL?, URL) async throws -> any TtsBackendDriver = { id, dir, tempDir in
+        try await makeDriver(id, modelsDirectory: dir, temporaryDirectory: tempDir)
     }
 
-/// The eight backends, by the id a caller names in `model`.
-public func makeDriver(_ id: String, modelsDirectory: URL?) async throws -> any TtsBackendDriver {
+/// The eight backends, by the id a caller names in `model`. `temporaryDirectory`
+/// reaches only `StyleTts2Driver`, which trims a reference clip to a temp file;
+/// every other backend ignores it.
+public func makeDriver(
+    _ id: String, modelsDirectory: URL?, temporaryDirectory: URL
+) async throws -> any TtsBackendDriver {
     switch id {
     case "pocket-tts": return try await PocketTtsDriver(modelsDirectory: modelsDirectory)
     case "kokoro-ane": return try await KokoroAneDriver(modelsDirectory: modelsDirectory)
     case "supertonic3": return try await Supertonic3Driver(modelsDirectory: modelsDirectory)
-    case "styletts2": return try await StyleTts2Driver(modelsDirectory: modelsDirectory)
+    case "styletts2":
+        return try await StyleTts2Driver(
+            modelsDirectory: modelsDirectory, temporaryDirectory: temporaryDirectory)
     case "luxtts": return try await LuxTtsDriver(modelsDirectory: modelsDirectory)
     case "neutts-2e": return try await NeuTtsDriver(modelsDirectory: modelsDirectory)
     case "chatterbox": return try await ChatterboxDriver(modelsDirectory: modelsDirectory)

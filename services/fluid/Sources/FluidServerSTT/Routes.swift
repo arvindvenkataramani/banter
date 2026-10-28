@@ -34,6 +34,7 @@ func buildRouter(ctx: AppContext) -> Router<BasicRequestContext> {
     router.post("/v1/audio/transcriptions") { request, reqCtx in
         try await handleTranscribe(request: request, reqCtx: reqCtx, appCtx: ctx)
     }
+    registerListenBatch(on: router, ctx: ctx)
 
     return router
 }
@@ -99,9 +100,10 @@ func handleTranscribe(
         throw HTTPError(.badRequest, message: "multipart decode failed: \(error)")
     }
 
-    // Save to temp file
+    // Save to temp file, in this server's own temp subdirectory rather than
+    // the shared system one.
     let ext = (form.file.filename as NSString).pathExtension.isEmpty ? "wav" : (form.file.filename as NSString).pathExtension
-    let tempURL = FileManager.default.temporaryDirectory
+    let tempURL = appCtx.temporaryDirectory
         .appendingPathComponent("fluidserver-\(UUID().uuidString).\(ext)")
     try form.file.data.write(to: tempURL)
     defer { try? FileManager.default.removeItem(at: tempURL) }

@@ -11,15 +11,18 @@ final class ModelRoutesTests: XCTestCase {
     private func makeHandlers() -> (APIHandlers, ResidentTtsModel) {
         let resident = ResidentTtsModel(
             modelsDirectory: nil,
+            temporaryDirectory: FileManager.default.temporaryDirectory,
             logger: Logger(label: "test"),
             waitDeadline: .seconds(5),
-            makeDriver: { _, _ in try await SlowStreamingDriver(modelsDirectory: nil) })
+            makeDriver: { _, _, _ in try await SlowStreamingDriver(modelsDirectory: nil) })
         let entry = TtsRosterEntry(
             id: "slow-model", name: "Slow", key: "slow",
             cloning: nil, chunkProfile: nil, presetVoices: nil)
         let ctx = TtsAppContext(
             resident: resident, roster: TtsRoster(models: [ValidatedTtsModel(entry: entry)]),
-            logger: Logger(label: "test"))
+            logger: Logger(label: "test"),
+            identity: AppIdentity(
+                bundleIdentifier: "test.fluid-tts", shortVersion: "0.0.0", buildVersion: "test"))
         return (APIHandlers(ctx: ctx), resident)
     }
 

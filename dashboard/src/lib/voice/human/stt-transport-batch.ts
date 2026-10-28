@@ -15,6 +15,8 @@ import type { SttTransport } from './stt-transport'
 
 export interface BatchTransportOptions {
   endpoint: string
+  /** Sent with each transcription, so a server that idled its model out reloads this one, not its default. */
+  model?: string
   /** Restarts a stopped service and retries once. Without it, a failure is final. */
   serviceId?: string
   /** So the session can keep using an endpoint a restart moved. */
@@ -23,11 +25,13 @@ export interface BatchTransportOptions {
 
 export class BatchSttTransport implements SttTransport {
   private endpoint: string
+  private model?: string
   private serviceId?: string
   private onEndpointChange?: (endpoint: string) => void
 
   constructor(opts: BatchTransportOptions) {
     this.endpoint = opts.endpoint
+    this.model = opts.model
     this.serviceId = opts.serviceId
     this.onEndpointChange = opts.onEndpointChange
   }
@@ -54,7 +58,7 @@ export class BatchSttTransport implements SttTransport {
    */
   private async transcribeWithRestart(wav: ArrayBuffer): Promise<string> {
     try {
-      return await transcribeAudio(this.endpoint, wav)
+      return await transcribeAudio(this.endpoint, wav, this.model)
     } catch (first) {
       const previousEndpoint = this.endpoint
       if (!this.serviceId) throw new Error('No STT service configured')
@@ -62,7 +66,7 @@ export class BatchSttTransport implements SttTransport {
       this.endpoint = newEndpoint
       this.onEndpointChange?.(newEndpoint)
       try {
-        return await transcribeAudio(newEndpoint, wav)
+        return await transcribeAudio(newEndpoint, wav, this.model)
       } catch (second) {
         // The retry usually fails for the same reason as the first attempt, and
         // reporting only the second hides that the endpoint changed in between.

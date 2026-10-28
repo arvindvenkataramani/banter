@@ -19,6 +19,7 @@ import type { SttTransport } from './stt-transport'
 export interface StreamingTransportOptions {
   endpoint: string
   model: string
+  chunkMs?: number
   format?: AudioFormat
   /** This connection's session id. Sent only when the STT service declares
    *  `sessions: true`. */
@@ -77,6 +78,7 @@ export class StreamingSttTransport implements SttTransport {
     this.socket.connect({
       endpoint: opts.endpoint,
       model: opts.model,
+      chunkMs: opts.chunkMs,
       format,
       session: opts.session,
       takeover: opts.takeover,

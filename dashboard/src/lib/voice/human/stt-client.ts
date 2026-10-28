@@ -8,7 +8,7 @@ export function setSaveMicSamples(enabled: boolean): void {
   saveMicSamples = enabled
 }
 
-export async function transcribeAudio(endpoint: string, wavBuffer: ArrayBuffer): Promise<string> {
+export async function transcribeAudio(endpoint: string, wavBuffer: ArrayBuffer, model?: string): Promise<string> {
   if (saveMicSamples) {
     // Fire-and-forget tee — never block STT, never throw
     fetch('/api/debug/mic-sample', {
@@ -17,15 +17,16 @@ export async function transcribeAudio(endpoint: string, wavBuffer: ArrayBuffer):
       body: wavBuffer,
     }).catch(() => {})
   }
-  const result = queue.then(() => _transcribe(endpoint, wavBuffer))
+  const result = queue.then(() => _transcribe(endpoint, wavBuffer, model))
   // Swallow errors in the chain so a failed request doesn't block subsequent ones
   queue = result.catch(() => {})
   return result
 }
 
-async function _transcribe(endpoint: string, wavBuffer: ArrayBuffer): Promise<string> {
+async function _transcribe(endpoint: string, wavBuffer: ArrayBuffer, model?: string): Promise<string> {
   const form = new FormData()
   form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav')
+  if (model) form.append('model', model)
 
   const url = `${endpoint}/audio/transcriptions`
 

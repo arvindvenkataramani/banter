@@ -183,6 +183,16 @@ enum LoadedModel {
     /// `AsrManager.cleanup()` is sync and clears a *shared* array cache in an
     /// unawaited `Task`, so that clear is still outstanding when it returns.
     /// Anything measuring memory straight afterwards has to allow for it.
+    /// Release only what this model holds beyond `original`: the managers a
+    /// mode addition built, when the addition could not be swapped in.
+    func releaseAdditions(over original: LoadedModel) async {
+        guard case .unified(_, let offline, let streaming) = self,
+            case .unified(_, let wasOffline, let wasStreaming) = original
+        else { return }
+        if wasOffline == nil { await offline?.cleanup() }
+        if wasStreaming == nil { await streaming?.cleanup() }
+    }
+
     func unload() async {
         switch self {
         case .batchTdt(_, let manager, _):

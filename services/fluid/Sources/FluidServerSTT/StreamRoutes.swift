@@ -51,12 +51,15 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
     let wsRouter = Router(context: BasicWebSocketRequestContext.self)
 
     wsRouter.ws("/v1/audio/stream") { inbound, outbound, wsCtx in
-        // Asserts which model the caller believes is loaded; it never switches.
-        // Loading is POST /v1/models/load and nothing else.
+        // The model the caller wants: loaded into an empty slot, refused if
+        // another is resident, never switched.
         let expecting = wsCtx.request.uri.queryParameters["model"].map(String.init)
         let formatName = wsCtx.request.uri.queryParameters["format"].map(String.init) ?? "opus"
         let session = wsCtx.request.uri.queryParameters["session"].map(String.init)
         let takeover = wsCtx.request.uri.queryParameters["takeover"].map(String.init) == "1"
+        // The model's latency tier, so a model that takes one can load here.
+        let params = wsCtx.request.uri.queryParameters["chunkMs"].flatMap { Int(String($0)) }
+            .map { [ParamBinding(name: "chunkMs", value: $0)] } ?? []
 
         let sink = WebSocketSink(outbound)
 
@@ -81,7 +84,7 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
         let activeModel: String
         do {
             (token, claimToken, activeModel) = try await ctx.resident.beginSession(
-                expecting: expecting, session: session, takeover: takeover,
+                expecting: expecting, params: params, session: session, takeover: takeover,
                 onDisplaced: { reason in
                     switch reason {
                     case .replaced:
@@ -119,6 +122,7 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
         ctx.logger.info("session \(token) ended after \(elapsed(since: started)): \(why)")
     }
 
+    registerListenStream(on: wsRouter, ctx: ctx)
     return wsRouter
 }
 
@@ -126,7 +130,7 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
 /// back. Quiet is ordinary — a speaker thinking, a window behind another app
 /// whose browser has stopped its timers — and a newer connection taking over
 /// is what frees the model from a client that has gone. This only reclaims one
-/// that went and was never replaced, and matches the shard's idle unload.
+/// that went and was never replaced.
 private let sessionBackstop = 30 * 60
 
 /// The frame loop, factored out so the caller can release the session on every

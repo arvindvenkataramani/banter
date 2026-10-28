@@ -90,6 +90,7 @@ export interface VoiceSystemDeps {
     serviceId?: string
     model?: string
     mode: 'batch' | 'streaming' | null
+    chunkMs?: number
     sessionId?: string
     takeover?: boolean
     onPartial: (text: string) => void
@@ -236,15 +237,11 @@ export class VoiceSystem {
           console.warn(`[voice] ${config.stt.model} has no weights on this node yet — loading may be slow or fail`)
         }
       }
+      const sttChunkMs = sttMode === 'streaming' && facts ? resolveChunkMs(facts, config.stt?.chunkMs) : undefined
       await Promise.all([
         this.deps.services.loadTtsModel(ttsEndpoint, selection.modelKey),
         sttEndpoint && config.stt?.model && sttMode
-          ? this.deps.services.loadSttModel(
-              sttEndpoint,
-              config.stt.model,
-              sttMode,
-              sttMode === 'streaming' && facts ? resolveChunkMs(facts, config.stt.chunkMs) : undefined,
-            )
+          ? this.deps.services.loadSttModel(sttEndpoint, config.stt.model, sttMode, sttChunkMs)
           : Promise.resolve(),
       ])
       if (!this.isCurrent(sessionId)) return
@@ -304,6 +301,7 @@ export class VoiceSystem {
         declaresSessions ? sessionId : undefined,
         takeover,
         declaresSessions,
+        sttChunkMs,
       )
       if (!this.isCurrent(sessionId)) {
         // The stop ran while the socket was opening, before the human side
@@ -336,6 +334,8 @@ export class VoiceSystem {
      *  requested without session support — so it is treated as an ordinary
      *  dropped connection rather than routed to the take-over dialog. */
     declaresSessions: boolean,
+    /** Sent on the socket so the server can reload the model at this tier after an idle unload. */
+    chunkMs: number | undefined,
   ): Promise<SttTransport> {
     const retry = {
       attempts: config.stt?.reconnect?.attempts ?? 3,
@@ -356,6 +356,7 @@ export class VoiceSystem {
       serviceId: config.stt?.serviceId,
       model: config.stt?.model,
       mode: sttMode,
+      chunkMs,
       sessionId: transportSessionId,
       takeover,
       onPartial: (text) => human.receivePartial(text),

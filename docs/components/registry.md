@@ -63,6 +63,8 @@ Every node builds its roster from its own registry. The shard serves its roster 
 
 Among the provider fields, `sessions: true` declares that the runtime's streaming socket understands session ids and take-over — the same way `responseFormat` declares the audio format it returns. It applies to both STT and TTS providers, and `GET /api/voice` carries it through to each `stt.options` entry and each TTS provider so the dashboard can tell which services support taking over a held session.
 
+An STT provider may also set `defaultModel`, the model a request naming none loads into an empty server (it must name an `sttModels` entry that needs no parameter), and `idleUnloadMs`, how long the model may go without work before the server unloads it (30 minutes when absent or not positive). Both are read by the runtime, not the control plane; `fluid-stt` honours them.
+
 ### Services
 
 Concrete processes. Each service belongs to one host and implements one capability.
@@ -164,7 +166,7 @@ Health-monitored but not managed. Start/stop API calls return 400.
 #### `ops.install` (for services built from this repo)
 
 ```json
-"install": { "artifacts": [ { "from": "services/fluid/.build/release/fluid-stt", "to": ".build/release/fluid-stt" } ] }
+"install": { "artifacts": [ { "from": "services/fluid/.build/release/fluid-stt.app", "to": "fluid-stt.app" } ] }
 ```
 
 What the install scripts copy into place: a file, or a whole directory such as a resource bundle a binary loads from beside itself. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running platform.

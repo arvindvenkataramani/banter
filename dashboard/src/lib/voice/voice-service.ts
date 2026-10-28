@@ -96,9 +96,9 @@ export async function loadTtsModel(endpoint: string, modelName: string): Promise
 export type SttModelKind = 'batch' | 'streaming' | 'both'
 
 /**
- * Load an STT model. The server starts holding nothing and never loads as a
- * side effect of transcribing, so this has to happen before the first
- * utterance; a transcription naming an unloaded model is refused.
+ * Load an STT model before the first utterance, so no utterance waits on the
+ * load. The server would load into an empty slot on demand, but never replaces
+ * a resident model: a transcription naming another one is refused.
  *
  * `mode` names which way a model capable of both should be brought up. A model
  * that does one thing needs none, and one capable of both is refused without

@@ -93,9 +93,9 @@ enum StyleTts2ReferenceTrim {
         Double((requiredMelFrames - 1) * hopSize) / Double(sampleRate)
     }
 
-    /// Returns a temporary 24 kHz mono clip of exactly the required length.
-    /// Caller deletes it.
-    static func trim(_ source: URL) throws -> URL {
+    /// Returns a temporary 24 kHz mono clip of exactly the required length,
+    /// written into `directory`. Caller deletes it.
+    static func trim(_ source: URL, into directory: URL) throws -> URL {
         let file = try AVAudioFile(forReading: source)
         guard
             let outFormat = AVAudioFormat(
@@ -152,7 +152,7 @@ enum StyleTts2ReferenceTrim {
         }
         out.frameLength = wanted
 
-        let url = FileManager.default.temporaryDirectory
+        let url = directory
             .appendingPathComponent("st2-ref-\(UUID().uuidString).wav")
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,

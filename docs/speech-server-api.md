@@ -43,7 +43,7 @@ A server that answers all of this still isn't selectable until the registry's `r
 
 `POST {endpoint}/audio/transcriptions`, multipart, with a `file` field carrying WAV audio ([`stt-client.ts`](../dashboard/src/lib/voice/human/stt-client.ts)). OpenAI-compatible servers usually answer under `/v1/audio/transcriptions` as well; the dashboard uses the bare path.
 
-The response is JSON with a `text` field. `fluid-stt` also takes `response_format` (`text`, `verbose_json`) and `timestamp_granularities[]=word` for word timings, and treats an optional `model` field as an assertion: naming a model other than the loaded one is refused (409), never switched to.
+The response is JSON with a `text` field. `fluid-stt` also takes `response_format` (`text`, `verbose_json`) and `timestamp_granularities[]=word` for word timings, and an optional `model` field: loaded if nothing is resident, refused (409) if another model is, never switched to.
 
 ### Model facts
 
@@ -62,13 +62,13 @@ Any field left out is treated as unknown, not as a default. A model of kind `bot
 
 `POST {endpoint}/v1/models/load`, JSON `{ model, mode?, chunkMs? }`, before the first utterance. `mode` (`batch` or `streaming`) is sent for a model of kind `both`; `chunkMs` picks a streaming latency tier where the model declares one. A server should refuse a load it can't honour (400) rather than pick for the caller, and refuse with 409 while it is busy with other work.
 
-Once loaded, a model stays loaded until another load replaces it: a transcription or socket naming a model that isn't loaded is refused, not loaded on the fly.
+Only a load replaces a resident model: a transcription or socket naming a different one is refused. `fluid-stt` also loads on demand: a request that finds nothing resident loads the model it names, or the roster's `defaultModel`, and the model unloads after `idleUnloadMs` without work. The dashboard still loads explicitly, so a server that only loads on request works too.
 
 ## Streaming transcription
 
-`WS {endpoint}/v1/audio/stream?model=<id>&format=<opus|pcm16>&session=<id>&takeover=1` ([`stt-socket.ts`](../dashboard/src/lib/voice/human/stt-socket.ts)). Used when the model's `kind` is `streaming` or `both` and streaming is preferred.
+`WS {endpoint}/v1/audio/stream?model=<id>&chunkMs=<ms>&format=<opus|pcm16>&session=<id>&takeover=1` ([`stt-socket.ts`](../dashboard/src/lib/voice/human/stt-socket.ts)). Used when the model's `kind` is `streaming` or `both` and streaming is preferred.
 
-The model must already be loaded in a mode that serves streaming; the socket never loads one. `model` names the model the client believes is loaded.
+`model` names the model wanted, and `chunkMs` the latency tier where the model declares one. A server may expect the model already loaded in a streaming mode; `fluid-stt` accepts the socket and then loads it, or adds its streaming mode, when nothing else is resident.
 
 ### Audio
 

@@ -146,13 +146,22 @@ components:
   schemas:
     Health:
       type: object
-      required: [status]
+      required: [status, bundleIdentifier, shortVersion, buildVersion]
       properties:
         status:
           type: string
         model:
           type: [string, "null"]
           description: The resident model, or null when none is loaded.
+        bundleIdentifier:
+          type: string
+          description: This server's bundle identifier, from its .app's Info.plist.
+        shortVersion:
+          type: string
+          description: CFBundleShortVersionString — the package version this build was cut from.
+        buildVersion:
+          type: string
+          description: CFBundleVersion — the source commit this build was made from.
 
     Model:
       type: object

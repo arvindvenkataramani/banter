@@ -87,14 +87,17 @@ actor SlowStreamingDriver: TtsStreamingDriver {
 private func makeQueue(sink: RecordingSink) async throws -> (SynthesisQueue, ResidentTtsModel) {
     let resident = ResidentTtsModel(
         modelsDirectory: nil,
+        temporaryDirectory: FileManager.default.temporaryDirectory,
         logger: Logger(label: "test"),
         waitDeadline: .seconds(5),
-        makeDriver: { _, _ in try await SlowStreamingDriver(modelsDirectory: nil) })
+        makeDriver: { _, _, _ in try await SlowStreamingDriver(modelsDirectory: nil) })
     try await resident.load("slow")
     // The queue never consults the roster; it is reached through a model the
     // driver factory already holds.
     let ctx = TtsAppContext(
-        resident: resident, roster: TtsRoster(models: []), logger: Logger(label: "test"))
+        resident: resident, roster: TtsRoster(models: []), logger: Logger(label: "test"),
+        identity: AppIdentity(
+            bundleIdentifier: "test.fluid-tts", shortVersion: "0.0.0", buildVersion: "test"))
     return (SynthesisQueue(ctx: ctx, format: .wav, sink: sink), resident)
 }
 

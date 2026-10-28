@@ -1,3 +1,4 @@
+import FluidServerKit
 import Foundation
 import Logging
 import XCTest
@@ -16,7 +17,12 @@ final class ModelRoutesTests: XCTestCase {
                 params: nil, variants: nil)
         ])
         let resident = ResidentModel(roster: roster, logger: Logger(label: "test"))
-        return APIHandlers(ctx: AppContext(resident: resident, logger: Logger(label: "test")))
+        return APIHandlers(
+            ctx: AppContext(
+                resident: resident, logger: Logger(label: "test"),
+                identity: AppIdentity(
+                    bundleIdentifier: "test.fluid-stt", shortVersion: "0.0.0", buildVersion: "test"),
+                temporaryDirectory: FileManager.default.temporaryDirectory))
     }
 
     func testLoadingByQueryRefusesAModelTheRosterLacks() async throws {

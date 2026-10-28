@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the FluidServer binaries (services/fluid) in this repo's working tree.
+# Build the FluidServer binaries (services/fluid) in this repo's working tree,
+# then wrap each in an .app bundle so it carries a bundle identifier.
 #
 # Builds only. Installing them is control-install-services.sh on a single
 # machine, or shard-install-services.sh on a shard; both read the fluid-stt and
@@ -61,4 +62,39 @@ fi
 
 echo "[fluid-build] Building $PACKAGE..."
 swift build -c release --package-path "$PACKAGE"
-echo "[fluid-build] Done: $PACKAGE/.build/release/fluid-stt, fluid-tts"
+
+# Same "<commit>[-dirty]" computation install-artifacts.sh uses for
+# SOURCE-COMMIT.txt, so each bundle's CFBundleVersion always agrees with the
+# installed binary's own record of what it was built from.
+commit="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo unknown)"
+if [[ -n "$(git -C "$REPO" status --porcelain 2>/dev/null)" ]]; then
+  commit="$commit-dirty"
+fi
+version="$(<"$PACKAGE/VERSION")"
+
+# Assemble each bundle fresh so a rebuild fully replaces whatever the last one
+# left behind, rather than layering a new executable under a stale plist.
+for name in fluid-stt fluid-tts; do
+  bundle="$PACKAGE/.build/release/$name.app"
+  rm -rf "$bundle"
+  mkdir -p "$bundle/Contents/MacOS"
+  cp "$PACKAGE/.build/release/$name" "$bundle/Contents/MacOS/$name"
+  sed \
+    -e "s/__SHORT_VERSION__/$version/" \
+    -e "s/__BUILD_VERSION__/$commit/" \
+    "$PACKAGE/Resources/$name.plist" > "$bundle/Contents/Info.plist"
+
+  # FluidAudio's SwiftPM resource bundle looks for itself at Bundle.main's
+  # resourceURL first, which for an .app is Contents/Resources/ — the bare
+  # executable's own directory (its second fallback) no longer is one.
+  resource_bundle="$PACKAGE/.build/release/FluidAudio_FluidAudio.bundle"
+  if [[ -d "$resource_bundle" ]]; then
+    mkdir -p "$bundle/Contents/Resources"
+    cp -R "$resource_bundle" "$bundle/Contents/Resources/"
+  fi
+
+  codesign --force --sign - --timestamp=none "$bundle"
+  echo "[fluid-build] $name.app ($version, $commit)"
+done
+
+echo "[fluid-build] Done: $PACKAGE/.build/release/fluid-stt.app, fluid-tts.app"

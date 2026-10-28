@@ -10,9 +10,11 @@ info:
     Architecture.md states CoreML is not reentrant, so loading and transcription
     are serialised and only one model is ever held.
 
-    Loading is always an explicit call. A load costs around thirteen seconds,
-    which has no business hiding inside a transcription request, so a request
-    naming a model that is not loaded is refused rather than silently switched.
+    A request that finds no model resident loads the one it names, or the
+    roster's defaultModel, and a model unloads after idleUnloadMs without work.
+    A request never replaces a resident model: naming another one is refused
+    rather than switched. An open streaming session is the sole occupant of
+    the service, and everything else is refused while it lasts.
 
     Two endpoints are deliberately absent, both documented in
     docs/speech-server-api.md and services/fluid/DEVELOPING.md instead. The streaming endpoint is a WebSocket at
@@ -92,7 +94,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Work is in flight against the model.
+          description: Work is in flight against the model, or a streaming session holds the service.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Building the model failed; nothing is resident.
           content:
             application/json:
               schema:
@@ -129,7 +137,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Work is in flight against the model.
+          description: Work is in flight against the model, or a streaming session holds the service.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Building the model failed; what was resident before may be gone.
           content:
             application/json:
               schema:
@@ -186,7 +200,7 @@ components:
   schemas:
     Health:
       type: object
-      required: [status]
+      required: [status, bundleIdentifier, shortVersion, buildVersion]
       properties:
         status:
           type: string
@@ -196,6 +210,15 @@ components:
         variant:
           type: [string, "null"]
           description: The resident model's variant, or null when it has only its implicit one.
+        bundleIdentifier:
+          type: string
+          description: This server's bundle identifier, from its .app's Info.plist.
+        shortVersion:
+          type: string
+          description: CFBundleShortVersionString — the package version this build was cut from.
+        buildVersion:
+          type: string
+          description: CFBundleVersion — the source commit this build was made from.
 
     Model:
       type: object

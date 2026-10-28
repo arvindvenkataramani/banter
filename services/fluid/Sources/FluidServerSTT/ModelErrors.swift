@@ -24,6 +24,10 @@ enum FluidServerSTTError: FluidServerError {
     case streamBusy
     case decoderFailed(String)
     case unknownFormat(String)
+    case unsupportedEncoding(String)
+    case badListenParameter(String)
+    /// Loading on a request's behalf failed; the slot is left empty.
+    case loadFailed(id: String, detail: String)
 
     var description: String {
         switch self {
@@ -51,6 +55,12 @@ enum FluidServerSTTError: FluidServerError {
             return "audio decode failed: \(detail)"
         case .unknownFormat(let f):
             return "unknown audio format: \(f); expected pcm16 or opus"
+        case .unsupportedEncoding(let e):
+            return "unsupported encoding: \(e); /listen takes linear16"
+        case .badListenParameter(let p):
+            return "invalid query parameter: \(p)"
+        case .loadFailed(let id, let detail):
+            return "loading \(id) failed: \(detail)"
         }
     }
 
@@ -67,7 +77,8 @@ enum FluidServerSTTError: FluidServerError {
         case .roster: return .badRequest
         case .streamingModelSelected: return .conflict
         case .badAudioFrame, .decoderFailed: return .unprocessableContent
-        case .unknownFormat: return .badRequest
+        case .unknownFormat, .unsupportedEncoding, .badListenParameter: return .badRequest
+        case .loadFailed: return .serviceUnavailable
         }
     }
 }
@@ -75,13 +86,13 @@ enum FluidServerSTTError: FluidServerError {
 extension FluidServerSTTError: SocketCoded {
     var socketCode: SocketErrorCode {
         switch self {
-        case .noModelLoaded, .modeNotLoaded, .notStreamable:
+        case .noModelLoaded, .modeNotLoaded, .notStreamable, .loadFailed:
             return .modelNotLoaded
         case .unknownModel, .modelMismatch, .streamingModelSelected, .roster:
             return .modelMismatch
         case .streamBusy:
             return .busy
-        case .unknownFormat:
+        case .unknownFormat, .unsupportedEncoding, .badListenParameter:
             return .badFormat
         case .badAudioFrame, .decoderFailed:
             return .badAudio

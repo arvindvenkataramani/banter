@@ -321,6 +321,8 @@ enum RosterError: Error, CustomStringConvertible {
     case variantUnknown(id: String, requested: String, offered: [String])
     case variantConflict(id: String, variant: String, param: ParamBinding, selects: String?)
     case variantRequired(id: String, offered: [RosterVariant])
+    case defaultUnknown(String)
+    case defaultNeedsParameter(String)
 
     var description: String {
         switch self {
@@ -384,6 +386,11 @@ enum RosterError: Error, CustomStringConvertible {
         case .variantRequired(let id, let offered):
             return
                 "\(id) offers variants \(offered.map(Self.describe).joined(separator: ", ")); say which with \"variant\" or its parameters"
+        case .defaultUnknown(let id):
+            return "roster defaultModel \(id) is not one of the provider's sttModels"
+        case .defaultNeedsParameter(let id):
+            return
+                "roster defaultModel \(id) needs a load parameter, which a request cannot supply; name a model that needs none"
         }
     }
 
@@ -397,6 +404,16 @@ enum RosterError: Error, CustomStringConvertible {
 /// The roster this server was handed, checked.
 struct Roster: Sendable {
     let models: [ValidatedModel]
+    /// What a request naming no model loads into an empty slot. Nil means such
+    /// a request is refused.
+    let defaultModel: ValidatedModel?
+    /// How long the resident model may go without work before it is unloaded.
+    let idleUnload: Duration
+    /// A declared `idleUnloadMs` that was not positive and so was replaced by
+    /// the default, kept so startup can warn about it.
+    let idleUnloadRejected: Int?
+    /// Used when the provider's block declares no usable `idleUnloadMs`.
+    static let defaultIdleUnload: Duration = .seconds(30 * 60)
 
     func model(id: String) -> ValidatedModel? {
         models.first { $0.id == id }
@@ -404,7 +421,9 @@ struct Roster: Sendable {
 
     /// Parse and validate. Every failure names the offending model, because a
     /// roster that is wrong should say which line is wrong.
-    static func validate(_ entries: [RosterEntry]) throws -> Roster {
+    static func validate(
+        _ entries: [RosterEntry], defaultModel: String? = nil, idleUnloadMs: Int? = nil
+    ) throws -> Roster {
         guard !entries.isEmpty else { throw RosterError.empty }
 
         var seen = Set<String>()
@@ -427,7 +446,26 @@ struct Roster: Sendable {
             try validateVariants(entry, family: family)
             validated.append(ValidatedModel(entry: entry, family: family))
         }
-        return Roster(models: validated)
+
+        var idleUnload = defaultIdleUnload
+        var rejected: Int?
+        if let ms = idleUnloadMs {
+            if ms > 0 { idleUnload = .milliseconds(ms) } else { rejected = ms }
+        }
+
+        var fallback: ValidatedModel?
+        if let defaultId = defaultModel {
+            guard let model = validated.first(where: { $0.id == defaultId }) else {
+                throw RosterError.defaultUnknown(defaultId)
+            }
+            guard model.family.buildParams.isEmpty else {
+                throw RosterError.defaultNeedsParameter(defaultId)
+            }
+            fallback = model
+        }
+        return Roster(
+            models: validated, defaultModel: fallback, idleUnload: idleUnload,
+            idleUnloadRejected: rejected)
     }
 
     /// The declaration must be one the code can build: every parameter one the
@@ -518,7 +556,8 @@ struct Roster: Sendable {
         // A provider with no transcription models is a misconfiguration rather
         // than an empty server: something named this service as an STT
         // provider and gave it nothing to serve.
-        return try validate(entry.sttModels ?? [])
+        return try validate(
+            entry.sttModels ?? [], defaultModel: entry.defaultModel, idleUnloadMs: entry.idleUnloadMs)
     }
 }
 
@@ -535,4 +574,19 @@ private struct NodeRoster: Decodable {
 
 private struct ProviderEntry: Decodable {
     let sttModels: [RosterEntry]?
+    let defaultModel: String?
+    /// Zero when declared but not an integer, so validation falls back to the
+    /// default and warns rather than failing the whole roster.
+    let idleUnloadMs: Int?
+
+    private enum CodingKeys: String, CodingKey { case sttModels, defaultModel, idleUnloadMs }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sttModels = try c.decodeIfPresent([RosterEntry].self, forKey: .sttModels)
+        defaultModel = try c.decodeIfPresent(String.self, forKey: .defaultModel)
+        idleUnloadMs =
+            c.contains(.idleUnloadMs)
+            ? ((try? c.decode(Int.self, forKey: .idleUnloadMs)) ?? 0) : nil
+    }
 }

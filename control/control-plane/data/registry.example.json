@@ -60,7 +60,7 @@
       },
       "runner": {
         "type": "process",
-        "main": ".build/release/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
+        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
       },
       "ops": {
         "env": {
@@ -73,8 +73,8 @@
         "install": {
           "artifacts": [
             {
-              "from": "services/fluid/.build/release/fluid-stt",
-              "to": ".build/release/fluid-stt"
+              "from": "services/fluid/.build/release/fluid-stt.app",
+              "to": "fluid-stt.app"
             }
           ]
         }
@@ -105,7 +105,7 @@
       },
       "runner": {
         "type": "process",
-        "main": ".build/release/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts"
+        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts"
       },
       "ops": {
         "env": {
@@ -118,12 +118,8 @@
         "install": {
           "artifacts": [
             {
-              "from": "services/fluid/.build/release/fluid-tts",
-              "to": ".build/release/fluid-tts"
-            },
-            {
-              "from": "services/fluid/.build/release/FluidAudio_FluidAudio.bundle",
-              "to": ".build/release/FluidAudio_FluidAudio.bundle"
+              "from": "services/fluid/.build/release/fluid-tts.app",
+              "to": "fluid-tts.app"
             }
           ]
         }
@@ -300,6 +296,8 @@
       },
       "fluid-stt": {
         "sessions": true,
+        "defaultModel": "parakeet-unified-0.6b",
+        "idleUnloadMs": 1800000,
         "sttModels": [
           {
             "id": "parakeet-tdt-v3",

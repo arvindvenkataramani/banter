@@ -7,10 +7,24 @@ import Logging
 @main
 struct FluidServerTTS {
     static func main() async throws {
-        let logger = bootstrapLogging(label: "fluid-tts")
+        // Resolved before the logger, since the logger's os_log subsystem is
+        // the bundle identifier.
+        let identity = AppIdentity.resolve(
+            info: Bundle.main.infoDictionary, executableName: "fluid-tts")
+        let logger = bootstrapLogging(label: "fluid-tts", subsystem: identity.bundleIdentifier)
         let args: ServerArgs
         do {
             args = try ServerArgs.parse(defaultPort: 8769)
+        } catch {
+            logger.critical("\(error)")
+            throw error
+        }
+
+        // The temp subdirectory is this server's own, wiped on every start so
+        // a crash never leaves a previous run's reference-audio trim behind.
+        let locations = AppLocations(identifier: identity.bundleIdentifier)
+        do {
+            try locations.prepareTemporaryDirectory()
         } catch {
             logger.critical("\(error)")
             throw error
@@ -35,8 +49,11 @@ struct FluidServerTTS {
 
         // No model resident at startup, as on the STT side: which one to hold
         // is the caller's choice and a guess costs seconds of loading.
-        let resident = ResidentTtsModel(modelsDirectory: args.modelsDirectory, logger: logger)
-        let ctx = TtsAppContext(resident: resident, roster: roster, logger: logger)
+        let resident = ResidentTtsModel(
+            modelsDirectory: args.modelsDirectory, temporaryDirectory: locations.temporary,
+            logger: logger)
+        let ctx = TtsAppContext(
+            resident: resident, roster: roster, logger: logger, identity: identity)
 
         let modelsPath = args.modelsDirectory?.path ?? "FluidAudio default"
         logger.info(
@@ -66,4 +83,5 @@ struct TtsAppContext: Sendable {
     /// code could serve it.
     let roster: TtsRoster
     let logger: Logger
+    let identity: AppIdentity
 }

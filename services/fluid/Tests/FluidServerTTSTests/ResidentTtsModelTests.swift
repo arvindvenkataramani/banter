@@ -79,9 +79,10 @@ private func makeResident(deadline: Duration = .milliseconds(200)) -> (
     let handle = DriverHandle()
     let resident = ResidentTtsModel(
         modelsDirectory: nil,
+        temporaryDirectory: FileManager.default.temporaryDirectory,
         logger: Logger(label: "test"),
         waitDeadline: deadline,
-        makeDriver: { id, _ in
+        makeDriver: { id, _, _ in
             guard id == "fake" || id == "other" else { throw TtsError.unknownModel(id) }
             let driver = try await FakeStreamingDriver(modelsDirectory: nil)
             handle.latest = driver

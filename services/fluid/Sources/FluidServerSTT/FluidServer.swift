@@ -8,10 +8,24 @@ import Logging
 @main
 struct FluidServerSTT {
     static func main() async throws {
-        let logger = bootstrapLogging(label: "fluid-stt")
+        // Resolved before the logger, since the logger's os_log subsystem is
+        // the bundle identifier.
+        let identity = AppIdentity.resolve(
+            info: Bundle.main.infoDictionary, executableName: "fluid-stt")
+        let logger = bootstrapLogging(label: "fluid-stt", subsystem: identity.bundleIdentifier)
         let args: ServerArgs
         do {
             args = try ServerArgs.parse(defaultPort: 8767)
+        } catch {
+            logger.critical("\(error)")
+            throw error
+        }
+
+        // The temp subdirectory is this server's own, wiped on every start so
+        // a crash never leaves a previous run's upload behind.
+        let locations = AppLocations(identifier: identity.bundleIdentifier)
+        do {
+            try locations.prepareTemporaryDirectory()
         } catch {
             logger.critical("\(error)")
             throw error
@@ -39,13 +53,29 @@ struct FluidServerSTT {
             throw error
         }
 
-        // No model is resident at startup. Which one to hold is the caller's
-        // choice, made through /v1/models/load, and a server that guessed would
-        // spend thirteen seconds loading weights nobody asked for.
+        // No model is resident at startup: the first request that needs one
+        // loads it, so nothing pays thirteen seconds for weights nobody wants.
         let resident = ResidentModel(roster: roster, logger: logger)
-        let ctx = AppContext(resident: resident, logger: logger)
+        let ctx = AppContext(
+            resident: resident, logger: logger, identity: identity,
+            temporaryDirectory: locations.temporary)
 
-        logger.info("starting HTTP server on \(args.host):\(args.port); no model loaded")
+        if roster.idleUnloadRejected != nil {
+            logger.warning(
+                "roster idleUnloadMs is not a positive integer of milliseconds; using \(Roster.defaultIdleUnload)")
+        }
+        let idle = roster.idleUnload
+        // Checked a few times per interval, between once a second and once a minute.
+        let tick = max(min(idle / 4, .seconds(60)), .seconds(1))
+        Task.detached {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: tick)
+                _ = await resident.unloadIfIdle(after: idle)
+            }
+        }
+
+        logger.info(
+            "starting HTTP server on \(args.host):\(args.port); no model loaded, idle unload after \(idle)")
 
         let app = Application(
             router: buildRouter(ctx: ctx),
@@ -64,4 +94,8 @@ struct FluidServerSTT {
 struct AppContext: Sendable {
     let resident: ResidentModel
     let logger: Logger
+    let identity: AppIdentity
+    /// Where this server's own temp files go — the upload in
+    /// `handleTranscribe`, not FluidAudio's model cache.
+    let temporaryDirectory: URL
 }

@@ -16,7 +16,14 @@ struct APIHandlers: APIProtocol {
     {
         let model = await ctx.resident.loadedId
         let variant = await ctx.resident.loadedVariant
-        return .ok(.init(body: .json(.init(status: "ok", model: model, variant: variant))))
+        return .ok(
+            .init(
+                body: .json(
+                    .init(
+                        status: "ok", model: model, variant: variant,
+                        bundleIdentifier: ctx.identity.bundleIdentifier,
+                        shortVersion: ctx.identity.shortVersion,
+                        buildVersion: ctx.identity.buildVersion))))
     }
 
     func listModels(_ input: Operations.listModels.Input) async throws
@@ -79,6 +86,8 @@ struct APIHandlers: APIProtocol {
                 params: body.chunkMs.map { [ParamBinding(name: "chunkMs", value: $0)] } ?? [])
         } catch let error as FluidServerSTTError {
             return loadFailure(error)
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
         }
         return .ok(
             .init(body: .json(.init(object: "model.load", loaded: body.model, variant: variant))))
@@ -97,8 +106,11 @@ struct APIHandlers: APIProtocol {
             let payload = Components.Schemas._Error(error: error.description)
             switch error.status {
             case .conflict: return .conflict(.init(body: .json(payload)))
+            case .serviceUnavailable: return .serviceUnavailable(.init(body: .json(payload)))
             default: return .badRequest(.init(body: .json(payload)))
             }
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
         }
         return .ok(.init(body: .json(.init(object: "model.load", loaded: id, variant: variant))))
     }
@@ -113,6 +125,8 @@ struct APIHandlers: APIProtocol {
             try await ctx.resident.unload(id: body.model)
         } catch let error as FluidServerSTTError {
             return unloadFailure(error)
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
         }
         return .ok(.init(body: .json(.init(object: "model.unload", loaded: body.model))))
     }
@@ -143,6 +157,7 @@ struct APIHandlers: APIProtocol {
         let payload = Components.Schemas._Error(error: error.description)
         switch error.status {
         case .conflict: return .conflict(.init(body: .json(payload)))
+        case .serviceUnavailable: return .serviceUnavailable(.init(body: .json(payload)))
         default: return .badRequest(.init(body: .json(payload)))
         }
     }
