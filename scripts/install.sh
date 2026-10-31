@@ -40,6 +40,13 @@ esac
 log "Installing dependencies..."
 bun install
 
+# The tracked git hooks keep docs/api-reference.md current on commits that touch
+# control/. Only meaningful in a git checkout; a source download has no .git.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git config core.hooksPath scripts/git-hooks
+  log "Git hooks enabled (core.hooksPath = scripts/git-hooks)."
+fi
+
 # The VAD + turn-detection assets are committed, so this only re-verifies them
 # against their pinned hashes. A failure here means a bad or missing file, not a
 # missing download — worth reporting, but not worth failing the install over.

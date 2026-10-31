@@ -110,9 +110,6 @@ else
   fi
 fi
 
-echo "[control-deploy] Generating API docs..."
-cd "$REPO" && bun run docs || echo "[control-deploy] Warning: docs generation failed (non-blocking)"
-
 echo "[control-deploy] Building dashboard..."
 if [[ "$SRC" != "$REPO" ]]; then
   echo "[control-deploy] Installing build dependencies..."

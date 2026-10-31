@@ -15,6 +15,10 @@ Run what covers the change before committing it:
 
 A change these cover can be committed on a green run, without anyone trying it by hand. A skipped check, or a failure that is explained away rather than fixed, is not green: say what was skipped and why.
 
+## Git hooks
+
+`scripts/git-hooks/` holds the hooks every clone should run. `scripts/install.sh` enables them in a git checkout; in a clone that skipped it, run `git config core.hooksPath scripts/git-hooks`. The `pre-commit` hook regenerates `docs/api-reference.md` (`bun run docs`) on any commit that touches `control/` and adds it to that commit, so the reference always matches the routes beside it. Deploys no longer regenerate it, which used to leave the checkout dirty.
+
 ## Changes that need human review
 
 Some changes no automated run can clear. Whoever makes one, a person or an agent, prepares it, says what needs checking, and stops: it is not committed, deployed or run until a human has reviewed it. A passing test suite does not change that.
