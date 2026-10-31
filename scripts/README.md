@@ -41,7 +41,7 @@ Run these on the worker. See [../docs/shard-setup.md](../docs/shard-setup.md).
 | `shard-stop.sh` | Stops and disables the agent. |
 | `shard-uninstall.sh` | Removes the agent and the deployed tree. |
 | `shard-dev.sh` | Development: the shard alone, API-only, with `--watch`. Stops the production agent while it runs and restores it on exit. |
-| `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by registry entries and the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
+| `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by the shard's live registry (the one the shard reads, `~/services/shard/registry.json`; fails if there is none) and the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
 
 ## Diagnostics and safety
 

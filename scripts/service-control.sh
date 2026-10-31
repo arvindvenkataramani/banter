@@ -17,10 +17,14 @@ set -euo pipefail
 
 # Probe for a deployed registry instead of guessing from `uname`. A shard can
 # run on Linux and a plane on macOS; what decides which node this is, is which
-# registry is on disk. `~/Services` is checked for legacy macOS installs.
+# registry is on disk. The shard's registry is looked for where the shard reads
+# it (shard-registry.sh), which is outside the deployed tree. `~/Services` is
+# checked for legacy macOS installs.
 NODE=""
 PROD=""
 REGISTRY=""
+
+source "$(dirname "$0")/shard-registry.sh"
 
 if [[ -n "${BANTER_REGISTRY_PATH:-}" ]]; then
   REGISTRY="$BANTER_REGISTRY_PATH"
@@ -35,13 +39,13 @@ else
       REGISTRY="$root/control/control-plane/data/registry.json"
       NODE="control"
       break
-    elif [[ -f "$root/control/control-shard/data/registry.json" ]]; then
-      PROD="$root"
-      REGISTRY="$root/control/control-shard/data/registry.json"
-      NODE="shard"
-      break
     fi
   done
+  if [[ -z "$REGISTRY" && -f "$(banter_shard_registry_path)" ]]; then
+    REGISTRY="$(banter_shard_registry_path)"
+    PROD="${BANTER_SHARD_PROD:-$(dirname "$(dirname "$REGISTRY")")/banter}"
+    NODE="shard"
+  fi
 fi
 
 if [[ -z "$REGISTRY" ]]; then
@@ -51,8 +55,14 @@ if [[ -z "$REGISTRY" ]]; then
 fi
 
 # PROD is unset when the path came from an env var; derive it from the registry.
+# A control-plane registry sits four levels below its deploy directory; a
+# shard's sits outside the deployed tree, so there is nothing to derive.
 if [[ -z "$PROD" ]]; then
-  PROD="$(cd "$(dirname "$REGISTRY")/../../../.." && pwd)"
+  if [[ "$NODE" == "control" ]]; then
+    PROD="$(cd "$(dirname "$REGISTRY")/../../../.." && pwd)"
+  else
+    PROD="${BANTER_SHARD_PROD:-$(dirname "$(dirname "$REGISTRY")")/banter}"
+  fi
 fi
 
 # ── Help ─────────────────────────────────────────────────────────────────────
