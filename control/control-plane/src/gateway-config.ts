@@ -4,7 +4,7 @@ import { writeFileAtomic } from '../../shared/src/atomic-write'
 import { reloadRegistry } from '../../shared/src/registry'
 import { deriveHealthMap, deriveHealth } from '../../shared/src/events'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { CHUNK_STRATEGIES } from '../../../shared/types'
 import type { Service, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
 import type { AssembledRoster } from './roster-assembly'
@@ -580,11 +580,11 @@ export function registerVoiceConfig(
   })
 }
 
-// Debug captures live under this platform's own data dir, not the OpenClaw
-// workspace — nothing here should need to know where OpenClaw is installed.
-// The gateway URL in config.json is the only coupling to it.
+// Debug scratch: mic samples are throwaway captures for diagnosing the voice
+// pipeline, so they default under the OS temp dir rather than a data
+// directory. Set MIC_SAMPLE_DIR to keep them somewhere durable.
 const MIC_SAMPLE_DIR = process.env.MIC_SAMPLE_DIR
-  ?? join(homedir(), 'services/banter/debug/mic-samples')
+  ?? join(tmpdir(), 'banter-voice-debug/mic-samples')
 const MIC_SAMPLE_RETENTION = 50
 
 export function registerVoiceDebug(app: Hono<any>, config: PlatformConfig) {

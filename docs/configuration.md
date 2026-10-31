@@ -237,7 +237,7 @@ Each has an environment override (`BANTER_CONTROL_HOST`, `BANTER_EVENTS_PATH`, `
 | `BANTER_REGISTRY_PATH` | `control/control-plane/data/registry.json` | Registry file |
 | `BANTER_CONFIG_PATH` | `control/control-plane/data/config.json` | Config file |
 | `DASHBOARD_DIST` | `dashboard/dist` | Built assets to serve |
-| `MIC_SAMPLE_DIR` | `~/services/banter/debug/mic-samples` | Where `DEBUG` mic captures land |
+| `MIC_SAMPLE_DIR` | `banter-voice-debug/mic-samples` in the OS temp directory | Where `DEBUG` mic captures land; set it to keep them somewhere durable |
 
 `BANTER_PROD` and `BANTER_UNIT` are better set in `scripts/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
 
