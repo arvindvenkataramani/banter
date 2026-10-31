@@ -27,6 +27,8 @@ __pycache__/
 # Screenshots — local debugging only
 *.jpeg
 *.png
+# ...except the app's icons, which are served from public/favicon/.
+!dashboard/public/favicon/*.png
 
 # Superseded by the live-config model (the dev server now reads the deployed
 # config), but a local copy may linger from before the change — never track it.
