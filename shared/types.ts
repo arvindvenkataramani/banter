@@ -170,7 +170,7 @@ export type EventType =
   | "tailscale.serve_failed"
   | "tailscale.serve_remove_failed";
 
-export type HealthState = "healthy" | "degraded" | "timed_out" | "down" | "disabled" | "unknown";
+export type HealthState = "healthy" | "degraded" | "timed_out" | "down" | "off" | "disabled" | "unknown";
 
 export interface Event {
   id: string;

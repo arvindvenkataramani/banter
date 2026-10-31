@@ -43,7 +43,7 @@ export const EventSchema = z.object({
 }).openapi("Event");
 
 export const HealthStateSchema = z.enum([
-  "healthy", "degraded", "timed_out", "down", "disabled", "unknown",
+  "healthy", "degraded", "timed_out", "down", "off", "disabled", "unknown",
 ]);
 
 // --- Service types (included for response schemas, migrate handlers later) ---

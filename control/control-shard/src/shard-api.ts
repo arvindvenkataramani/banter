@@ -1,5 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { deriveHealthMap, deriveHealth, readEvents, appendEvent } from "../../shared/src/events";
+import { deriveHealthMap, deriveHealth, deriveServiceHealth, readEvents, appendEvent } from "../../shared/src/events";
 import { emptyRoster } from "../../shared/src/roster";
 import { reloadRegistry } from "../../shared/src/registry";
 import * as shardRoutes from "./routes";
@@ -34,14 +34,8 @@ export function createShardApp(deps: ShardAppDeps) {
 
   // GET /api/services
   app.get("/api/services", async (c) => {
-    const healthMap = await deriveHealthMap(eventsPath);
-    const result = registryState.services.map((svc) => {
-      if (!svc.permissions.enabled) {
-        return { ...svc, health: "disabled" as const, lastEvent: null };
-      }
-      const lastEvent = healthMap.get(svc.id) ?? null;
-      return { ...svc, health: deriveHealth(lastEvent), lastEvent };
-    });
+    const healthOf = await deriveServiceHealth(eventsPath);
+    const result = registryState.services.map((svc) => ({ ...svc, ...healthOf(svc) }));
     return c.json(result);
   });
 
@@ -56,12 +50,11 @@ export function createShardApp(deps: ShardAppDeps) {
   // GET /status
   app.openapi(shardRoutes.getStatus, async (c) => {
     const freeMem = await getFreeMem();
-    const healthMap = await deriveHealthMap(eventsPath);
+    const healthOf = await deriveServiceHealth(eventsPath);
 
     const services: Record<string, { health: string; lastPing: number | null }> = {};
     for (const svc of registryState.services) {
-      const lastEvent = svc.permissions.enabled ? (healthMap.get(svc.id) ?? null) : null;
-      const health = svc.permissions.enabled ? deriveHealth(lastEvent) : "disabled";
+      const { health } = healthOf(svc);
       services[svc.id] = {
         health,
         lastPing: pingMap.get(svc.id) ?? null,

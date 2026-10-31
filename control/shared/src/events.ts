@@ -1,6 +1,6 @@
 import { writeFile, mkdir, open, stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Event, EventType, HealthState } from "../../../shared/types";
+import type { Event, EventType, HealthState, Service } from "../../../shared/types";
 
 interface AppendEventInput {
   type: EventType;
@@ -190,6 +190,34 @@ export async function deriveHealthMap(eventsPath: string): Promise<Map<string, E
 export async function deriveRunIntentMap(eventsPath: string): Promise<Map<string, boolean>> {
   const cache = await currentCache(eventsPath);
   return new Map(cache?.runIntent);
+}
+
+export interface ServiceHealth {
+  health: HealthState;
+  lastEvent: Event | null;
+}
+
+/**
+ * A service's health as the API reports it. `off` is a service not meant to
+ * be running and not seen running: its latest run intent is stop, unload or
+ * disable, or it is demand-loaded and has never been started, and its last
+ * health event is not a running one. Off is separate from down, which means
+ * meant to be running and not answering. A check that finds it answering
+ * still wins, so a service started outside the platform shows what it is.
+ */
+export async function deriveServiceHealth(eventsPath: string): Promise<(svc: Service) => ServiceHealth> {
+  const cache = await currentCache(eventsPath);
+  const health = cache?.health ?? new Map<string, Event>();
+  const runIntent = cache?.runIntent ?? new Map<string, boolean>();
+  return (svc) => {
+    if (!svc.permissions.enabled) return { health: "disabled", lastEvent: null };
+    const lastEvent = health.get(svc.id) ?? null;
+    const intent = runIntent.get(svc.id);
+    const observed = deriveHealth(lastEvent);
+    const notMeantToRun = intent === false || (intent === undefined && svc.lifecycle?.loadStrategy === "demand");
+    const seenRunning = observed === "healthy" || observed === "degraded" || observed === "timed_out";
+    return { health: notMeantToRun && !seenRunning ? "off" : observed, lastEvent };
+  };
 }
 
 export function deriveHealth(event: Event | null): HealthState {

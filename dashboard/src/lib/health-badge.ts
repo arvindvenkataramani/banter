@@ -4,6 +4,7 @@ export const healthBadgeClass: Record<HealthState, string> = {
   healthy:   'bg-status-healthy-bg text-status-healthy-fg border-transparent',
   degraded:  'bg-status-warn-bg text-status-warn-fg border-transparent',
   down:      'bg-status-down-bg text-status-down-fg border-transparent',
+  off:       'bg-status-muted-bg text-status-muted-fg border-transparent',
   timed_out: 'bg-status-warn-bg text-status-warn-fg border-transparent',
   disabled:  'bg-status-muted-bg text-status-muted-fg border-transparent',
   unknown:   'bg-status-muted-bg text-status-muted-fg border-transparent',
@@ -19,6 +20,7 @@ export const serviceIsRunning: Record<HealthState, boolean> = {
   degraded:  true,
   timed_out: true,
   down:      false,
+  off:       false,
   disabled:  false,
   unknown:   false,
 }
@@ -27,6 +29,7 @@ export const healthLabel: Record<HealthState, string> = {
   healthy:   'online',
   degraded:  'degraded',
   down:      'offline',
+  off:       'off',
   timed_out: 'timed out',
   disabled:  'disabled',
   unknown:   'unknown',

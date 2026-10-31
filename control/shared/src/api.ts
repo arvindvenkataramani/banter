@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { deriveHealthMap, deriveHealth, readEvents, appendEvent } from "./events";
+import { deriveServiceHealth, readEvents, appendEvent } from "./events";
 import { updateService, setEnabled } from "./registry";
 import {
   startService,
@@ -51,17 +51,13 @@ export function createApp(deps: AppDeps) {
   // GET /api/services
   app.get("/api/services", async (c) => {
     const capability = c.req.query("capability");
-    const healthMap = await deriveHealthMap(eventsPath);
+    const healthOf = await deriveServiceHealth(eventsPath);
     const services = capability
       ? registryState.services.filter(s => s.capabilityId === capability)
       : registryState.services;
     const result: ServiceWithHealth[] = services.map((svc) => {
       const pending = svc.runner?.type === "external" ? false : isPending(svc.id);
-      if (!svc.permissions.enabled) {
-        return { ...svc, health: "disabled" as const, lastEvent: null, pending };
-      }
-      const lastEvent = healthMap.get(svc.id) ?? null;
-      return { ...svc, health: deriveHealth(lastEvent), lastEvent, pending };
+      return { ...svc, ...healthOf(svc), pending };
     });
     return c.json(result);
   });
@@ -71,9 +67,7 @@ export function createApp(deps: AppDeps) {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
     if (!svc) return c.json({ error: "service not found" }, 404);
 
-    const healthMap = await deriveHealthMap(eventsPath);
-    const lastEvent = svc.permissions.enabled ? (healthMap.get(svc.id) ?? null) : null;
-    const health = svc.permissions.enabled ? deriveHealth(lastEvent) : "disabled" as const;
+    const { health, lastEvent } = (await deriveServiceHealth(eventsPath))(svc);
     const pending = svc.runner?.type === "external" ? false : isPending(svc.id);
     return c.json({ ...svc, health, lastEvent, pending });
   });
@@ -117,9 +111,7 @@ export function createApp(deps: AppDeps) {
 
     await checkService(svc, eventsPath, { bypassThreshold: true, localHostId, runFn });
 
-    const healthMap = await deriveHealthMap(eventsPath);
-    const lastEvent = svc.permissions.enabled ? (healthMap.get(svc.id) ?? null) : null;
-    const health = svc.permissions.enabled ? deriveHealth(lastEvent) : "disabled" as const;
+    const { health, lastEvent } = (await deriveServiceHealth(eventsPath))(svc);
     return c.json({ ...svc, health, lastEvent });
   });
 
@@ -142,9 +134,7 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: msg }, status);
     }
 
-    const healthMap = await deriveHealthMap(eventsPath);
-    const lastEvent = updated.permissions.enabled ? (healthMap.get(updated.id) ?? null) : null;
-    const health = updated.permissions.enabled ? deriveHealth(lastEvent) : "disabled" as const;
+    const { health, lastEvent } = (await deriveServiceHealth(eventsPath))(updated);
     return c.json({ ...updated, health, lastEvent });
   });
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendEvent, readEvents, deriveHealthMap, deriveHealth } from "../src/events";
+import { appendEvent, readEvents, deriveHealthMap, deriveHealth, deriveServiceHealth } from "../src/events";
 import type { Event } from "../../../shared/types";
 
 let tmpDir: string;
@@ -214,5 +214,45 @@ describe("State derivation", () => {
     const map = await deriveHealthMap(eventsPath);
     expect(deriveHealth(map.get("svcA") ?? null)).toBe("down");
     expect(deriveHealth(map.get("svcB") ?? null)).toBe("healthy");
+  });
+});
+
+describe("Service health as reported", () => {
+  const svc = (overrides: Record<string, unknown> = {}) => ({
+    id: "s1", capabilityId: "c", hostId: "h", permissions: { enabled: true },
+    network: { port: 1, healthPath: "/h" }, ...overrides,
+  }) as never;
+  const demand = { lifecycle: { loadStrategy: "demand" } };
+  const add = (type: "service.started" | "service.stopped" | "service.down" | "service.up") =>
+    appendEvent(eventsPath, { type, subjectType: "service", subjectId: "s1", data: {}, actor: "system" });
+  const healthNow = async (overrides: Record<string, unknown> = {}) =>
+    (await deriveServiceHealth(eventsPath))(svc(overrides)).health;
+
+  it("reads a demand service that was never started as off", async () => {
+    expect(await healthNow(demand)).toBe("off");
+  });
+
+  it("reads a started service that stopped answering as down, and a stopped one as off", async () => {
+    await add("service.started");
+    await add("service.down");
+    expect(await healthNow(demand)).toBe("down");
+    await add("service.stopped");
+    expect(await healthNow(demand)).toBe("off");
+    expect(await healthNow()).toBe("off");
+  });
+
+  it("reads an always-on service with no run intent from its last health event", async () => {
+    await add("service.up");
+    expect(await healthNow()).toBe("healthy");
+  });
+
+  it("shows a demand service found answering without a recorded start as what it is", async () => {
+    await add("service.up");
+    expect(await healthNow(demand)).toBe("healthy");
+  });
+
+  it("reads a disabled service as disabled whatever its log says", async () => {
+    await add("service.started");
+    expect(await healthNow({ permissions: { enabled: false } })).toBe("disabled");
   });
 });
