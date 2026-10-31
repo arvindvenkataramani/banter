@@ -16,7 +16,7 @@ import type { Activity } from '../run-state'
 
 // The turn manager's reduction rules, one test per rule, grouped by subject.
 // Each test is named by the rule it protects; the transitions they add up to
-// are tabled in docs/components/voice-turn-taking.md.
+// are described in docs/architecture/voice-pipeline.md and `turn-manager.ts`.
 
 const CONFIG: TurnManagerConfig = { interruptionMinRemainingS: 0.5 }
 const ABOVE = 2.0
@@ -416,19 +416,12 @@ describe('Turns open and close', () => {
     expect(s.agent?.phase).toBe('speaking')
   })
 
-  test('an agent turn moves to closing when runActive goes false while its utterance is live', () => {
-    const s = fold([...agentSpeaking('A'), run('A', false)])
-    expect(s.agent?.phase).toBe('closing')
-  })
-
-  test('an agent turn moves to closing when runActive goes false while the player\'s run is still set', () => {
-    const s = fold([run('A', true), agent(null, null, { run: 'A' }), run('A', false)])
-    expect(s.agent?.phase).toBe('closing')
-  })
-
-  test('an agent turn moves to closing when runActive goes false while pending is above zero', () => {
-    const s = fold([run('A', true), agent(null, null, { pending: 1 }), run('A', false)])
-    expect(s.agent?.phase).toBe('closing')
+  test.each([
+    ['its utterance is live', [...agentSpeaking('A'), run('A', false)]],
+    ['the player\'s run is still set', [run('A', true), agent(null, null, { run: 'A' }), run('A', false)]],
+    ['pending is above zero', [run('A', true), agent(null, null, { pending: 1 }), run('A', false)]],
+  ])('an agent turn moves to closing when runActive goes false while %s', (_, reports) => {
+    expect(fold(reports).agent?.phase).toBe('closing')
   })
 
   test('an agent turn ends as completed when runActive is false, its utterance has ended, the player\'s run is null and pending is zero', () => {
@@ -493,38 +486,19 @@ describe('Turns open and close', () => {
 })
 
 describe('Interrupting the agent', () => {
-  test('a candidate accepted while the agent turn is speaking ends the agent turn as superseded', () => {
-    const s = fold([...agentSpeaking('A'), human('h1', 'hearing')])
-    expect(s.agent?.phase).toBe('ended')
-    expect(s.agent?.outcome).toBe('superseded')
-  })
+  // B closes without having spoken, so the human turn is still closing when h2 arrives.
+  const closingUnderClosingHuman = [...humanSaid('h1'), run('B', true), agent(null, null, { run: 'B', pending: 1 }), run('B', false)]
 
-  test('a candidate accepted while the agent turn is closing ends the agent turn as superseded', () => {
-    const s = fold([...agentSpeaking('A'), run('A', false), human('h1', 'hearing')])
-    expect(s.agent?.outcome).toBe('superseded')
-  })
-
-  test('a candidate reopening a closing human turn while the agent turn is closing ends it as superseded', () => {
-    // B closes without having spoken, so the human turn is still closing.
-    let s = fold([...humanSaid('h1'), run('B', true), agent(null, null, { run: 'B', pending: 1 }), run('B', false)])
-    expect(s.human?.phase).toBe('closing')
-    expect(s.agent?.phase).toBe('closing')
-
-    s = reduce(s, human('h2', 'hearing'))
+  test.each([
+    ['accepted while the agent turn is speaking', [...agentSpeaking('A'), human('h1', 'hearing')], 'superseded'],
+    ['accepted while the agent turn is closing', [...agentSpeaking('A'), run('A', false), human('h1', 'hearing')], 'superseded'],
+    ['reopening a closing human turn while the agent turn is closing', [...closingUnderClosingHuman, human('h2', 'hearing')], 'superseded'],
+    ['accepted while the agent turn is opening', [run('A', true), human('h1', 'hearing')], 'preempted'],
+    ['reopening a closing human turn while the agent turn is opening', [...humanSaid('h1'), run('B', true), human('h2', 'hearing')], 'preempted'],
+  ])('a candidate %s ends the agent turn as %s', (_, reports, outcome) => {
+    const s = fold(reports)
     expect(s.human?.phase).toBe('speaking')
-    expect(s.agent?.outcome).toBe('superseded')
-  })
-
-  test('a candidate accepted while the agent turn is opening ends it as preempted', () => {
-    const s = fold([run('A', true), human('h1', 'hearing')])
-    expect(s.agent?.phase).toBe('ended')
-    expect(s.agent?.outcome).toBe('preempted')
-  })
-
-  test('a candidate reopening a closing human turn while the agent turn is opening ends it as preempted', () => {
-    const s = fold([...humanSaid('h1'), run('B', true), human('h2', 'hearing')])
-    expect(s.human?.phase).toBe('speaking')
-    expect(s.agent?.outcome).toBe('preempted')
+    expect(s.agent).toMatchObject({ phase: 'ended', outcome })
   })
 
   test('an agent turn opened while the human turn is speaking ends as preempted in the reduction that opens it, and is readable as the previous agent turn', () => {
@@ -639,24 +613,13 @@ describe('The floor', () => {
 })
 
 describe('What the human interrupted', () => {
-  test('a candidate accepted while the agent turn is speaking with remaining above the configured minimum records an interruption of speaking with that remaining', () => {
-    const s = fold([...agentSpeaking('A', ABOVE), human('h1', 'hearing')])
-    expect(s.relations.interruption).toEqual({ phase: 'speaking', remaining: ABOVE, working: true })
-  })
-
-  test('a candidate accepted while the agent turn is speaking with remaining at or below the minimum records an interruption of speaking with that remaining', () => {
-    const s = fold([...agentSpeaking('A', AT_OR_BELOW), human('h1', 'hearing')])
-    expect(s.relations.interruption).toEqual({ phase: 'speaking', remaining: AT_OR_BELOW, working: true })
-  })
-
-  test('a candidate accepted while the agent turn is opening records an interruption of opening', () => {
-    const s = fold([run('A', true), human('h1', 'hearing')])
-    expect(s.relations.interruption?.phase).toBe('opening')
-  })
-
-  test('a candidate accepted while the agent turn is closing records an interruption of closing', () => {
-    const s = fold([...agentSpeaking('A'), run('A', false), human('h1', 'hearing')])
-    expect(s.relations.interruption?.phase).toBe('closing')
+  test.each([
+    ['speaking, with remaining above the minimum', [...agentSpeaking('A', ABOVE)], { phase: 'speaking', remaining: ABOVE }],
+    ['speaking, with remaining at or below the minimum', [...agentSpeaking('A', AT_OR_BELOW)], { phase: 'speaking', remaining: AT_OR_BELOW }],
+    ['opening', [run('A', true)], { phase: 'opening' }],
+    ['closing', [...agentSpeaking('A'), run('A', false)], { phase: 'closing' }],
+  ])('a candidate accepted while the agent turn is %s records that phase and remaining as the interruption', (_, before, expected) => {
+    expect(fold([...before, human('h1', 'hearing')]).relations.interruption).toMatchObject(expected)
   })
 
   test('an interruption records working as runActive at the moment of the candidate', () => {
@@ -784,14 +747,12 @@ describe('Pausing the agent', () => {
     expect(snapshot(fold([run('A', true)])).mayBeAudible).toBe(true)
   })
 
-  test('mayBeAudible is false for an unvoiced agent turn', () => {
-    expect(snapshot(fold([controls({ speechMuted: true }), run('A', true)])).mayBeAudible).toBe(false)
-  })
-
-  test('mayBeAudible is false while the floor is the human\'s', () => {
-    const s = fold([human('h1', 'hearing')])
-    expect(snapshot(s).floor).toBe('human')
-    expect(snapshot(s).mayBeAudible).toBe(false)
+  test.each([
+    ['for an unvoiced agent turn', [controls({ speechMuted: true }), run('A', true)]],
+    ['while the floor is the human\'s', [human('h1', 'hearing')]],
+    ['while the agent turn is superseded, even before a new run id arrives', [...agentSpeaking('A'), human('h1', 'hearing'), human('h1', 'transcribing'), human('h1', 'ended', { outcome: { rejected: 'empty' } })]],
+  ])('mayBeAudible is false %s', (_, reports) => {
+    expect(snapshot(fold(reports)).mayBeAudible).toBe(false)
   })
 
   test('mayBeAudible is false while speech is muted, and true again on unmute if nothing else holds it', () => {
@@ -800,35 +761,18 @@ describe('Pausing the agent', () => {
     s = reduce(s, controls({ speechMuted: false }))
     expect(snapshot(s).mayBeAudible).toBe(true)
   })
-
-  test('mayBeAudible is false while the agent turn is superseded, even before a new run id arrives', () => {
-    const s = fold([...agentSpeaking('A'), human('h1', 'hearing'), human('h1', 'transcribing'), human('h1', 'ended', { outcome: { rejected: 'empty' } })])
-    expect(s.agent?.outcome).toBe('superseded')
-    expect(snapshot(s).mayBeAudible).toBe(false)
-  })
 })
 
 describe('New audio', () => {
-  test('newAudio is discard while the agent turn is unvoiced, whoever holds the floor', () => {
-    const agentFloor = fold([controls({ speechMuted: true }), run('A', true)])
-    expect(snapshot(agentFloor).floor).toBe('agent')
-    expect(snapshot(agentFloor).newAudio).toBe('discard')
-
-    const ended = reduce(agentFloor, run('A', false))
-    expect(ended.agent?.outcome).toBe('unvoiced')
-    expect(snapshot(ended).newAudio).toBe('discard')
-  })
-
-  test('newAudio is discard while the agent turn is superseded, whoever holds the floor', () => {
-    const s = fold([...agentSpeaking('A'), human('h1', 'hearing')])
-    expect(snapshot(s).floor).toBe('human')
-    expect(snapshot(s).newAudio).toBe('discard')
-  })
-
-  test('newAudio is discard while the agent turn is preempted, whoever holds the floor', () => {
-    const s = fold([human('h1', 'hearing'), run('A', true)])
-    expect(snapshot(s).floor).toBe('human')
-    expect(snapshot(s).newAudio).toBe('discard')
+  test.each([
+    ['unvoiced, with the floor the agent\'s', [controls({ speechMuted: true }), run('A', true)], 'agent'],
+    ['unvoiced, once ended', [controls({ speechMuted: true }), run('A', true), run('A', false)], 'nobody'],
+    ['superseded', [...agentSpeaking('A'), human('h1', 'hearing')], 'human'],
+    ['preempted', [human('h1', 'hearing'), run('A', true)], 'human'],
+  ])('newAudio is discard while the agent turn is %s, whoever holds the floor', (_, reports, floor) => {
+    const s = snapshot(fold(reports))
+    expect(s.floor).toBe(floor)
+    expect(s.newAudio).toBe('discard')
   })
 
   test('newAudio is park while the floor is the human\'s and the agent turn is none of those', () => {

@@ -113,9 +113,42 @@ One instance per sessionKey. Owns `_messages`, `_isStreaming`, `_isTyping`,
 
 History rows are anchored on `__openclaw.id` (falling back to `seq`, then
 positional index) so identity survives pagination and reload, matching the
-protocol doc's guidance. Tool-call detection in the `session.message`
-stream fires `onToolCall`, which the voice pipeline uses to flush buffered
-speech before a tool-call pause.
+protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `turn-manager.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
+
+### Run signalling — what opens a run, and what must not end one
+
+A run's first events arrive *before* `lifecycle:start`, so several event kinds have to be able to open one: `lifecycle:start` itself, a `chat` delta or `status`, an `agent` `run_status`, and a non-empty `thinking` event. A run that cannot open drops the activity it exists to signal.
+
+Two rules earn their place because breaking them is silent and looks like something else:
+
+- **`chat` `state: "status"` is progress, not an outcome.** It carries no content and arrives before the first delta. Treating it as terminal ends the run on its own first event: the activity indicator goes dark for the rest of the turn, and the finalize path re-lays the list.
+- **A tool event never opens a run.** A tool event for an unseen `runId` is ignored, so a stray event from another device cannot conjure a local run.
+
+`run_status` phases (`preparing_workspace`, `preparing_context`, `starting_model`) are normalized and keep the run alive, but are deliberately **not** surfaced as labels. They fire on every inference turn and carry nothing distinguishing a cold model load from a warm one, so naming them would describe the common case wrongly. The indicator stays generic.
+
+### Run state — `run-state.ts`
+
+`normalizeAgentEvent` and `normalizeSessionToolEvent` turn gateway payloads into `RunEvent`s, and `reduceRunEvent` folds them into one `RunState` per session. The gateway's streams are open-ended, so normalizing never throws. A payload carrying neither a `runId` nor a `sessionKey` is dropped. A stream the dashboard does not recognise, or a recognised one with malformed data, becomes an `unknown` event and is kept. An `item` event becomes a title for a tool call only when its kind is `tool`.
+
+An event for the run already open never restarts it; one opening a different run replaces the whole state. An event that cannot open a run, arriving for one that is not open, changes nothing.
+
+A run ends on `lifecycle` `end` or `error`, or on a `chat` `final`, `aborted` or `error`. Any tool still open is marked interrupted. A terminal chat event's text replaces the assembled text, unless it carries none.
+
+Activity is `idle` with no run open and `tool` while any tool call is open. Otherwise the latest event decides it: a chat delta is `speaking`, reasoning is `thinking`, and anything else is `active`. A stream the dashboard does not recognise reads as `active`, never as `thinking`, because a run with no recognised stream may be doing anything.
+
+Each tool call leaves a mark at the length of the text when it started, so the transcript can place its card. Its result marks it `done`, or `error` when the gateway flags one. Each phase of a tool call counts once, because the `agent` tool stream and its `session.tool` mirror deliver the same event twice. Compaction events never touch run state; `Session` handles them.
+
+`applyLiveRun` rebuilds a run's items on every event and splices them back at the position they held. Appending instead moves a reply below anything the reader sent since it started — which a reader sees as their own message jumping upward.
+
+### The conversation and sending — `conversation-store.ts`, `controls.ts`
+
+`Conversation` holds a session's items and run state. Every event folds into the run state; while the run is open its items are rebuilt live, and when it ends they settle and stop streaming. The gateway regularly sends `lifecycle:end` before the trailing chat `final` of the same run, so a chat event for the run just ended settles its text again, and the reply is not cut short. Listeners registered with `onEvent` receive every event in order, after the snapshot already reflects it; voice mode reads the conversation this way.
+
+History seeds the items, replacing what was there, and an older page is prepended without repeating an id already held. A row is identified by `__openclaw.id`, else its `seq`, else its position counted across pages. A row with no text is dropped. A tool card from history starts `unknown` and takes its status from a matching result: `done`, `error`, or `interrupted` when the result is one of the gateway's abort artifacts ("inserted synthetic error result", "This operation was aborted"). A call aborted in flight usually gets no result row at all, and its card stays `unknown`.
+
+The snapshot's `known` turns false when the connection drops, and the next event or history load restores it. `setError` sets the error and also appends an error item to the flow; clearing the error leaves that item where it was. Compaction sets its own phase without touching items or the run: `active` on start; at the end, `retrying` if the gateway will retry, `complete` for five seconds if it completed, and cleared at once otherwise. A new compaction cancels a pending clear.
+
+`SessionControls.send` adds the user's message at once as `pending`. If a run is active it aborts the run, waits up to five seconds for the run to end, and then sends whether or not it ended: the gateway's mid-run send kills the run without a reply, and dropping the user's words would be worse. A voice annotation is prefixed to both the shown message and the sent text. A send that succeeds marks the message `confirmed`; one that fails marks it `failed` and sets the error, and the message stays where it is. `resend` returns the same message to `pending` and sends it again. `stop` silences voice playback at once, before the abort completes, because a stop control that keeps talking for half a second feels broken.
 
 ### React bridge — `useSessionManager()`
 

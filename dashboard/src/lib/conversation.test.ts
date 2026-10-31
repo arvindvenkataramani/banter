@@ -5,10 +5,10 @@ import { initialRunState, reduceRunEvent, normalizeAgentEvent, chatToRunEvent, t
 // History-row fixtures. The toolCall/toolResult shapes below (id/name/
 // arguments on the call, top-level role:'toolResult' row with toolCallId/
 // isError/content on the result) are the real OpenClaw 2026.7.1 chat.history
-// shape, confirmed against a live gateway on 2026-08-09 — it replaced an
-// earlier set of untested field-name guesses. The tool_use/nested-tool_result
-// fixtures further down exercise a second, still-unconfirmed convention kept
-// as a tolerant fallback.
+// shape, confirmed live 2026-08-09. They replaced an earlier set of untested
+// field-name guesses.
+// The tool_use/nested-tool_result fixtures further down exercise a second,
+// still-unconfirmed convention kept as a tolerant fallback.
 
 const SESSION_KEY = 'agent:example:probe'
 
@@ -98,75 +98,27 @@ describe('seedFromHistory', () => {
     expect(items).toEqual([{ id: 'hist-tool-toolu_ABC', kind: 'tool-card', title: 'exec', status: 'unknown' }])
   })
 
-  // Real shape, confirmed 2026-08-09 against live chat.history (Decision 3):
-  // the result is a top-level sibling row with role:'toolResult', not a
-  // tool_result-typed content block. A successful call only becomes 'done'
-  // once this row is seen — never assumed from the call alone.
-  test('top-level toolResult row (real OpenClaw shape) with isError:false flips the matching card to done', () => {
-    const rows = [
-      { role: 'assistant', content: [{ type: 'toolCall', id: 'tc1', name: 'exec' }], __openclaw: { id: 'r1' } },
-      { role: 'toolResult', toolCallId: 'tc1', toolName: 'exec', content: [{ type: 'text', text: 'ok' }], isError: false, __openclaw: { id: 'r2' } },
-    ]
-    const items = seedFromHistory(rows)
-    const card = items.find((i) => i.kind === 'tool-card')
-    expect(card).toEqual({ id: 'hist-tool-tc1', kind: 'tool-card', title: 'exec', status: 'done' })
-  })
+  // The top-level role:'toolResult' row is the shape live chat.history uses;
+  // tool_result blocks inside a row are the older shape, and the one abort
+  // artifacts arrive in.
+  const call = (id: string) => ({ role: 'assistant', content: [{ type: 'toolCall', toolCallId: id, name: 'exec' }], __openclaw: { id: 'r1' } })
+  const resultRow = (id: string, isError: boolean, text: string) =>
+    ({ role: 'toolResult', toolCallId: id, toolName: 'exec', content: [{ type: 'text', text }], isError, __openclaw: { id: 'r2' } })
+  const resultBlock = (id: string, text: string) =>
+    ({ role: 'tool_result', content: [{ type: 'tool_result', toolCallId: id, isError: true, text }], __openclaw: { id: 'r2' } })
 
-  test('a toolCall with no toolResult row at all (real abort case: gateway never writes one) stays unknown forever', () => {
-    const rows = [
-      { role: 'user', content: 'run sleep 20', __openclaw: { id: 'u1' } },
-      { role: 'assistant', content: [{ type: 'toolCall', id: 'tc2', name: 'exec' }], __openclaw: { id: 'r1' } },
-    ]
-    const items = seedFromHistory(rows)
-    const card = items.find((i) => i.kind === 'tool-card')
-    expect(card && (card as { status: string }).status).toBe('unknown')
-  })
-
-  // A real toolResult row is never an abort artifact — an abort produces no
-  // row at all (see the 'stays unknown forever' test above). 'interrupted' is
-  // a live-only status; history can only ever say error or done.
-  test('top-level toolResult row with isError:true flips the matching card to error, never interrupted', () => {
-    const rows = [
-      { role: 'assistant', content: [{ type: 'toolCall', id: 'tc3', name: 'exec' }], __openclaw: { id: 'r1' } },
-      { role: 'toolResult', toolCallId: 'tc3', toolName: 'exec', content: [{ type: 'text', text: 'permission denied' }], isError: true, __openclaw: { id: 'r2' } },
-    ]
-    const items = seedFromHistory(rows)
-    const card = items.find((i) => i.kind === 'tool-card')
-    expect(card && (card as { status: string }).status).toBe('error')
-  })
-
-  test('abort artifact style 1 (synthetic repair result) flips the matching card to interrupted, not error', () => {
-    const rows = [
-      { role: 'assistant', content: [{ type: 'toolCall', toolCallId: 't1', name: 'exec' }], __openclaw: { id: 'r1' } },
-      {
-        role: 'tool_result',
-        content: [{ type: 'tool_result', toolCallId: 't1', isError: true, text: 'missing tool result in session history; inserted synthetic error result for transcript repair' }],
-        __openclaw: { id: 'r2' },
-      },
-    ]
-    const items = seedFromHistory(rows)
-    const card = items.find((i) => i.kind === 'tool-card')
-    expect(card).toEqual({ id: 'hist-tool-t1', kind: 'tool-card', title: 'exec', status: 'interrupted' })
-  })
-
-  test('abort artifact style 2 (explicit "This operation was aborted") also flips to interrupted', () => {
-    const rows = [
-      { role: 'assistant', content: [{ type: 'tool_use', id: 't2', name: 'process_poll' }], __openclaw: { id: 'r1' } },
-      { role: 'tool_result', content: [{ type: 'tool_result', tool_use_id: 't2', is_error: true, text: 'This operation was aborted' }], __openclaw: { id: 'r2' } },
-    ]
-    const items = seedFromHistory(rows)
-    const card = items.find((i) => i.kind === 'tool-card')
-    expect(card && (card as { status: string }).status).toBe('interrupted')
-  })
-
-  test('a genuine (non-abort) tool error flips the card to error, not interrupted — never presenting abort as failure implies the reverse too', () => {
-    const rows = [
-      { role: 'assistant', content: [{ type: 'toolCall', toolCallId: 't3', name: 'exec' }], __openclaw: { id: 'r1' } },
-      { role: 'tool_result', content: [{ type: 'tool_result', toolCallId: 't3', isError: true, text: 'permission denied' }], __openclaw: { id: 'r2' } },
-    ]
-    const items = seedFromHistory(rows)
-    const card = items.find((i) => i.kind === 'tool-card')
-    expect(card && (card as { status: string }).status).toBe('error')
+  test.each([
+    ['a successful result row', [call('t'), resultRow('t', false, 'ok')], 'done'],
+    ['a failed result row', [call('t'), resultRow('t', true, 'permission denied')], 'error'],
+    ['a failed result block', [call('t'), resultBlock('t', 'permission denied')], 'error'],
+    ['the synthetic repair artifact', [call('t'), resultBlock('t', 'missing tool result in session history; inserted synthetic error result for transcript repair')], 'interrupted'],
+    ['the "operation was aborted" artifact, in Anthropic\'s field names', [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'exec' }], __openclaw: { id: 'r1' } },
+      { role: 'tool_result', content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, text: 'This operation was aborted' }], __openclaw: { id: 'r2' } },
+    ], 'interrupted'],
+    ['no result at all, as for a call aborted in flight', [call('t')], 'unknown'],
+  ])('a history tool card after %s is %s', (_, rows, status) => {
+    expect(seedFromHistory(rows).find((i) => i.kind === 'tool-card')).toEqual({ id: 'hist-tool-t', kind: 'tool-card', title: 'exec', status })
   })
 
   test('an orphaned result block with no matching call is tolerated, changes nothing', () => {

@@ -10,576 +10,194 @@ import {
 } from './run-state'
 import type { ChatEventPayload } from './gateway-types'
 
-// Fixtures below are trimmed to the fields normalizeAgentEvent actually reads
-// (runId/sessionKey/stream/data), lifted from real probe captures rather than
-// invented. Tool-phase fixtures: control/probe/captures/2026-08-07T06-56-50.jsonl.
-// Lifecycle 'start' fixture: control/probe/captures/2026-08-09T04-56-42.jsonl
-// (its only entry). Other lifecycle phases and the lifecycle 'error' fixture
-// come from the same 06-56-50 run and from 2026-08-07T06-30-20.jsonl respectively,
-// since 04-56-42 carries no other phases.
+// Promises: docs/components/chat.md, "Run signalling" and "Run state".
+//
+// Fixtures are trimmed to the fields normalizeAgentEvent reads, lifted from
+// probe captures under control/probe/captures/: tool phases and lifecycle
+// finishing/end from 2026-08-07T06-56-50.jsonl, lifecycle start from
+// 2026-08-09T04-56-42.jsonl, lifecycle error from 2026-08-07T06-30-20.jsonl,
+// run_status and chat status from 2026-09-01T01-22-46.jsonl. No capture holds
+// a compaction event; that fixture follows CompactionEventData in
+// gateway-connection.ts.
 
 const RUN_A = 'probe-1786085822762-lpdiyemq03'
 const TOOL_CALL_A = 'toolu_01YRVMtXVqKXLTDxdyYtJEMM'
 const SESSION_KEY = 'agent:example:probe'
 
-const toolStart = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'tool',
-  data: { phase: 'start', name: 'exec', toolCallId: TOOL_CALL_A, args: { command: 'sleep 8 && echo probe-slow-done' } },
-}
+const agentEvent = (stream: string, data: Record<string, unknown>, runId: string | null = RUN_A) =>
+  ({ ...(runId !== null && { runId }), sessionKey: SESSION_KEY, stream, data })
 
-const toolUpdate = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'tool',
-  data: { phase: 'update', name: 'exec', toolCallId: TOOL_CALL_A, partialResult: { content: [{ type: 'text', text: 'probe-slow-done\n' }] } },
-}
+const toolStart = agentEvent('tool', { phase: 'start', name: 'exec', toolCallId: TOOL_CALL_A, args: { command: 'sleep 8 && echo probe-slow-done' } })
+const toolUpdate = agentEvent('tool', { phase: 'update', name: 'exec', toolCallId: TOOL_CALL_A, partialResult: { content: [{ type: 'text', text: 'probe-slow-done\n' }] } })
+const toolResult = agentEvent('tool', { phase: 'result', name: 'exec', toolCallId: TOOL_CALL_A, isError: false, meta: 'run sleep 8 → print text', result: { content: [{ type: 'text', text: 'probe-slow-done' }] } })
+const toolResultError = agentEvent('tool', { phase: 'result', name: 'exec', toolCallId: TOOL_CALL_A, isError: true, result: { content: [{ type: 'text', text: 'boom' }] } })
+const lifecycleStart = agentEvent('lifecycle', { phase: 'start', startedAt: 1786251418072 })
+const lifecycleFinishing = agentEvent('lifecycle', { phase: 'finishing', stopReason: 'stop', aborted: false, livenessState: 'working', replayInvalid: true, endedAt: 1786085840879 })
+const lifecycleEnd = agentEvent('lifecycle', { phase: 'end', stopReason: 'stop', aborted: false, livenessState: 'working', replayInvalid: true, endedAt: 1786085841059 })
+const lifecycleError = agentEvent('lifecycle', {
+  phase: 'error',
+  endedAt: 1786084221222,
+  error: 'session file changed while embedded prompt lock was released: /home/user/.openclaw/agents/example/sessions/7b17c59b-20b0-4844-94cf-539f279d4cdc.jsonl',
+  fallbackExhaustedFailure: true,
+})
+const itemTool = agentEvent('item', { itemId: `tool:${TOOL_CALL_A}`, phase: 'start', kind: 'tool', title: 'exec run sleep 8 → print text', status: 'running', name: 'exec', toolCallId: TOOL_CALL_A, startedAt: 1786085829362 })
+const itemCommand = agentEvent('item', { itemId: `command:${TOOL_CALL_A}`, phase: 'start', kind: 'command', title: 'command run sleep 8 → print text', status: 'running', name: 'exec', toolCallId: TOOL_CALL_A, startedAt: 1786085829362 })
+const thinkingFrame = agentEvent('thinking', { text: 'The user is asking', delta: 'The user is asking' })
+const runStatus = (phase: string) => agentEvent('run_status', { phase })
+const compactionEnd = agentEvent('compaction', { phase: 'end', completed: true, willRetry: true }, null)
+const assistantStream = agentEvent('assistant', { text: "I'm going to execute a shell command", delta: "I'm going to execute a shell command" })
+const commandOutputStream = agentEvent('command_output', { itemId: `command:${TOOL_CALL_A}`, phase: 'delta', toolCallId: TOOL_CALL_A, name: 'exec', output: 'probe-slow-done', status: 'running' })
 
-const toolResult = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'tool',
-  data: { phase: 'result', name: 'exec', toolCallId: TOOL_CALL_A, isError: false, meta: 'run sleep 8 → print text', result: { content: [{ type: 'text', text: 'probe-slow-done' }] } },
-}
+const ev = (payload: unknown): RunEvent => normalizeAgentEvent(payload, 1) as RunEvent
+const chat = (state: ChatEventPayload['state'], message: string, runId = RUN_A): RunEvent =>
+  chatToRunEvent({ runId, sessionKey: SESSION_KEY, seq: 0, state, message } as ChatEventPayload, 1)
+const fold = (events: RunEvent[], from: RunState = initialRunState): RunState => events.reduce(reduceRunEvent, from)
 
-const toolResultError = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'tool',
-  data: { phase: 'result', name: 'exec', toolCallId: TOOL_CALL_A, isError: true, result: { content: [{ type: 'text', text: 'boom' }] } },
-}
-
-// control/probe/captures/2026-08-09T04-56-42.jsonl — its only entry
-const lifecycleStartFrom0456 = {
-  runId: 'probe-1786251414522-1hy5kdem90v',
-  sessionKey: SESSION_KEY,
-  stream: 'lifecycle',
-  data: { phase: 'start', startedAt: 1786251418072 },
-}
-
-const lifecycleStart = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'lifecycle',
-  data: { phase: 'start', startedAt: 1786085825493 },
-}
-
-const lifecycleFinishing = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'lifecycle',
-  data: { phase: 'finishing', stopReason: 'stop', aborted: false, livenessState: 'working', replayInvalid: true, endedAt: 1786085840879 },
-}
-
-const lifecycleEnd = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'lifecycle',
-  data: { phase: 'end', stopReason: 'stop', aborted: false, livenessState: 'working', replayInvalid: true, endedAt: 1786085841059 },
-}
-
-// control/probe/captures/2026-08-07T06-30-20.jsonl
-const lifecycleError = {
-  runId: 'probe-1786084176382-ccs74xf6gqs',
-  sessionKey: SESSION_KEY,
-  stream: 'lifecycle',
-  data: {
-    phase: 'error',
-    endedAt: 1786084221222,
-    error: 'session file changed while embedded prompt lock was released: /home/user/.openclaw/agents/example/sessions/7b17c59b-20b0-4844-94cf-539f279d4cdc.jsonl',
-    fallbackExhaustedFailure: true,
-  },
-}
-
-const itemTool = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'item',
-  data: { itemId: `tool:${TOOL_CALL_A}`, phase: 'start', kind: 'tool', title: 'exec run sleep 8 → print text', status: 'running', name: 'exec', toolCallId: TOOL_CALL_A, startedAt: 1786085829362 },
-}
-
-const itemCommand = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'item',
-  data: { itemId: `command:${TOOL_CALL_A}`, phase: 'start', kind: 'command', title: 'command run sleep 8 → print text', status: 'running', name: 'exec', toolCallId: TOOL_CALL_A, startedAt: 1786085829362 },
-}
-
-const thinkingFrame = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'thinking',
-  data: { text: 'The user is asking', delta: 'The user is asking' },
-}
-
-// No compaction event exists in either named capture (or any capture on disk —
-// verified by search across the whole captures/ dir). Synthesized from the
-// existing production consumer's type, not invented: dashboard/src/lib/
-// gateway-connection.ts CompactionEventData ({ phase, completed?, willRetry? }),
-// already handled by Session.applyCompactionEvent.
-const compactionStart = { sessionKey: SESSION_KEY, stream: 'compaction', data: { phase: 'start' } }
-const compactionEndRetrying = { sessionKey: SESSION_KEY, stream: 'compaction', data: { phase: 'end', completed: true, willRetry: true } }
-const compactionEndComplete = { sessionKey: SESSION_KEY, stream: 'compaction', data: { phase: 'end', completed: true } }
-const compactionEndFailed = { sessionKey: SESSION_KEY, stream: 'compaction', data: { phase: 'end', completed: false } }
-
-// Real but unmapped streams observed in the same captures — evidence that the
-// normalizer must tolerate more stream kinds than the plan enumerates.
-const assistantStream = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'assistant',
-  data: { text: "I'm going to execute a shell command", delta: "I'm going to execute a shell command" },
-}
-
-const commandOutputStream = {
-  runId: RUN_A,
-  sessionKey: SESSION_KEY,
-  stream: 'command_output',
-  data: { itemId: `command:${TOOL_CALL_A}`, phase: 'delta', toolCallId: TOOL_CALL_A, name: 'exec', output: 'probe-slow-done', status: 'running' },
-}
-
-describe('normalizeAgentEvent', () => {
-  test('tool start', () => {
-    const e = normalizeAgentEvent(toolStart, 100)
-    expect(e).toEqual({ kind: 'tool', runId: RUN_A, phase: 'start', toolCallId: TOOL_CALL_A, name: 'exec', isError: undefined, at: 100 })
+describe('normalizing gateway events', () => {
+  test.each([
+    ['a tool start', toolStart, { kind: 'tool', runId: RUN_A, phase: 'start', toolCallId: TOOL_CALL_A, name: 'exec', isError: undefined }],
+    ['a tool update', toolUpdate, { kind: 'tool', phase: 'update', toolCallId: TOOL_CALL_A }],
+    ['a tool result', toolResult, { kind: 'tool', phase: 'result', isError: false }],
+    ['a failed tool result', toolResultError, { kind: 'tool', phase: 'result', isError: true }],
+    ['a lifecycle start', lifecycleStart, { kind: 'lifecycle', runId: RUN_A, phase: 'start', aborted: undefined, stopReason: undefined }],
+    ['a lifecycle finishing', lifecycleFinishing, { kind: 'lifecycle', phase: 'finishing', aborted: false, stopReason: 'stop' }],
+    ['a lifecycle end', lifecycleEnd, { kind: 'lifecycle', phase: 'end' }],
+    ['a lifecycle error', lifecycleError, { kind: 'lifecycle', phase: 'error' }],
+    ['a tool item', itemTool, { kind: 'item', runId: RUN_A, toolCallId: TOOL_CALL_A, title: 'exec run sleep 8 → print text' }],
+    ['a thinking frame, holding the reasoning so far', thinkingFrame, { kind: 'thinking', runId: RUN_A, text: 'The user is asking' }],
+    ['a run_status phase', runStatus('preparing_workspace'), { kind: 'run-status', runId: RUN_A, phase: 'preparing_workspace' }],
+    ['a compaction end', compactionEnd, { kind: 'compaction', phase: 'end', completed: true, willRetry: true }],
+  ])('reads %s', (_, payload, expected) => {
+    expect(normalizeAgentEvent(payload, 1)).toMatchObject({ ...expected, at: 1 })
   })
 
-  test('tool update', () => {
-    const e = normalizeAgentEvent(toolUpdate, 101)
-    expect(e).toEqual({ kind: 'tool', runId: RUN_A, phase: 'update', toolCallId: TOOL_CALL_A, name: 'exec', isError: undefined, at: 101 })
+  test.each([
+    ['an unrecognised stream', assistantStream, RUN_A, 'assistant'],
+    ['another unrecognised stream', commandOutputStream, RUN_A, 'command_output'],
+    ['an item that is not a tool', itemCommand, RUN_A, 'item'],
+    ['a tool event missing its id and name', agentEvent('tool', { phase: 'start' }), RUN_A, 'tool'],
+    ['an unrecognised stream with only a session key', agentEvent('something-new', {}, null), null, 'something-new'],
+  ])('keeps %s as unknown', (_, payload, runId, stream) => {
+    expect(normalizeAgentEvent(payload, 1)).toEqual({ kind: 'unknown', runId, stream, raw: payload, at: 1 })
   })
 
-  test('tool result (success)', () => {
-    const e = normalizeAgentEvent(toolResult, 102)
-    expect(e).toEqual({ kind: 'tool', runId: RUN_A, phase: 'result', toolCallId: TOOL_CALL_A, name: 'exec', isError: false, at: 102 })
+  test.each([
+    ['a string', 'not an object'],
+    ['null', null],
+    ['undefined', undefined],
+    ['a number', 42],
+    ['an object with neither runId nor sessionKey', { stream: 'tool', data: {} }],
+  ])('drops %s', (_, payload) => {
+    expect(normalizeAgentEvent(payload, 1)).toBeNull()
   })
 
-  test('tool result (error)', () => {
-    const e = normalizeAgentEvent(toolResultError, 103)
-    expect(e).toEqual({ kind: 'tool', runId: RUN_A, phase: 'result', toolCallId: TOOL_CALL_A, name: 'exec', isError: true, at: 103 })
+  test('reads the session.tool mirror in the agent stream\'s shape, and drops what it cannot read', () => {
+    expect(normalizeSessionToolEvent(toolStart, 1)).toEqual(normalizeAgentEvent(toolStart, 1))
+    expect(normalizeSessionToolEvent(null, 1)).toBeNull()
+    expect(normalizeSessionToolEvent({ totally: 'different' }, 1)).toBeNull()
   })
 
-  test('lifecycle start — literal fixture from 2026-08-09T04-56-42.jsonl', () => {
-    const e = normalizeAgentEvent(lifecycleStartFrom0456, 200)
-    expect(e).toEqual({ kind: 'lifecycle', runId: 'probe-1786251414522-1hy5kdem90v', phase: 'start', aborted: undefined, stopReason: undefined, at: 200 })
-  })
-
-  test('lifecycle finishing', () => {
-    const e = normalizeAgentEvent(lifecycleFinishing, 201)
-    expect(e).toEqual({ kind: 'lifecycle', runId: RUN_A, phase: 'finishing', aborted: false, stopReason: 'stop', at: 201 })
-  })
-
-  test('lifecycle end', () => {
-    const e = normalizeAgentEvent(lifecycleEnd, 202)
-    expect(e).toEqual({ kind: 'lifecycle', runId: RUN_A, phase: 'end', aborted: false, stopReason: 'stop', at: 202 })
-  })
-
-  test('lifecycle error', () => {
-    const e = normalizeAgentEvent(lifecycleError, 203)
-    expect(e).toEqual({ kind: 'lifecycle', runId: 'probe-1786084176382-ccs74xf6gqs', phase: 'error', aborted: undefined, stopReason: undefined, at: 203 })
-  })
-
-  test('item kind:tool backfills title', () => {
-    const e = normalizeAgentEvent(itemTool, 300)
-    expect(e).toEqual({ kind: 'item', runId: RUN_A, toolCallId: TOOL_CALL_A, title: 'exec run sleep 8 → print text', at: 300 })
-  })
-
-  test('item kind:command is filtered to unknown, never an item RunEvent', () => {
-    const e = normalizeAgentEvent(itemCommand, 301)
-    expect(e?.kind).toBe('unknown')
-    if (e?.kind === 'unknown') {
-      expect(e.runId).toBe(RUN_A)
-      expect(e.stream).toBe('item')
-    }
-  })
-
-  test('thinking', () => {
-    const e = normalizeAgentEvent(thinkingFrame, 400)
-    expect(e).toEqual({ kind: 'thinking', runId: RUN_A, text: 'The user is asking', at: 400 })
-  })
-
-  test('compaction start', () => {
-    const e = normalizeAgentEvent(compactionStart, 500)
-    expect(e).toEqual({ kind: 'compaction', phase: 'start', completed: undefined, willRetry: undefined, at: 500 })
-  })
-
-  test('compaction end, completed+willRetry -> retrying', () => {
-    const e = normalizeAgentEvent(compactionEndRetrying, 501)
-    expect(e).toEqual({ kind: 'compaction', phase: 'end', completed: true, willRetry: true, at: 501 })
-  })
-
-  test('compaction end, completed only -> complete', () => {
-    const e = normalizeAgentEvent(compactionEndComplete, 502)
-    expect(e).toEqual({ kind: 'compaction', phase: 'end', completed: true, willRetry: undefined, at: 502 })
-  })
-
-  test('compaction end, neither -> skipped/failed', () => {
-    const e = normalizeAgentEvent(compactionEndFailed, 503)
-    expect(e).toEqual({ kind: 'compaction', phase: 'end', completed: false, willRetry: undefined, at: 503 })
-  })
-
-  test('real but unmapped stream "assistant" -> unknown, never throws', () => {
-    const e = normalizeAgentEvent(assistantStream, 600)
-    expect(e).toEqual({ kind: 'unknown', runId: RUN_A, stream: 'assistant', raw: assistantStream, at: 600 })
-  })
-
-  test('real but unmapped stream "command_output" -> unknown, never throws', () => {
-    const e = normalizeAgentEvent(commandOutputStream, 601)
-    expect(e).toEqual({ kind: 'unknown', runId: RUN_A, stream: 'command_output', raw: commandOutputStream, at: 601 })
-  })
-
-  test('garbage: non-object payload -> null (no identity at all)', () => {
-    expect(normalizeAgentEvent('not an object', 700)).toBeNull()
-    expect(normalizeAgentEvent(null, 701)).toBeNull()
-    expect(normalizeAgentEvent(undefined, 702)).toBeNull()
-    expect(normalizeAgentEvent(42, 703)).toBeNull()
-  })
-
-  test('garbage: object with no runId and no sessionKey -> null', () => {
-    expect(normalizeAgentEvent({ stream: 'tool', data: {} }, 704)).toBeNull()
-  })
-
-  test('garbage: recognized stream with malformed data degrades to unknown, never throws', () => {
-    const e = normalizeAgentEvent({ runId: RUN_A, sessionKey: SESSION_KEY, stream: 'tool', data: { phase: 'start' /* missing toolCallId/name */ } }, 705)
-    expect(e?.kind).toBe('unknown')
-  })
-
-  test('garbage: has sessionKey but no runId and unrecognized stream -> unknown with runId null', () => {
-    const e = normalizeAgentEvent({ sessionKey: SESSION_KEY, stream: 'something-new' }, 706)
-    expect(e).toEqual({ kind: 'unknown', runId: null, stream: 'something-new', raw: { sessionKey: SESSION_KEY, stream: 'something-new' }, at: 706 })
+  test('carries a chat event\'s state, text and error message', () => {
+    const payload = { runId: RUN_A, sessionKey: SESSION_KEY, seq: 32, state: 'error', message: 'Error: boom', errorMessage: 'boom' } as ChatEventPayload
+    expect(chatToRunEvent(payload, 1)).toEqual({ kind: 'chat', runId: RUN_A, state: 'error', text: 'Error: boom', errorMessage: 'boom', at: 1 })
   })
 })
 
-describe('normalizeSessionToolEvent (tolerant — no real session.tool capture exists)', () => {
-  test('accepts the agent-stream tool shape as a best-effort guess', () => {
-    const e = normalizeSessionToolEvent(toolStart, 800)
-    expect(e).toEqual({ kind: 'tool', runId: RUN_A, phase: 'start', toolCallId: TOOL_CALL_A, name: 'exec', isError: undefined, at: 800 })
+describe('opening a run', () => {
+  test.each([
+    ['lifecycle start', ev(lifecycleStart)],
+    ['a chat delta', chat('delta', 'hello')],
+    ['a chat status', chat('status', '')],
+    ['a run_status phase', ev(runStatus('preparing_workspace'))],
+    ['reasoning', ev(thinkingFrame)],
+  ])('%s opens a run', (_, event) => {
+    expect(fold([event])).toMatchObject({ runActive: true, runId: RUN_A })
   })
 
-  test('never throws on a wrong-guess shape; degrades to unknown/null', () => {
-    expect(() => normalizeSessionToolEvent({ totally: 'different' }, 801)).not.toThrow()
-    expect(() => normalizeSessionToolEvent(null, 802)).not.toThrow()
-    expect(() => normalizeSessionToolEvent('garbage', 803)).not.toThrow()
-    expect(normalizeSessionToolEvent(null, 804)).toBeNull()
-  })
-})
-
-describe('chatToRunEvent', () => {
-  test('delta — message is cumulative full text, not an increment (verified: same runId, later delta is a strict prefix-extension)', () => {
-    const first: ChatEventPayload = { runId: RUN_A, sessionKey: SESSION_KEY, seq: 7, state: 'delta', message: "I'm going to execute a shell command that pauses for 8 seconds and then" }
-    const second: ChatEventPayload = { runId: RUN_A, sessionKey: SESSION_KEY, seq: 8, state: 'delta', message: "I'm going to execute a shell command that pauses for 8 seconds and then prints \"probe-slow-done\" to verify that the system handles delayed command execution correctly. This tests" }
-    expect(chatToRunEvent(first, 900)).toEqual({ kind: 'chat', runId: RUN_A, state: 'delta', text: first.message, errorMessage: undefined, at: 900 })
-    const e2 = chatToRunEvent(second, 901)
-    expect(e2.kind === 'chat' && e2.text.startsWith(first.message)).toBe(true)
+  test.each([
+    ['a tool event', ev(toolStart)],
+    ['lifecycle end', ev(lifecycleEnd)],
+    ['lifecycle error', ev(lifecycleError)],
+    ['empty reasoning', ev(agentEvent('thinking', { text: '' }))],
+  ])('%s for a run not open changes nothing', (_, event) => {
+    expect(fold([event])).toEqual(initialRunState)
   })
 
-  test('final', () => {
-    const p: ChatEventPayload = { runId: RUN_A, sessionKey: SESSION_KEY, seq: 2, state: 'final', message: 'Model set to anthropic/claude-haiku-4-5 for this session.' }
-    expect(chatToRunEvent(p, 902)).toEqual({ kind: 'chat', runId: RUN_A, state: 'final', text: p.message, errorMessage: undefined, at: 902 })
-  })
-
-  test('error — literal from 2026-08-07T06-30-20.jsonl', () => {
-    const p: ChatEventPayload = {
-      runId: 'probe-1786084176382-ccs74xf6gqs',
-      sessionKey: SESSION_KEY,
-      seq: 32,
-      state: 'error',
-      message: 'Error: session file changed while embedded prompt lock was released: /home/user/.openclaw/agents/example/sessions/7b17c59b-20b0-4844-94cf-539f279d4cdc.jsonl',
-      errorMessage: 'session file changed while embedded prompt lock was released: /home/user/.openclaw/agents/example/sessions/7b17c59b-20b0-4844-94cf-539f279d4cdc.jsonl',
-    }
-    expect(chatToRunEvent(p, 903)).toEqual({ kind: 'chat', runId: p.runId, state: 'error', text: p.message, errorMessage: p.errorMessage, at: 903 })
-  })
-
-  test('aborted (no real capture of this state exists; constructed per the documented ChatEventState union)', () => {
-    const p: ChatEventPayload = { runId: RUN_A, sessionKey: SESSION_KEY, seq: 99, state: 'aborted', message: 'partial text before interruption' }
-    expect(chatToRunEvent(p, 904)).toEqual({ kind: 'chat', runId: RUN_A, state: 'aborted', text: p.message, errorMessage: undefined, at: 904 })
-  })
-})
-
-describe('reducer: run start', () => {
-  test('lifecycle start with a new runId resets to a fresh active run', () => {
-    const e = normalizeAgentEvent(lifecycleStart, 1000) as RunEvent
-    const s = reduceRunEvent(initialRunState, e)
-    expect(s.runActive).toBe(true)
-    expect(s.runId).toBe(RUN_A)
-    expect(s.openTools.size).toBe(0)
-    expect(s.marks).toEqual([])
-    expect(s.text).toBe('')
-  })
-
-  test('chat delta with a new runId starts a run when lifecycle start was missed', () => {
-    const e = chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 1, state: 'delta', message: 'hello' }, 1001)
-    const s = reduceRunEvent(initialRunState, e)
-    expect(s.runActive).toBe(true)
-    expect(s.runId).toBe(RUN_A)
-    expect(s.text).toBe('hello')
-    expect(s.activity).toBe('speaking')
-  })
-
-  test('a duplicate lifecycle start for the SAME runId does not wipe accumulated marks', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    expect(s.marks.length).toBe(1)
-    s = reduceRunEvent(s, normalizeAgentEvent(lifecycleStart, 3) as RunEvent)
-    expect(s.marks.length).toBe(1) // not reset
+  test('an event for the open run never restarts it', () => {
+    const s = fold([ev(lifecycleStart), ev(toolStart), ev(lifecycleStart)])
+    expect(s.marks).toHaveLength(1)
     expect(s.openTools.size).toBe(1)
   })
 
-  test('a tool event for a runId we have never seen (no start trigger) is ignored, not adopted', () => {
-    const e = normalizeAgentEvent(toolStart, 1) as RunEvent
-    const s = reduceRunEvent(initialRunState, e)
-    expect(s).toEqual(initialRunState)
+  test('a different run replaces the whole state', () => {
+    const before = fold([ev(lifecycleStart), chat('delta', 'old'), ev(toolStart)])
+    expect(fold([ev({ ...lifecycleStart, runId: 'run-b' })], before)).toMatchObject({ runId: 'run-b', runActive: true, text: '', marks: [] })
   })
 })
 
-describe('reducer: run end', () => {
-  function startedRun(): RunState {
-    return reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-  }
-
-  test('lifecycle end deactivates the run and interrupts still-open tools', () => {
-    let s = startedRun()
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    expect(s.openTools.size).toBe(1)
-    s = reduceRunEvent(s, normalizeAgentEvent(lifecycleEnd, 3) as RunEvent)
-    expect(s.runActive).toBe(false)
-    expect(s.activity).toBe('idle')
+describe('ending a run', () => {
+  test.each([
+    ['lifecycle end', ev(lifecycleEnd)],
+    ['lifecycle error', ev(lifecycleError)],
+    ['a chat final', chat('final', 'done')],
+    ['a chat aborted', chat('aborted', 'cut off')],
+    ['a chat error', chat('error', 'Error: boom')],
+  ])('%s ends the run and marks open tools interrupted', (_, ender) => {
+    const s = fold([ev(lifecycleStart), ev(toolStart), ender])
+    expect(s).toMatchObject({ runActive: false, activity: 'idle' })
     expect(s.openTools.size).toBe(0)
-    expect(s.marks).toEqual([{ toolCallId: TOOL_CALL_A, name: 'exec', textOffset: 0, status: 'interrupted' }])
+    expect(s.marks.map((m) => m.status)).toEqual(['interrupted'])
   })
 
-  test('lifecycle error deactivates the run the same way', () => {
-    // lifecycleError's runId must actually be started first — an 'error' phase
-    // is not a start trigger, so an end-event for a never-started run is
-    // correctly ignored (tolerant-of-stale-events contract), not adopted.
-    const startForSameRun = { runId: lifecycleError.runId, sessionKey: SESSION_KEY, stream: 'lifecycle', data: { phase: 'start', startedAt: 1 } }
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(startForSameRun, 1) as RunEvent)
-    s = reduceRunEvent(s, { kind: 'tool', runId: lifecycleError.runId, phase: 'start', toolCallId: 'x', name: 'exec', at: 2 })
-    s = reduceRunEvent(s, normalizeAgentEvent(lifecycleError, 3) as RunEvent)
-    expect(s.runActive).toBe(false)
-    expect(s.activity).toBe('idle')
-    expect(s.marks[0].status).toBe('interrupted')
-  })
-
-  test('a lifecycle end/error event for a run that was never started is ignored, not adopted', () => {
-    const s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleError, 1) as RunEvent)
-    expect(s).toEqual(initialRunState)
-  })
-
-  test('chat final ends the run and settles text', () => {
-    let s = reduceRunEvent(initialRunState, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 1, state: 'delta', message: 'partial' }, 1))
-    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 2, state: 'final', message: 'partial done' }, 2))
-    expect(s.runActive).toBe(false)
-    expect(s.activity).toBe('idle')
-    expect(s.text).toBe('partial done')
-  })
-
-  test('chat aborted ends the run and interrupts open tools', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 3, state: 'aborted', message: 'cut off' }, 3))
-    expect(s.runActive).toBe(false)
-    expect(s.marks[0].status).toBe('interrupted')
-  })
-
-  test('chat error ends the run', () => {
-    let s = reduceRunEvent(initialRunState, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 1, state: 'delta', message: 'x' }, 1))
-    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 2, state: 'error', message: 'Error: boom', errorMessage: 'boom' }, 2))
-    expect(s.runActive).toBe(false)
-    expect(s.activity).toBe('idle')
+  test('a terminal chat event\'s text replaces the assembled text unless it carries none; a status event neither ends the run nor clears it', () => {
+    const streaming = fold([chat('delta', 'partial'), chat('status', '')])
+    expect(streaming).toMatchObject({ runActive: true, text: 'partial' })
+    expect(fold([chat('final', 'partial done')], streaming).text).toBe('partial done')
+    expect(fold([chat('final', '')], streaming).text).toBe('partial')
   })
 })
 
-describe('reducer: dedupe', () => {
-  test('duplicate tool start (agent stream + session.tool mirror) yields identical state', () => {
-    const s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    const afterFirst = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    const afterSecond = reduceRunEvent(afterFirst, normalizeSessionToolEvent(toolStart, 3) as RunEvent)
-    expect(afterSecond).toEqual(afterFirst)
+describe('activity', () => {
+  test.each([
+    ['no run is open', [], 'idle'],
+    ['the latest event is a chat delta', [ev(lifecycleStart), chat('delta', 'hi')], 'speaking'],
+    ['the latest event is reasoning', [ev(lifecycleStart), ev(thinkingFrame)], 'thinking'],
+    ['an unrecognised stream follows reasoning', [ev(lifecycleStart), ev(thinkingFrame), ev(assistantStream)], 'active'],
+    ['the run is finishing', [ev(lifecycleStart), ev(lifecycleFinishing)], 'active'],
+    ['the run is still preparing', [chat('status', ''), ...['preparing_workspace', 'preparing_context', 'starting_model'].map((p) => ev(runStatus(p)))], 'active'],
+    ['a tool is open, even mid-speech', [ev(lifecycleStart), chat('delta', 'let me check'), ev(toolStart)], 'tool'],
+    ['the last open tool has returned', [ev(lifecycleStart), ev(toolStart), ev(toolResult)], 'active'],
+  ] as [string, RunEvent[], RunState['activity']][])('when %s', (_, events, activity) => {
+    expect(fold(events).activity).toBe(activity)
+  })
+})
+
+describe('tool calls', () => {
+  test.each([
+    [toolResult, 'done'],
+    [toolResultError, 'error'],
+  ])('mark where they started in the text, and settle on their result', (result, status) => {
+    const s = fold([ev(lifecycleStart), chat('delta', 'I will run a command now.'), ev(toolStart), ev(result)])
+    expect(s.marks).toEqual([{ toolCallId: TOOL_CALL_A, name: 'exec', textOffset: 'I will run a command now.'.length, status }])
   })
 
-  test('duplicate tool result yields identical state', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    const afterFirst = reduceRunEvent(s, normalizeAgentEvent(toolResult, 3) as RunEvent)
-    const afterSecond = reduceRunEvent(afterFirst, normalizeAgentEvent(toolResult, 4) as RunEvent)
-    expect(afterSecond).toEqual(afterFirst)
-  })
-
-  test('tool update is idempotent — repeating it changes nothing', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    const afterFirst = reduceRunEvent(s, normalizeAgentEvent(toolUpdate, 3) as RunEvent)
-    const afterSecond = reduceRunEvent(afterFirst, normalizeAgentEvent(toolUpdate, 4) as RunEvent)
-    expect(afterSecond).toEqual(afterFirst)
-  })
-
-  test('item events only backfill title, never duplicate marks', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(itemTool, 3) as RunEvent)
-    expect(s.marks.length).toBe(1)
+  test('take their title from a tool item, however often it arrives', () => {
+    const s = fold([ev(lifecycleStart), ev(toolStart), ev(itemTool), ev(itemTool)])
+    expect(s.marks).toHaveLength(1)
     expect(s.marks[0].title).toBe('exec run sleep 8 → print text')
-    s = reduceRunEvent(s, normalizeAgentEvent(itemTool, 4) as RunEvent)
-    expect(s.marks.length).toBe(1)
+  })
+
+  test.each([
+    ['a start echoed by the session.tool mirror', [ev(toolStart)], normalizeSessionToolEvent(toolStart, 1) as RunEvent],
+    ['a repeated update', [ev(toolStart), ev(toolUpdate)], ev(toolUpdate)],
+    ['a repeated result', [ev(toolStart), ev(toolResult)], ev(toolResult)],
+  ] as [string, RunEvent[], RunEvent][])('count each phase once, so %s changes nothing', (_, events, repeat) => {
+    const once = fold([ev(lifecycleStart), ...events])
+    expect(fold([repeat], once)).toEqual(once)
   })
 })
 
-describe('reducer: activity precedence', () => {
-  test('inactive run -> idle regardless of anything else', () => {
-    expect(initialRunState.activity).toBe('idle')
-  })
-
-  test('open tools take precedence over everything -> tool', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 1, state: 'delta', message: 'thinking about it' }, 2))
-    expect(s.activity).toBe('speaking')
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 3) as RunEvent)
-    expect(s.activity).toBe('tool')
-  })
-
-  test('chat delta -> speaking', () => {
-    const s = reduceRunEvent(initialRunState, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 1, state: 'delta', message: 'hi' }, 1))
-    expect(s.activity).toBe('speaking')
-  })
-
-  test('thinking -> thinking', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(thinkingFrame, 2) as RunEvent)
-    expect(s.activity).toBe('thinking')
-  })
-
-  test('active run, no recognized events (unknown stream) -> active, never thinking', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(thinkingFrame, 2) as RunEvent)
-    expect(s.activity).toBe('thinking')
-    s = reduceRunEvent(s, normalizeAgentEvent(assistantStream, 3) as RunEvent)
-    expect(s.activity).toBe('active')
-    expect(s.activity).not.toBe('thinking')
-  })
-
-  test('lifecycle finishing with no other signal -> active', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(lifecycleFinishing, 2) as RunEvent)
-    expect(s.activity).toBe('active')
-  })
-
-  test('a tool result that closes the last open tool falls back to active, not stuck on tool', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    expect(s.activity).toBe('tool')
-    s = reduceRunEvent(s, normalizeAgentEvent(toolResult, 3) as RunEvent)
-    expect(s.activity).toBe('active')
-  })
-})
-
-describe('reducer: marks', () => {
-  test('tool start records textOffset = text.length at the moment it starts', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_A, sessionKey: SESSION_KEY, seq: 1, state: 'delta', message: 'I will run a command now.' }, 2))
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 3) as RunEvent)
-    expect(s.marks[0].textOffset).toBe('I will run a command now.'.length)
-  })
-
-  test('unknown streams are tolerated and change no marks', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    const before = s.marks
-    s = reduceRunEvent(s, normalizeAgentEvent(commandOutputStream, 3) as RunEvent)
-    expect(s.marks).toEqual(before)
-  })
-
-  test('compaction events do not affect RunState at all (not run-scoped)', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    const before = s
-    const after = reduceRunEvent(s, normalizeAgentEvent(compactionStart, 3) as RunEvent)
-    expect(after).toEqual(before)
-  })
-
-  test('a completed tool call marks status done, not running', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolResult, 3) as RunEvent)
-    expect(s.marks[0].status).toBe('done')
-  })
-
-  test('an errored tool call marks status error', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolStart, 2) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent(toolResultError, 3) as RunEvent)
-    expect(s.marks[0].status).toBe('error')
-  })
-})
-
-// 2026.8.1 added two run-preparation signals that arrive before any content:
-// the `run_status` agent stream and a `status` chat state. Fixtures below are
-// lifted from control/probe/captures/2026-09-01T01-22-46.jsonl (scenario
-// text-slow-tool-text), in the order that capture recorded them: both status
-// signals precede lifecycle:start, and the model then went silent for 113s
-// before its first token.
-describe('run preparation signals (2026.8.1)', () => {
-  const RUN_B = 'probe-1788225778555-4bwd217mgqm'
-
-  const runStatus = (phase: string) => ({
-    runId: RUN_B,
-    sessionKey: SESSION_KEY,
-    stream: 'run_status',
-    data: { phase },
-  })
-
-  const chatStatus: ChatEventPayload = { runId: RUN_B, state: 'status', message: '' } as ChatEventPayload
-
-  test('run_status normalizes rather than falling through to unknown', () => {
-    const e = normalizeAgentEvent(runStatus('preparing_workspace'), 1)
-    expect(e).toEqual({ kind: 'run-status', runId: RUN_B, phase: 'preparing_workspace', at: 1 })
-  })
-
-  // The regression: `status` was grouped with the terminal chat states, so a
-  // run ended on its own first event and the indicator went dark for the rest
-  // of it.
-  test('a chat status event does not end the run', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, chatToRunEvent(chatStatus, 2))
-    expect(s.runActive).toBe(true)
-    expect(s.activity).not.toBe('idle')
-  })
-
-  test('a chat status event carries no text and must not clear assembled text', () => {
-    let s = reduceRunEvent(initialRunState, normalizeAgentEvent(lifecycleStart, 1) as RunEvent)
-    s = reduceRunEvent(s, chatToRunEvent({ runId: RUN_B, state: 'delta', message: 'partial' } as ChatEventPayload, 2))
-    s = reduceRunEvent(s, chatToRunEvent(chatStatus, 3))
-    expect(s.text).toBe('partial')
-  })
-
-  // Both signals arrive before lifecycle:start, so neither can rely on a run
-  // already being open.
-  test('either preparation signal opens a run on its own', () => {
-    const fromChat = reduceRunEvent(initialRunState, chatToRunEvent(chatStatus, 1))
-    expect(fromChat.runActive).toBe(true)
-
-    const fromStream = reduceRunEvent(initialRunState, normalizeAgentEvent(runStatus('preparing_workspace'), 1) as RunEvent)
-    expect(fromStream.runActive).toBe(true)
-  })
-
-  // The captured phases all fired inside 1.1s, then nothing for 113s while the
-  // model loaded. Activity has to survive that silence — no event arrives to
-  // re-assert it.
-  test('activity persists through the silent gap after the last phase', () => {
-    let s = reduceRunEvent(initialRunState, chatToRunEvent(chatStatus, 1))
-    for (const [i, phase] of ['preparing_workspace', 'preparing_context', 'starting_model'].entries()) {
-      s = reduceRunEvent(s, normalizeAgentEvent(runStatus(phase), 2 + i) as RunEvent)
-    }
-    expect(s.runActive).toBe(true)
-    expect(s.activity).not.toBe('idle')
-  })
-
-  test('the run still ends on lifecycle end after preparation signals', () => {
-    let s = reduceRunEvent(initialRunState, chatToRunEvent(chatStatus, 1))
-    s = reduceRunEvent(s, normalizeAgentEvent(runStatus('starting_model'), 2) as RunEvent)
-    s = reduceRunEvent(s, normalizeAgentEvent({ ...lifecycleEnd, runId: RUN_B }, 3) as RunEvent)
-    expect(s.runActive).toBe(false)
-    expect(s.activity).toBe('idle')
-  })
+test('compaction leaves run state alone', () => {
+  const s = fold([ev(lifecycleStart), ev(toolStart)])
+  expect(fold([ev(compactionEnd)], s)).toEqual(s)
 })

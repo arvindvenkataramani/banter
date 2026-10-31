@@ -4,10 +4,10 @@ import {
 } from './mute-store'
 import { useTurnManagerStore, resetTurnManager } from '../store/turn-manager-store'
 
-// The mute coupling: two states, LINKED and UNLINKED, over two independent
-// booleans. Each transition is asserted on the store and on the controls
-// report the floor last received, which is what the loop and the player
-// reconcile against.
+// The mute coupling in docs/architecture/voice-pipeline.md ("Mute") and
+// `store/mute-store.ts`. Each
+// transition is asserted on the store and on the controls report the floor
+// last received, which is what the loop and the player reconcile against.
 
 function mutes() {
   return useMuteStore.getState()
@@ -17,11 +17,16 @@ function reported() {
   return useTurnManagerStore.getState().snapshot.controls
 }
 
-/** UNLINKED with the mic muted and speech live. */
-function unlinkedMicMutedSpeechLive(): void {
-  toggleSpeechMuted()
-  toggleMuteAll()
-  toggleSpeechMuted()
+const press = { mic: toggleMuteAll, speech: toggleSpeechMuted, chain: relinkMutes }
+type Press = keyof typeof press
+
+// How to reach each starting state from live and linked.
+const FROM: Record<string, Press[]> = {
+  'LINKED, both live': [],
+  'LINKED, both muted': ['mic'],
+  'UNLINKED, speech muted': ['speech'],
+  'UNLINKED, mic muted': ['speech', 'mic', 'speech'],
+  'UNLINKED, both muted': ['speech', 'mic'],
 }
 
 beforeEach(() => {
@@ -35,74 +40,27 @@ describe('mute coupling', () => {
     expect(reported()).toEqual({ micMuted: false, speechMuted: false, autoMuted: false })
   })
 
-  it('LINKED + mic: both flip together, stays LINKED', () => {
-    toggleMuteAll()
-    expect(mutes()).toEqual({ micMuted: true, speechMuted: true, muteLinked: true })
-    expect(reported()).toMatchObject({ micMuted: true, speechMuted: true })
+  it.each([
+    ['LINKED, both live', 'mic', { micMuted: true, speechMuted: true, muteLinked: true }],
+    ['LINKED, both muted', 'mic', { micMuted: false, speechMuted: false, muteLinked: true }],
+    ['LINKED, both live', 'speech', { micMuted: false, speechMuted: true, muteLinked: false }],
+    ['UNLINKED, speech muted', 'mic', { micMuted: true, speechMuted: true, muteLinked: false }],
+    ['UNLINKED, both muted', 'speech', { micMuted: true, speechMuted: false, muteLinked: false }],
+    ['UNLINKED, mic muted', 'chain', { micMuted: true, speechMuted: true, muteLinked: true }],
+    ['UNLINKED, speech muted', 'chain', { micMuted: false, speechMuted: false, muteLinked: true }],
+    ['UNLINKED, mic muted', 'mic', { micMuted: false, speechMuted: false, muteLinked: true }],
+    ['UNLINKED, speech muted', 'speech', { micMuted: false, speechMuted: false, muteLinked: true }],
+  ] as [string, Press, ReturnType<typeof mutes>][])('%s, pressing %s, gives %j', (from, pressed, expected) => {
+    for (const p of FROM[from]) press[p]()
 
-    toggleMuteAll()
-    expect(mutes()).toEqual({ micMuted: false, speechMuted: false, muteLinked: true })
-    expect(reported()).toMatchObject({ micMuted: false, speechMuted: false })
-  })
+    press[pressed]()
 
-  it('LINKED + speech: speech flips alone, becomes UNLINKED', () => {
-    toggleSpeechMuted()
-
-    expect(mutes()).toEqual({ micMuted: false, speechMuted: true, muteLinked: false })
-    expect(reported()).toMatchObject({ micMuted: false, speechMuted: true })
-  })
-
-  it('UNLINKED + mic: mic flips alone, speech untouched, stays UNLINKED', () => {
-    toggleSpeechMuted()
-    toggleMuteAll()
-
-    expect(mutes()).toEqual({ micMuted: true, speechMuted: true, muteLinked: false })
-  })
-
-  it('UNLINKED + speech: speech flips alone, stays UNLINKED while the mic is muted', () => {
-    toggleSpeechMuted()
-    toggleMuteAll()
-    toggleSpeechMuted()
-
-    expect(mutes()).toEqual({ micMuted: true, speechMuted: false, muteLinked: false })
-    expect(reported()).toMatchObject({ micMuted: true, speechMuted: false })
-  })
-
-  it('UNLINKED + chain: speech adopts the mic value, becomes LINKED', () => {
-    unlinkedMicMutedSpeechLive()
-
-    relinkMutes()
-
-    expect(mutes()).toEqual({ micMuted: true, speechMuted: true, muteLinked: true })
-    expect(reported()).toMatchObject({ micMuted: true, speechMuted: true })
-  })
-
-  it('chain from mic live, speech muted: speech unmutes, becomes LINKED', () => {
-    toggleSpeechMuted()
-
-    relinkMutes()
-
-    expect(mutes()).toEqual({ micMuted: false, speechMuted: false, muteLinked: true })
-    expect(reported()).toMatchObject({ micMuted: false, speechMuted: false })
-  })
-
-  it('UNLINKED + mic landing on both live returns to LINKED', () => {
-    unlinkedMicMutedSpeechLive()
-
-    toggleMuteAll()
-
-    expect(mutes()).toEqual({ micMuted: false, speechMuted: false, muteLinked: true })
-  })
-
-  it('UNLINKED + speech landing on both live returns to LINKED', () => {
-    toggleSpeechMuted()
-    toggleSpeechMuted()
-
-    expect(mutes()).toEqual({ micMuted: false, speechMuted: false, muteLinked: true })
+    expect(mutes()).toEqual(expected)
+    expect(reported()).toMatchObject({ micMuted: expected.micMuted, speechMuted: expected.speechMuted })
   })
 
   it('resetMutes returns to live and linked from any state', () => {
-    unlinkedMicMutedSpeechLive()
+    for (const p of FROM['UNLINKED, mic muted']) press[p]()
 
     resetMutes()
 

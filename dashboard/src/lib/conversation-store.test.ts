@@ -247,33 +247,17 @@ describe('Conversation: compaction', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  test('start sets the phase to active', () => {
+  test.each([
+    ['a start', [compactionStart], 'active', 'active'],
+    ['an end the gateway will retry', [compactionStart, compactionEndRetrying], 'retrying', 'retrying'],
+    ['a completed end, for five seconds', [compactionStart, compactionEndComplete], 'complete', null],
+    ['an end neither completed nor retried', [compactionStart, compactionEndFailed], null, null],
+  ] as [string, RunEvent[], string | null, string | null][])('sets the phase after %s', (_, events, phase, after5s) => {
     const c = new Conversation()
-    c.ingest(compactionStart)
-    expect(c.getSnapshot().compactionPhase).toBe('active')
-  })
-
-  test('end + completed + willRetry sets retrying', () => {
-    const c = new Conversation()
-    c.ingest(compactionStart)
-    c.ingest(compactionEndRetrying)
-    expect(c.getSnapshot().compactionPhase).toBe('retrying')
-  })
-
-  test('end + completed only sets complete, then auto-clears to null after 5s', () => {
-    const c = new Conversation()
-    c.ingest(compactionStart)
-    c.ingest(compactionEndComplete)
-    expect(c.getSnapshot().compactionPhase).toBe('complete')
+    for (const e of events) c.ingest(e)
+    expect(c.getSnapshot().compactionPhase).toBe(phase)
     vi.advanceTimersByTime(5000)
-    expect(c.getSnapshot().compactionPhase).toBeNull()
-  })
-
-  test('end + neither completed nor willRetry (skipped/failed) clears immediately', () => {
-    const c = new Conversation()
-    c.ingest(compactionStart)
-    c.ingest(compactionEndFailed)
-    expect(c.getSnapshot().compactionPhase).toBeNull()
+    expect(c.getSnapshot().compactionPhase).toBe(after5s)
   })
 
   test('a fresh compaction cancels a pending auto-clear timer from a prior one', () => {
