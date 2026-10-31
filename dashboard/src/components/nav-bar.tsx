@@ -19,6 +19,9 @@ import { Button } from '@/components/ui/button'
 import { getTheme, setTheme, type Theme } from '@/lib/theme'
 import { useState } from 'react'
 import { SettingsDialog } from '@/features/settings/settings-dialog'
+import { postConfigReload } from '@/lib/api'
+
+const RELOAD_PART_LABELS = { config: 'Config', registry: 'Registry' } as const
 
 type NavOption = {
   path: string
@@ -61,19 +64,32 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
 
   async function reloadConfig() {
     setReloading(true)
-    try {
-      const res = await fetch('/api/config/reload', { method: 'POST' })
-      if (!res.ok) {
-        const detail = await res.text().catch(() => '')
-        throw new Error(`${res.status} ${detail}`)
-      }
-      toast.success('Config reloaded — refreshing…')
-      // Re-fetch every cached endpoint by reloading the page.
-      setTimeout(() => window.location.reload(), 400)
-    } catch (err) {
+    const result = await postConfigReload()
+    if (!result.ok) {
       setReloading(false)
-      toast.error(`Reload failed: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Reload failed: ${result.error}`)
+      return
     }
+
+    const { config, registry, shards, warnings } = result.response
+    const failedParts: string[] = []
+    if (!config.ok) failedParts.push(`${RELOAD_PART_LABELS.config}: ${config.error}`)
+    if (!registry.ok) failedParts.push(`${RELOAD_PART_LABELS.registry}: ${registry.error}`)
+    for (const [hostId, part] of Object.entries(shards)) {
+      if (!part.ok) failedParts.push(`${hostId}: ${part.error}`)
+    }
+
+    // Only refresh on a clean reload — otherwise the page would refresh out
+    // from under the toasts.
+    if (failedParts.length === 0 && warnings.length === 0) {
+      toast.success('Config reloaded — refreshing…')
+      setTimeout(() => window.location.reload(), 400)
+      return
+    }
+
+    for (const failure of failedParts) toast.error(failure)
+    for (const warning of warnings) toast.warning(warning.message)
+    setReloading(false)
   }
 
   const allOptions: NavOption[] = NAV_OPTIONS

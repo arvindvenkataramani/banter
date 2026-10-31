@@ -6,11 +6,12 @@ import type {
   Capability,
   Event,
   HealthState,
+  ControlPlaneReloadResponse,
 } from '@platform/shared'
 import type { VoiceConfig } from '@/lib/voice/voice-config'
 import type { ModelPref, SettingsScope } from '@/lib/voice/model-settings'
 
-export type { ServiceWithHealth, Host, Capability, Event, HealthState }
+export type { ServiceWithHealth, Host, Capability, Event, HealthState, ControlPlaneReloadResponse }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
@@ -156,4 +157,28 @@ export function updateVoiceSelection(patch: VoiceSelectionPatch): Promise<VoiceU
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   })
+}
+
+/** This `ok: false` means the request itself failed — distinct from a
+ *  reached server reporting its own failed parts inside a normal
+ *  `ControlPlaneReloadResponse`. */
+export type ConfigReloadResult =
+  | { ok: true; response: ControlPlaneReloadResponse }
+  | { ok: false; error: string }
+
+/** Reads the body regardless of status — unlike `request<T>`, which throws
+ *  on non-2xx — since a 500 here still carries the full per-part result. */
+export async function postConfigReload(): Promise<ConfigReloadResult> {
+  let res: Response
+  try {
+    res = await fetch('/api/config/reload', { method: 'POST' })
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'network request failed' }
+  }
+  try {
+    const response = await res.json() as ControlPlaneReloadResponse
+    return { ok: true, response }
+  } catch {
+    return { ok: false, error: `${res.status} ${res.statusText}` }
+  }
 }
