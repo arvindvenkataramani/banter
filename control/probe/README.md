@@ -83,6 +83,18 @@ Captures are JSONL, so `jq` works directly:
 jq -r 'select(.frame.event=="agent") | .frame.payload.stream' capture.jsonl | sort | uniq -c
 ```
 
+### Testing that an agent uses a skill
+
+`openclaw skills list --agent <id>` says an agent *may* use a skill, not that it will recognise a request as calling for one. `skill-test.ts` sends a natural request and reports, from the wire, whether a skill was invoked:
+
+```bash
+bun run control/probe/skill-test.ts --agent example --message "tell me a bedtime story"
+bun run control/probe/skill-test.ts --agent example --message "..." --expect bedtime-stories
+bun run control/probe/skill-test.ts --agent example --message "..." --timeout 1800
+```
+
+It sends to the scratch session `agent:<id>:skill-test`, so a test request never lands in a conversation anyone is reading.
+
 ## Data
 
 | Path | What | Committed |
