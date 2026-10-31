@@ -7,19 +7,10 @@ source "$(dirname "$0")/deploy-env.sh"
 PROD="$BANTER_PROD"
 REGISTRY="${BANTER_REGISTRY_PATH:-$PROD/control/control-plane/data/registry.json}"
 
-# systemd user units run with a minimal PATH, so Homebrew/Linuxbrew installs of
-# jq are often not on it. Look there explicitly, but fall back to whatever is on
-# PATH rather than pinning one machine's install location.
-if command -v jq >/dev/null 2>&1; then
-  JQ=jq
-elif [[ -x /home/linuxbrew/.linuxbrew/bin/jq ]]; then
-  JQ=/home/linuxbrew/.linuxbrew/bin/jq
-elif [[ -x /opt/homebrew/bin/jq ]]; then
-  JQ=/opt/homebrew/bin/jq
-else
-  echo "[control-runner] error: jq not found on PATH" >&2
-  exit 1
-fi
+# systemd user units run with a minimal PATH, so jq and bun are found the way
+# the deploy scripts find them: on PATH, then the usual install locations.
+JQ="$(platform_find_jq)" || exit 1
+BUN="$(platform_find_bun)" || exit 1
 
 BANTER_CONTROL_PORT=$("$JQ" -r '.services[] | select(.id == "control") | .network.port' "$REGISTRY")
 
@@ -34,11 +25,16 @@ tailscale serve --bg --https="$BANTER_CONTROL_PORT" off 2>/dev/null || true
 # Set up Tailscale Serve
 tailscale serve --bg --https="$BANTER_CONTROL_PORT" localhost:"$BANTER_CONTROL_PORT" 2>/dev/null || true
 
+# Managed services run their startCmd/healthCmd through `sh -c`, inheriting this
+# process's PATH. systemd's user PATH omits the Homebrew prefixes, so a registry
+# entry calling a tool installed there fails with "not found". Put the resolved
+# tools' directories on PATH so the whole tree can reach them, not just this
+# wrapper.
+PATH="$(dirname "$JQ"):$(dirname "$BUN"):$PATH"
+export PATH
+
 # Exec into bun — it becomes PID 1 of the service, systemd manages it directly.
 # BANTER_CONTROL_PORT is passed explicitly so the server binds the same port we just
 # handed to Tailscale Serve, rather than falling back to its own default.
-# bun is found the way the deploy scripts find it: on PATH, then its own
-# installer's location, then Homebrew's and Linuxbrew's.
-BUN="$(platform_find_bun)" || exit 1
 cd "$PROD/control/control-plane"
 exec env DASHBOARD_DIST="$PROD/dashboard/dist" BANTER_CONTROL_PORT="$BANTER_CONTROL_PORT" "$BUN" run src/index.ts
