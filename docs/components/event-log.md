@@ -54,19 +54,18 @@ Path: `logs/events.jsonl` inside the deployment (configurable via `BANTER_EVENTS
 
 ## Reading
 
-The API reads the entire log once per request and builds a map of `serviceId → most recent event`. One file read per API call, not per service. The dashboard gets derived health state, never raw log data.
+Each process keeps the derived state of a log in memory: the most recent health-deciding event per service and each service's run intent. A read brings it up to date by parsing only the bytes appended since the last one; a file that was replaced or truncated is read again from the start. `readEvents` reads backwards from the end of the file and stops once it has its limit, so a short history costs the same however long the log is. The dashboard gets derived health state, never raw log data.
+
+**Run intent** is the latest of a service's `service.started` or `service.restarted` (run) and `service.stopped`, `service.unloaded` or `service.disabled` (don't run). `startService` appends `service.started` before it does anything else. The health checker skips a demand-loaded service unless its run intent is to run, so a service you stopped costs nothing, and one that was started and then failed still reads as down.
 
 ---
 
-## Log pruning
+## Size
 
-The log is unbounded and grows continuously. Pruning strategy: age-based truncation — keep the most recent ~24 hours, write to a temp file, rename into place. This preserves inspectability without unbounded growth.
-
-**Not yet implemented.** Should be added before the log becomes a performance concern (roughly: >100 services × 30s interval × 24h ≈ ~300k lines, which is manageable but worth pruning).
+The health checker appends an event only when a check's result differs from the service's last health-deciding event, so the log holds state changes and lifecycle actions rather than one line per check, and grows slowly. Nothing prunes it.
 
 ---
 
 ## Open questions
 
-- [ ] Pruning implementation — age threshold, who triggers it (startup? cron? size-based?)
 - [ ] Multi-subject events — when shards start reporting, events may span hosts or capabilities

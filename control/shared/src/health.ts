@@ -1,4 +1,4 @@
-import { appendEvent } from "./events";
+import { appendEvent, deriveHealthMap, deriveRunIntentMap } from "./events";
 import type { RunFn } from "./tailscale";
 import type { Service, Registry } from "../../../shared/types";
 
@@ -13,6 +13,19 @@ interface CheckOpts {
 const failureCounts = new Map<string, number>();
 const FAILURE_THRESHOLD = 2;
 
+
+type CheckOutcome = "service.up" | "service.degraded" | "service.timed_out" | "service.down";
+
+/**
+ * Logs a check result only when it differs from the service's last
+ * health-deciding event, so the log holds state changes rather than one line
+ * per check round.
+ */
+async function recordOutcome(eventsPath: string, serviceId: string, type: CheckOutcome, data: Record<string, unknown>): Promise<void> {
+  const last = (await deriveHealthMap(eventsPath)).get(serviceId);
+  if (last?.type === type) return;
+  await appendEvent(eventsPath, { type, subjectType: "service", subjectId: serviceId, data, actor: "system" });
+}
 export function resetFailureCounts(): void {
   failureCounts.clear();
 }
@@ -89,15 +102,8 @@ export async function checkService(
   }
 
   if (primaryOk) {
-    const latencyMs = Date.now() - start;
     failureCounts.delete(service.id);
-    await appendEvent(eventsPath, {
-      type: "service.up",
-      subjectType: "service",
-      subjectId: service.id,
-      data: { latencyMs },
-      actor: "system",
-    });
+    await recordOutcome(eventsPath, service.id, "service.up", { latencyMs: Date.now() - start });
     return;
   }
 
@@ -126,13 +132,7 @@ export async function checkService(
 
     if (fallbackOk) {
       // Process is up but Tailscale endpoint is unreachable — degraded
-      await appendEvent(eventsPath, {
-        type: "service.degraded",
-        subjectType: "service",
-        subjectId: service.id,
-        data: { tailscaleError: primaryError, localOk: true },
-        actor: "system",
-      });
+      await recordOutcome(eventsPath, service.id, "service.degraded", { tailscaleError: primaryError, localOk: true });
       return;
     }
   }
@@ -140,33 +140,27 @@ export async function checkService(
   // ── Both checks failed ────────────────────────────────────────────────────
 
   if (isTimeout) {
-    await appendEvent(eventsPath, {
-      type: "service.timed_out",
-      subjectType: "service",
-      subjectId: service.id,
-      data: { timeoutMs },
-      actor: "system",
-    });
+    await recordOutcome(eventsPath, service.id, "service.timed_out", { timeoutMs });
   } else {
-    await appendEvent(eventsPath, {
-      type: "service.down",
-      subjectType: "service",
-      subjectId: service.id,
-      data: { reason: primaryError ?? "connection_refused" },
-      actor: "system",
-    });
+    await recordOutcome(eventsPath, service.id, "service.down", { reason: primaryError ?? "connection_refused" });
   }
 }
 
+/**
+ * Checks every enabled service, except a demand-loaded one whose latest run
+ * intent is not to run: one never started, or last stopped, unloaded or
+ * disabled. A demand service that was started and then failed stays checked,
+ * so it reads as down rather than off.
+ */
 export async function checkAllServices(
   registry: Registry,
   eventsPath: string,
-  opts: CheckOpts & { onlyLoaded?: boolean } = {}
+  opts: CheckOpts = {}
 ): Promise<void> {
-  let services = registry.services.filter(s => s.permissions.enabled);
-  if (opts.onlyLoaded) {
-    services = services.filter(s => s.lifecycle?.loadStrategy !== "demand" || s.state?.loadTime != null);
-  }
+  const runIntent = await deriveRunIntentMap(eventsPath);
+  const services = registry.services.filter(s =>
+    s.permissions.enabled &&
+    (s.lifecycle?.loadStrategy !== "demand" || runIntent.get(s.id) === true));
   await Promise.allSettled(services.map(s => checkService(s, eventsPath, opts)));
 }
 
@@ -174,7 +168,7 @@ export function startHealthLoop(
   registry: Registry,
   eventsPath: string,
   intervalMs = 30000,
-  opts: CheckOpts & { onlyLoaded?: boolean } = {}
+  opts: CheckOpts = {}
 ): { stop: () => void } {
   let stopped = false;
   let sleepResolve: (() => void) | null = null;

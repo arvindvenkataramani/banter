@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkService, checkAllServices, startHealthLoop, resetFailureCounts } from "../src/health";
-import { readEvents } from "../src/events";
+import { readEvents, appendEvent } from "../src/events";
 import type { Service, Registry } from "../../../shared/types";
 
 let tmpDir: string;
@@ -404,6 +404,52 @@ describe("Health check loop", () => {
     stop();
     const goodEvents = await readEvents(eventsPath, { subjectId: "good" });
     expect(goodEvents.length).toBeGreaterThan(0);
+    server.stop(true);
+  });
+});
+
+describe("What the checker logs", () => {
+  it("logs a repeated result once and the next change again", async () => {
+    let status = 200;
+    const server = Bun.serve({ port: 0, fetch: () => new Response("x", { status }) });
+    const svc = makeService({ network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } });
+    await checkService(svc, eventsPath, { bypassThreshold: true });
+    await checkService(svc, eventsPath, { bypassThreshold: true });
+    status = 500;
+    await checkService(svc, eventsPath, { bypassThreshold: true });
+    await checkService(svc, eventsPath, { bypassThreshold: true });
+    const types = (await readEvents(eventsPath, {})).map(e => e.type);
+    expect(types).toEqual(["service.down", "service.up"]);
+    server.stop(true);
+  });
+
+  it("checks a demand-loaded service only while its latest run intent is to run", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
+    const registry: Registry = {
+      version: 2,
+      type: "control",
+      hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
+      capabilities: [{ id: "c1", name: "c1" }],
+      services: [makeService({
+        id: "d1",
+        lifecycle: { loadStrategy: "demand" },
+        network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` },
+      })],
+    };
+    const intent = (type: "service.started" | "service.stopped") =>
+      appendEvent(eventsPath, { type, subjectType: "service", subjectId: "d1", data: {}, actor: "user" });
+    const lastType = async () => (await readEvents(eventsPath, { subjectId: "d1", limit: 1 }))[0]?.type;
+
+    await checkAllServices(registry, eventsPath);
+    expect(await lastType()).toBeUndefined();
+
+    await intent("service.started");
+    await checkAllServices(registry, eventsPath);
+    expect(await lastType()).toBe("service.up");
+
+    await intent("service.stopped");
+    await checkAllServices(registry, eventsPath);
+    expect(await lastType()).toBe("service.stopped");
     server.stop(true);
   });
 });

@@ -120,7 +120,7 @@ const server = Bun.serve({
 console.log(`ControlShard running on :${PORT}`);
 
 // Step 5: Start health loop
-const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, HEALTH_INTERVAL_MS, { onlyLoaded: true, localHostId, runFn });
+const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, HEALTH_INTERVAL_MS, { localHostId, runFn });
 
 // Step 6: Start idle loop — evicts idle services
 const { stop: stopIdle } = startIdleLoop(

@@ -174,6 +174,17 @@ export async function startService(
     return { ok: false, error: "external services cannot be started by the platform" };
   }
 
+  // Records that the service is meant to run, before anything can fail: the
+  // health loop checks a demand-loaded service only while this is its latest
+  // run intent, and a start that fails should still read as down, not off.
+  await appendEvent(eventsPath, {
+    type: "service.started",
+    subjectType: "service",
+    subjectId: svc.id,
+    data: {},
+    actor: "system",
+  });
+
   // Fast path (process runner only): if the service is already healthy, skip the
   // start (or repair-only when Tailscale Serve is missing — see below).
   // systemd/launchd start commands are already idempotent — no need to probe first.

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendEvent, readEvents, deriveHealthMap, deriveHealth } from "../src/events";
@@ -82,6 +82,18 @@ describe("Event log reader", () => {
     expect(events).toHaveLength(1);
     expect(events[0].subjectId).toBe("svc1");
   });
+
+  it("reads a log longer than one read chunk whole and in order", async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 2000; i++) {
+      lines.push(JSON.stringify({ id: `e${i}`, timestamp: "t", type: "service.up", subjectType: "service", subjectId: i % 2 ? "odd" : "even", data: { i, pad: "é".repeat(40) }, actor: "system" }));
+    }
+    await writeFile(eventsPath, lines.join("\n") + "\n");
+    const all = await readEvents(eventsPath, { limit: Number.MAX_SAFE_INTEGER });
+    expect(all.map(e => (e.data as { i: number }).i)).toEqual([...Array(2000).keys()].reverse());
+    const odd = await readEvents(eventsPath, { subjectId: "odd", limit: 3 });
+    expect(odd.map(e => (e.data as { i: number }).i)).toEqual([1999, 1997, 1995]);
+  });
 });
 
 describe("Health map derivation", () => {
@@ -116,6 +128,27 @@ describe("Health map derivation", () => {
   it("deriveHealthMap returns an empty map for nonexistent file", async () => {
     const map = await deriveHealthMap(join(tmpDir, "nonexistent.jsonl"));
     expect(map.size).toBe(0);
+  });
+
+  it("sees events appended after an earlier derivation", async () => {
+    await appendEvent(eventsPath, { type: "service.up", subjectType: "service", subjectId: "svc1", data: {}, actor: "system" });
+    await deriveHealthMap(eventsPath);
+    await appendEvent(eventsPath, { type: "service.down", subjectType: "service", subjectId: "svc1", data: {}, actor: "system" });
+    await appendEvent(eventsPath, { type: "service.up", subjectType: "service", subjectId: "svc2", data: {}, actor: "system" });
+    const map = await deriveHealthMap(eventsPath);
+    expect(map.get("svc1")?.type).toBe("service.down");
+    expect(map.get("svc2")?.type).toBe("service.up");
+  });
+
+  it("forgets what a replaced or truncated file no longer holds", async () => {
+    await appendEvent(eventsPath, { type: "service.down", subjectType: "service", subjectId: "svc1", data: {}, actor: "system" });
+    await appendEvent(eventsPath, { type: "service.down", subjectType: "service", subjectId: "svc2", data: {}, actor: "system" });
+    await deriveHealthMap(eventsPath);
+    await writeFile(eventsPath, "");
+    await appendEvent(eventsPath, { type: "service.up", subjectType: "service", subjectId: "svc1", data: {}, actor: "system" });
+    const map = await deriveHealthMap(eventsPath);
+    expect(map.get("svc1")?.type).toBe("service.up");
+    expect(map.has("svc2")).toBe(false);
   });
 });
 

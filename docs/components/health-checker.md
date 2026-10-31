@@ -6,7 +6,7 @@
 
 ## What it does
 
-The health checker probes every enabled service on a configurable interval and appends events to the event log. It is pure observation — it doesn't route traffic, trigger recovery, or make decisions. It just records what it sees.
+The health checker probes enabled services on a configurable interval and appends an event to the event log when a result differs from the service's last health-deciding event. It skips a demand-loaded service unless its run intent is to run — started or restarted more recently than it was stopped, unloaded or disabled (see [event-log.md](event-log.md#reading)). It is pure observation — it doesn't route traffic, trigger recovery, or make decisions. It just records what it sees.
 
 ---
 
