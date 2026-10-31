@@ -1,6 +1,4 @@
-// Tests for reloadRegistry (docs/design/config-reload.md). Same shape as
-// registry-patch.test.ts: write a registry, load it, edit the file on disk,
-// reload, assert on the same live object the loader returned.
+// Reloading a running node's registry from disk.
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -8,38 +6,45 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadRegistry, reloadRegistry } from "../shared/src/registry";
 import { clearFileLocks, withFileLock } from "../shared/src/atomic-write";
-import type { NodeRoster, Registry } from "../../shared/types";
+import type { Registry } from "../../shared/types";
 
 let tmpDir: string;
 let registryPath: string;
 
-const REGISTRY: Registry = {
-  version: 2,
-  type: "shard",
-  hosts: [
-    { id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.example.ts.net", role: "worker" },
-  ],
-  capabilities: [{ id: "tts", name: "Text-to-Speech" }],
-  services: [
-    {
+type Doc = Record<string, any>;
+
+function base(): Doc {
+  return {
+    version: 2,
+    type: "control",
+    hosts: [
+      { id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.example.ts.net", role: "worker" },
+      { id: "home-server", name: "home-server", hostname: "home-server.example.ts.net", role: "control" },
+    ],
+    capabilities: [{ id: "tts", name: "Text-to-Speech" }],
+    services: [{
       id: "svc-a",
       capabilityId: "tts",
       hostId: "gpu-machine",
-      permissions: { enabled: true, protected: false },
+      permissions: { enabled: true },
       runner: { type: "process", main: ".venv/bin/server" },
       network: { port: 8001, healthPath: "/health" },
-      lifecycle: { loadStrategy: "demand", idleUnload: true, idleTimeout: 1800000 },
-    },
-  ],
-} as unknown as Registry;
-
-async function freshState(registry: Registry = REGISTRY): Promise<Registry> {
-  await writeFile(registryPath, JSON.stringify(registry, null, 2));
-  return loadRegistry(registryPath);
+    }],
+    roster: { providers: { "svc-a": { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } }, voices: [] },
+    shards: [{ hostId: "gpu-machine", port: 5007 }],
+    intervals: { healthMs: 60000 },
+  };
 }
 
-const alwaysRunning = () => true;
-const neverRunning = () => false;
+/** Loads `base()` as the live registry, then writes it again with `edit` applied. */
+async function liveThenEdit(edit: (doc: Doc) => void): Promise<Registry> {
+  await writeFile(registryPath, JSON.stringify(base()));
+  const live = await loadRegistry(registryPath);
+  const doc = base();
+  edit(doc);
+  await writeFile(registryPath, JSON.stringify(doc));
+  return live;
+}
 
 beforeEach(async () => {
   clearFileLocks();
@@ -51,211 +56,69 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-describe("reloadRegistry — malformed file", () => {
-  it("leaves the live registry untouched and reports the validation error", async () => {
-    const state = await freshState();
-    await writeFile(registryPath, "{ not valid json");
+describe("reloadRegistry", () => {
+  it.each([
+    ["a file that is not JSON", "{ not valid json"],
+    ["a file that fails validation", JSON.stringify({ ...base(), services: [{ id: "svc-a" }] })],
+  ])("reports %s and leaves the live registry untouched", async (_, contents) => {
+    await writeFile(registryPath, JSON.stringify(base()));
+    const live = await loadRegistry(registryPath);
+    await writeFile(registryPath, contents);
 
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(false);
-    expect(state.services).toHaveLength(1);
-    expect(state.services[0].id).toBe("svc-a");
+    expect((await reloadRegistry(registryPath, live, () => false)).ok).toBe(false);
+    expect(live.services[0].network.port).toBe(8001);
   });
 
-  it("reports a failed structural validation the same way", async () => {
-    const state = await freshState();
-    const bad = { ...REGISTRY, services: [{ id: "svc-a" }] };
-    await writeFile(registryPath, JSON.stringify(bad, null, 2));
+  it("refills the arrays callers already hold, keeping each surviving service's runtime state", async () => {
+    const live = await liveThenEdit(d => { d.services[0].notes = "edited"; });
+    live.services[0].state = { loadTime: 12345 };
+    const held = live.services;
 
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(false);
-    expect(state.services[0].network.port).toBe(8001);
+    expect((await reloadRegistry(registryPath, live, () => false)).ok).toBe(true);
+    expect(live.services).toBe(held);
+    expect(held[0].notes).toBe("edited");
+    expect(held[0].state?.loadTime).toBe(12345);
   });
-});
 
-describe("reloadRegistry — runtime state", () => {
-  it("a service present before and after keeps its state, loadTime included", async () => {
-    const state = await freshState();
-    state.services[0].state = { loadTime: 12345 };
-
-    const edited = { ...REGISTRY, services: [{ ...REGISTRY.services[0], notes: "edited" }] };
-    await writeFile(registryPath, JSON.stringify(edited, null, 2));
-
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    expect(state.services[0].notes).toBe("edited");
-    expect(state.services[0].state?.loadTime).toBe(12345);
-  });
-});
-
-describe("reloadRegistry — refills, never reassigns", () => {
-  it("mutates the same services array in place, so a caller holding a reference sees the new contents", async () => {
-    const state = await freshState();
-    const servicesRef = state.services;
-
-    const edited = { ...REGISTRY, services: [{ ...REGISTRY.services[0], notes: "changed" }] };
-    await writeFile(registryPath, JSON.stringify(edited, null, 2));
-
-    await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(state.services).toBe(servicesRef);
-    expect(servicesRef[0].notes).toBe("changed");
-  });
-});
-
-describe("reloadRegistry — file lock", () => {
-  it("holds the registry's file lock across the reload, as updateService does", async () => {
-    const state = await freshState();
-
-    let release: (() => void) | undefined;
+  it("waits for the registry's file lock, as a write does", async () => {
+    const live = await liveThenEdit(() => {});
+    let release!: () => void;
     const held = withFileLock(registryPath, () => new Promise<void>(r => { release = r; }));
-
-    let resolved = false;
-    const reloadPromise = reloadRegistry(registryPath, state, neverRunning).then(r => { resolved = true; return r; });
+    let done = false;
+    const reload = reloadRegistry(registryPath, live, () => false).then(r => { done = true; return r; });
 
     await new Promise(r => setTimeout(r, 20));
-    expect(resolved).toBe(false);
-
-    release!();
+    expect(done).toBe(false);
+    release();
     await held;
-    const result = await reloadPromise;
-    expect(result.ok).toBe(true);
-  });
-});
-
-describe("reloadRegistry — provider-changed warning", () => {
-  const withRoster = (roster: NodeRoster): Registry => ({ ...REGISTRY, roster });
-
-  it("names a provider whose roster section changed", async () => {
-    const before: NodeRoster = {
-      providers: { "svc-a": { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } },
-      voices: [],
-    };
-    const state = await freshState(withRoster(before));
-
-    const after: NodeRoster = {
-      providers: { "svc-a": { sttModels: [{ id: "m", name: "M v2", key: "k", kind: "batch" }] } },
-      voices: [],
-    };
-    await writeFile(registryPath, JSON.stringify(withRoster(after), null, 2));
-
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.warnings).toContainEqual(
-        expect.objectContaining({ kind: "provider-changed", serviceId: "svc-a" })
-      );
-    }
-    expect(state.roster?.providers["svc-a"].sttModels?.[0].name).toBe("M v2");
+    expect((await reload).ok).toBe(true);
   });
 
-  it("does not warn when the roster section is unchanged", async () => {
-    const roster: NodeRoster = {
-      providers: { "svc-a": { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } },
-      voices: [],
-    };
-    const state = await freshState(withRoster(roster));
-    await writeFile(registryPath, JSON.stringify(withRoster(roster), null, 2));
-
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.warnings).toEqual([]);
-  });
-});
-
-describe("reloadRegistry — service-removed warning", () => {
-  it("names a service removed from the file while it is running", async () => {
-    const state = await freshState();
-    const edited = { ...REGISTRY, services: [] };
-    await writeFile(registryPath, JSON.stringify(edited, null, 2));
-
-    const result = await reloadRegistry(registryPath, state, alwaysRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.warnings).toContainEqual(
-        expect.objectContaining({ kind: "service-removed", serviceId: "svc-a" })
-      );
-    }
-    expect(state.services).toHaveLength(0);
+  const WARNINGS: [string, (doc: Doc) => void, boolean, Record<string, unknown>[]][] = [
+    ["nothing changed", () => {}, true, []],
+    ["a provider's roster section changed", d => { d.roster.providers["svc-a"].sttModels[0].name = "M v2"; }, false, [{ kind: "provider-changed", serviceId: "svc-a" }]],
+    ["a running service was removed", d => { d.services = []; d.roster = undefined; }, true, [{ kind: "service-removed", serviceId: "svc-a" }, { kind: "provider-changed", serviceId: "svc-a" }]],
+    ["a stopped service was removed", d => { d.services = []; d.roster = undefined; }, false, [{ kind: "provider-changed", serviceId: "svc-a" }]],
+    ["the shards list changed", d => { d.shards[0].port = 9999; }, false, [{ kind: "shards-changed" }]],
+    ["the intervals changed", d => { d.intervals.healthMs = 30000; }, false, [{ kind: "intervals-changed" }]],
+  ];
+  it.each(WARNINGS)("when %s, warns accordingly", async (_, edit, running, expected) => {
+    const live = await liveThenEdit(edit);
+    const result = await reloadRegistry(registryPath, live, () => running);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.warnings).toEqual(expected.map(w => expect.objectContaining(w)));
   });
 
-  it("does not warn when the removed service was not running", async () => {
-    const state = await freshState();
-    const edited = { ...REGISTRY, services: [] };
-    await writeFile(registryPath, JSON.stringify(edited, null, 2));
+  it("applies the roster at once, and leaves shards and intervals for a restart", async () => {
+    const live = await liveThenEdit(d => {
+      d.roster.providers["svc-a"].sttModels[0].name = "M v2";
+      d.shards[0].port = 9999;
+      d.intervals.healthMs = 30000;
+    });
+    await reloadRegistry(registryPath, live, () => false);
 
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.warnings).toEqual([]);
-  });
-});
-
-describe("reloadRegistry — intervals-changed warning", () => {
-  it("names changed intervals and leaves live.intervals untouched", async () => {
-    const state = await freshState({ ...REGISTRY, intervals: { healthMs: 60000 } });
-
-    await writeFile(registryPath, JSON.stringify({ ...REGISTRY, intervals: { healthMs: 5000 } }, null, 2));
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.warnings).toContainEqual(expect.objectContaining({ kind: "intervals-changed" }));
-    }
-    expect(state.intervals).toEqual({ healthMs: 60000 });
-  });
-
-  it("does not warn when intervals are unchanged", async () => {
-    const state = await freshState({ ...REGISTRY, intervals: { healthMs: 60000 } });
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.warnings.some(w => w.kind === "intervals-changed")).toBe(false);
-    }
-  });
-});
-
-describe("reloadRegistry — shards-changed warning", () => {
-  it("names a changed shards list and leaves live.shards untouched", async () => {
-    const withShard: Registry = {
-      ...REGISTRY,
-      hosts: [...REGISTRY.hosts, { id: "home-server", name: "home-server", hostname: "home-server.example.ts.net", role: "control" }],
-      shards: [{ hostId: "home-server", port: 5007 }],
-    };
-    const state = await freshState(withShard);
-    const shardsBefore = state.shards;
-
-    const edited = { ...withShard, shards: [{ hostId: "home-server", port: 9999 }] };
-    await writeFile(registryPath, JSON.stringify(edited, null, 2));
-
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.warnings).toContainEqual(expect.objectContaining({ kind: "shards-changed" }));
-    }
-    expect(state.shards).toBe(shardsBefore);
-    expect(state.shards?.[0].port).toBe(5007);
-  });
-
-  it("does not warn when the shards list is unchanged", async () => {
-    const withShard: Registry = {
-      ...REGISTRY,
-      hosts: [...REGISTRY.hosts, { id: "home-server", name: "home-server", hostname: "home-server.example.ts.net", role: "control" }],
-      shards: [{ hostId: "home-server", port: 5007 }],
-    };
-    const state = await freshState(withShard);
-    await writeFile(registryPath, JSON.stringify(withShard, null, 2));
-
-    const result = await reloadRegistry(registryPath, state, neverRunning);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.warnings).toEqual([]);
+    expect(live.roster?.providers["svc-a"].sttModels?.[0].name).toBe("M v2");
+    expect(live.shards?.[0].port).toBe(5007);
+    expect(live.intervals).toEqual({ healthMs: 60000 });
   });
 });

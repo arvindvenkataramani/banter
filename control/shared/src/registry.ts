@@ -16,9 +16,8 @@ const PATCHABLE_GROUPS = new Set(["permissions", "network", "lifecycle"]);
 
 // `null` in a patch means "remove this field", and only these fields accept it.
 // Everything else is required by validateRegistry — `port`, `healthPath`,
-// `hostId`, `capabilityId` — and removing one writes a registry that throws on
-// the next load. updateService writes to disk without re-validating, so a patch
-// that clears a required field is not caught until a restart.
+// `hostId`, `capabilityId` — so clearing one is refused with a message naming
+// the field, before the whole-file validation would reject it less clearly.
 //
 // Removing rather than storing null matters for the defaults-backed fields:
 // validateRegistry merges `{...defaults.lifecycle, ...svc.lifecycle}`, so a
@@ -51,6 +50,27 @@ const DEFAULTABLE_PERMISSIONS = new Set(["protected"]);
 const DEFAULTABLE_NETWORK = new Set(["tailscaleServe", "scheme"]);
 const DEFAULTABLE_LIFECYCLE = new Set(["loadStrategy", "idleUnload", "idleTimeout", "autoStart", "shutdown", "startupTime", "serveRetryAttempts", "serveRetryDelay"]);
 const DEFAULTABLE_GROUPS = new Set(["permissions", "network", "lifecycle"]);
+
+// ── Endpoint scheme ────────────────────────────────────────────────────────────
+
+// http unless `scheme` says otherwise — per service, or once in
+// `defaults.network` for the whole registry. Banter does not assume a tailnet,
+// so a LAN or plain-IP install works as shipped; a tailnet install sets
+// `scheme: "https"` in `defaults.network`. Platform, which assumes a tailnet,
+// defaults to https except on loopback. See docs/configuration.md for why https
+// is the safer choice where it is available.
+//
+// Nothing infers the protocol. `listenAddress` says which address, and
+// `tailscaleServe` says whether to register with Serve on start; neither says
+// which protocol, and reading either as a scheme switch is how a service ends
+// up with an endpoint nothing can answer.
+function defaultScheme(_hostname: string | undefined): "http" | "https" {
+  return "http";
+}
+
+function isScheme(value: unknown): value is "http" | "https" {
+  return value === "http" || value === "https";
+}
 
 const SHARD_ONLY: Record<string, Set<string>> = {
   network: new Set(["tailscaleServe"]),
@@ -147,7 +167,7 @@ function validateRegistry(data: unknown): Registry {
       }
       if (groupKey === "network") {
         if ("tailscaleServe" in group && typeof group.tailscaleServe !== "boolean") throw new Error("defaults.network.tailscaleServe must be boolean");
-        if ("scheme" in group && group.scheme !== "http" && group.scheme !== "https") throw new Error('defaults.network.scheme must be "http" or "https"');
+        if ("scheme" in group && !isScheme(group.scheme)) throw new Error('defaults.network.scheme must be "http" or "https"');
       }
       if (groupKey === "lifecycle") {
         if ("loadStrategy" in group && !["startup", "demand"].includes(group.loadStrategy as string)) throw new Error("defaults.lifecycle.loadStrategy must be 'startup' or 'demand'");
@@ -248,51 +268,35 @@ function validateRegistry(data: unknown): Registry {
       if (!net.port) throw new Error(`service ${svc.id}: network.port is required`);
     }
 
+    if (net.scheme !== undefined && !isScheme(net.scheme)) {
+      throw new Error(`service ${svc.id}: network.scheme must be "http" or "https", got "${net.scheme}"`);
+    }
+
     validateInstall(svc);
 
-    // A process runner's command string carries its own --port, independent of
-    // network.port: the former is what the service binds, the latter is what we
-    // health-check and route to. Nothing keeps them in sync, so a one-sided edit
-    // silently yields a service that starts fine and is then polled on the wrong
-    // port. We can't inject the value (runner.main is spawned verbatim, split on
-    // spaces), so warn rather than fail — an intentional mismatch is legal, e.g.
-    // a service behind a local proxy.
-    if (runnerType === "process" && net.port) {
-      const portFlag = /(?:^|\s)--port[=\s]+(\d+)/.exec(runner.main as string);
-      if (portFlag && portFlag[1] !== String(net.port)) {
+    // A process runner carries its port twice: in the command line it binds and
+    // in network.port, which is what health checks and routing use. Nothing
+    // keeps them in step, and runner.main is spawned verbatim so the value
+    // cannot be injected. Disagreement means the service starts fine on one
+    // port while being polled on another — warn rather than reject, since the
+    // command line is the authority on what it actually binds.
+    const mainCmd = (svc.runner as Record<string, unknown>).main;
+    if (typeof mainCmd === "string" && net.port) {
+      const declared = mainCmd.match(/--port[= ](\d+)/);
+      if (declared && Number(declared[1]) !== net.port) {
         console.warn(
-          `[registry] service "${svc.id}": runner.main starts it on port ${portFlag[1]} ` +
-          `but network.port is ${net.port}. Health checks and the derived endpoint ` +
-          `will use ${net.port}. Update both if this was meant to be one port.`
+          `registry: service ${svc.id} binds --port ${declared[1]} in runner.main but declares network.port ${net.port} — health checks will use ${net.port}`
         );
       }
     }
 
-    // Derive the endpoint. `scheme` alone decides the protocol, defaulting to
-    // http. Anything can be https — a reverse proxy, a self-signed cert, any TLS
-    // terminator — so nothing else infers it.
-    //
-    // Deliberately NOT derived from tailscaleServe: that flag means "register
-    // with Tailscale Serve on start", a lifecycle concern. Letting it imply
-    // https would make a tailnet the assumed deployment, which this platform
-    // does not require for either shard connectivity or service access. A
-    // tailnet user sets scheme once in the registry's `defaults.network` block.
-    //
-    // The scheme used to key off listenAddress, which conflated "which address"
-    // with "which protocol": a service without one got an https endpoint that
-    // nothing could ever answer.
-    //
-    // Managed runners never get a derived endpoint, even if network.port is set
-    // for reference — they have no HTTP health surface, and a synthesized
-    // endpoint would wrongly imply one exists.
-    if (net.scheme !== undefined && net.scheme !== "http" && net.scheme !== "https") {
-      throw new Error(`service ${svc.id}: network.scheme must be "http" or "https", got "${net.scheme}"`);
-    }
+    // Managed runners never get a derived endpoint, even if network.port is set for
+    // reference — they have no HTTP health surface, and a synthesized endpoint would
+    // wrongly imply one exists.
     if (net.port && runnerType !== "managed") {
       const listenAddr = net.listenAddress as string | undefined;
       const hostname = listenAddr ?? hostMap.get(svc.hostId as string);
-      const scheme = (net.scheme as string | undefined) ?? "http";
-      net.endpoint = `${scheme}://${hostname}:${net.port}`;
+      net.endpoint = `${net.scheme ?? defaultScheme(hostname)}://${hostname}:${net.port}`;
     }
   }
 
@@ -309,15 +313,11 @@ function validateRegistry(data: unknown): Registry {
       if (!hostIds.has(shard.hostId as string)) {
         throw new Error(`shard: hostId "${shard.hostId}" references nonexistent host`);
       }
-      if (shard.scheme !== undefined && shard.scheme !== "http" && shard.scheme !== "https") {
+      if (shard.scheme !== undefined && !isScheme(shard.scheme)) {
         throw new Error(`shard ${shard.hostId}: scheme must be "http" or "https", got "${shard.scheme}"`);
       }
       const shardHostname = hostMap.get(shard.hostId as string)!;
-      // http unless told otherwise. This used to key off the hostname — anything
-      // that wasn't literally localhost got https — which made a shard on a LAN
-      // or at an IP address unreachable unless you happened to run a tailnet.
-      const shardScheme = (shard.scheme as string | undefined) ?? "http";
-      shard.endpoint = `${shardScheme}://${shardHostname}:${shard.port}`;
+      shard.endpoint = `${shard.scheme ?? defaultScheme(shardHostname)}://${shardHostname}:${shard.port}`;
     }
   }
 
@@ -354,17 +354,23 @@ export async function updateService(
     const idx = state.services.findIndex(s => s.id === serviceId);
     if (idx === -1) throw new Error(`service "${serviceId}" not found`);
 
-    const updated = { ...state.services[idx] };
+    // The patch applies to the service as written on disk, not to the loaded
+    // copy: that copy carries values merged in from `defaults` and a derived
+    // endpoint, and writing it back would pin every default into the file.
+    const doc = JSON.parse(await readFile(registryPath, "utf-8")) as { services: Record<string, unknown>[] };
+    const rawIdx = doc.services.findIndex(s => s.id === serviceId);
+    if (rawIdx === -1) throw new Error(`service "${serviceId}" not found in ${registryPath}`);
+    const updated = structuredClone(doc.services[rawIdx]) as unknown as Service;
 
     for (const key of Object.keys(patch) as (keyof NestedPatch)[]) {
       if (PATCHABLE_TOP.has(key)) {
         const value = (patch as Record<string, unknown>)[key];
         if (value === null) {
           if (!CLEARABLE_TOP.has(key)) throw new Error(`${key} cannot be cleared`);
-          delete (updated as Record<string, unknown>)[key];
+          delete (updated as unknown as Record<string, unknown>)[key];
         } else {
           if (typeof value !== "string") throw new Error(`${key} must be a string`);
-          (updated as Record<string, unknown>)[key] = value;
+          (updated as unknown as Record<string, unknown>)[key] = value;
         }
       } else if (key === "permissions") {
         const permPatch = (patch as Record<string, unknown>).permissions as Record<string, unknown>;
@@ -386,7 +392,7 @@ export async function updateService(
         if ("tailscaleServe" in networkPatch && networkPatch.tailscaleServe !== undefined && typeof networkPatch.tailscaleServe !== "boolean") {
           throw new Error("network.tailscaleServe must be a boolean");
         }
-        if ("scheme" in networkPatch && networkPatch.scheme !== undefined && networkPatch.scheme !== "http" && networkPatch.scheme !== "https") {
+        if ("scheme" in networkPatch && networkPatch.scheme !== undefined && !isScheme(networkPatch.scheme)) {
           throw new Error(`network.scheme must be "http" or "https", got "${networkPatch.scheme}"`);
         }
         updated.network = applyGroupPatch(
@@ -395,17 +401,6 @@ export async function updateService(
           CLEARABLE_NETWORK,
           "network"
         ) as unknown as typeof updated.network;
-        // Re-derive the endpoint the same way validateRegistry does, for the same
-        // reasons — see the comment on that derivation. A patch that disagreed
-        // with the loader would write an endpoint the next load silently replaces.
-        if ("port" in networkPatch || "listenAddress" in networkPatch || "scheme" in networkPatch) {
-          const host = state.hosts.find(h => h.id === updated.hostId);
-          const hostname = updated.network.listenAddress ?? host?.hostname;
-          const scheme = updated.network.scheme ?? "http";
-          if (updated.network.port && updated.runner?.type !== "managed" && hostname) {
-            updated.network = { ...updated.network, endpoint: `${scheme}://${hostname}:${updated.network.port}` };
-          }
-        }
       } else if (key === "lifecycle") {
         const lifecyclePatch = patch.lifecycle!;
         for (const subKey of Object.keys(lifecyclePatch)) {
@@ -439,33 +434,16 @@ export async function updateService(
       }
     }
 
-    state.services[idx] = updated;
+    doc.services[rawIdx] = updated as unknown as Record<string, unknown>;
+    // Validated as a whole before anything is written, so a patch that would
+    // leave the file unloadable is refused here rather than at the next start.
+    const loaded = validateRegistry(structuredClone(doc));
+    const merged = loaded.services.find(s => s.id === serviceId)!;
+    if (state.services[idx].state) merged.state = state.services[idx].state;
+    state.services[idx] = merged;
 
-    // Atomic write — strip derived fields (endpoint, state)
-    const servicesForDisk = state.services.map(s => {
-      const { endpoint, ...networkRest } = s.network;
-      const { state: _state, ...rest } = s;
-      return { ...rest, network: networkRest };
-    });
-
-    // Written back only when non-empty, so a file with no roster section
-    // doesn't gain one — state.roster always carries a default.
-    const hasRoster = state.roster && (Object.keys(state.roster.providers).length > 0 || state.roster.voices.length > 0);
-
-    await writeFileAtomicUnlocked(registryPath, JSON.stringify({
-      version: state.version,
-      type: state.type,
-      ...(state.servicesRoot && { servicesRoot: state.servicesRoot }),
-      ...(state.defaults && { defaults: state.defaults }),
-      hosts: state.hosts,
-      capabilities: state.capabilities,
-      services: servicesForDisk,
-      ...(state.shards && { shards: state.shards }),
-      ...(state.intervals && { intervals: state.intervals }),
-      ...(hasRoster && { roster: state.roster }),
-    }, null, 2));
-
-    return updated;
+    await writeFileAtomicUnlocked(registryPath, JSON.stringify(doc, null, 2));
+    return merged;
   });
 }
 

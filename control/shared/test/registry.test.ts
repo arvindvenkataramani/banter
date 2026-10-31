@@ -1,31 +1,10 @@
+// Loading, validating and writing a node's registry.json.
+
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadRegistry, updateService, setEnabled } from "../src/registry";
-import type { NodeRoster } from "../../../shared/types";
-
-const validRegistry = {
-  version: 2,
-  type: "control" as const,
-  hosts: [
-    { id: "host1", name: "Host One", hostname: "host1.ts.net", role: "control" as const }
-  ],
-  capabilities: [
-    { id: "cap1", name: "Capability One" }
-  ],
-  services: [
-    {
-      id: "svc1",
-      capabilityId: "cap1",
-      hostId: "host1",
-      permissions: { enabled: true },
-      runner: { type: "systemd" as const, unit: "svc1", unitFile: "ops/systemd/svc1.service" },
-      network: { port: 3000, healthPath: "/health" },
-      lifecycle: { loadStrategy: "startup" as const, idleUnload: false }
-    }
-  ]
-};
 
 let tmpDir: string;
 let registryPath: string;
@@ -39,630 +18,219 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-describe("Registry loader — error cases", () => {
-  it("throws when the file does not exist", async () => {
-    expect(loadRegistry(join(tmpDir, "nonexistent.json"))).rejects.toThrow();
-  });
+type Doc = Record<string, any>;
 
-  it("throws when the file contains invalid JSON", async () => {
-    await writeFile(registryPath, "{ this is not json }");
-    expect(loadRegistry(registryPath)).rejects.toThrow();
-  });
-});
+/** A valid control registry with one systemd service, edited by `edit` before it is written. */
+async function write(edit: (doc: Doc) => void = () => {}): Promise<Doc> {
+  const doc: Doc = {
+    version: 2,
+    type: "control",
+    hosts: [{ id: "host1", name: "Host One", hostname: "host1.ts.net", role: "control" }],
+    capabilities: [{ id: "cap1", name: "Capability One" }],
+    services: [{
+      id: "svc1",
+      capabilityId: "cap1",
+      hostId: "host1",
+      permissions: { enabled: true },
+      runner: { type: "systemd", unit: "svc1", unitFile: "ops/systemd/svc1.service" },
+      network: { port: 3000, healthPath: "/health" },
+      lifecycle: { loadStrategy: "startup" },
+    }],
+  };
+  edit(doc);
+  await writeFile(registryPath, JSON.stringify(doc));
+  return doc;
+}
 
-describe("Registry loader", () => {
-  it("loads a valid registry.json and returns typed hosts, capabilities, and services", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
+const svc = (doc: Doc) => doc.services[0];
+const MANAGED = { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" };
+const INSTALL = { env: { workingDirectory: "/srv/app" }, install: { artifacts: [{ from: "services/app/.build/app", to: ".build/app" }] } };
+const ROSTER = { providers: { svc1: { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } }, voices: [] };
+
+describe("loading", () => {
+  it("loads hosts, capabilities and services, with an empty roster when none is declared and no default host port", async () => {
+    await write();
     const registry = await loadRegistry(registryPath);
-    expect(registry.hosts).toHaveLength(1);
-    expect(registry.capabilities).toHaveLength(1);
-    expect(registry.services).toHaveLength(1);
-    expect(registry.hosts[0].id).toBe("host1");
-  });
-
-  it("rejects a registry file with missing required fields", async () => {
-    const bad = { version: 2, type: "control", hosts: [], capabilities: [], services: [{ id: "x" }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow();
-  });
-
-  it("rejects a service whose capabilityId references a nonexistent capability", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], capabilityId: "nonexistent" }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/capabilityId/);
-  });
-
-  it("rejects a service whose hostId references a nonexistent host", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], hostId: "nonexistent" }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/hostId/);
-  });
-
-  it("returns empty arrays when registry has no services", async () => {
-    const empty = { version: 2, type: "control" as const, hosts: [], capabilities: [], services: [] };
-    await writeFile(registryPath, JSON.stringify(empty));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services).toHaveLength(0);
-  });
-
-  it("each service resolves to its host object", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const registry = await loadRegistry(registryPath);
-    const svc = registry.services[0];
-    const host = registry.hosts.find(h => h.id === svc.hostId);
-    expect(host).toBeDefined();
-    expect(host!.id).toBe("host1");
-  });
-});
-
-describe("Registry loader — new schema fields", () => {
-  it("loads a service with protected:true and preserves the value", async () => {
-    const reg = {
-      ...validRegistry,
-      services: [{ ...validRegistry.services[0], permissions: { enabled: true, protected: true } }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].permissions.protected).toBe(true);
-  });
-
-  it("loads a service with port field and preserves the value", async () => {
-    const reg = {
-      ...validRegistry,
-      services: [{ ...validRegistry.services[0], network: { port: 8080, healthPath: "/health" } }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].network.port).toBe(8080);
-  });
-
-  it("loads a host with a port field and preserves the value", async () => {
-    const reg = {
-      ...validRegistry,
-      hosts: [{ ...validRegistry.hosts[0], port: 3101 }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.hosts[0].port).toBe(3101);
-  });
-
-  it("loads a host with no port field — it stays undefined, not defaulted", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const registry = await loadRegistry(registryPath);
+    expect(registry.services.map(s => s.id)).toEqual(["svc1"]);
+    expect(registry.roster).toEqual({ providers: {}, voices: [] });
     expect(registry.hosts[0].port).toBeUndefined();
   });
 
-  it("rejects a host with a non-positive-integer port", async () => {
-    const reg = {
-      ...validRegistry,
-      hosts: [{ ...validRegistry.hosts[0], port: -1 }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/port/);
+  const REJECTED: [string, (doc: Doc) => void, RegExp][] = [
+    ["no version", d => { delete d.version; }, /version/],
+    ["an unsupported version", d => { d.version = 99; }, /unsupported version/],
+    ["no type", d => { delete d.type; }, /type/],
+    ["an invalid type", d => { d.type = "banana"; }, /invalid type/],
+    ["a service naming an unknown capability", d => { svc(d).capabilityId = "nope"; }, /capabilityId/],
+    ["a service naming an unknown host", d => { svc(d).hostId = "nope"; }, /hostId/],
+    ["a service with no enabled flag", d => { svc(d).permissions = {}; }, /enabled/],
+    ["a host port that is not a positive integer", d => { d.hosts[0].port = -1; }, /port/],
+    ["a roster provider naming a service not in this registry", d => { d.roster = { providers: { ghost: ROSTER.providers.svc1 }, voices: [] }; }, /roster:.*ghost/],
+    ["a service with no runner", d => { delete svc(d).runner; }, /runner is required/],
+    ["an unknown runner type", d => { svc(d).runner = { type: "docker" }; }, /runner.type must be one of/],
+    ["a process runner without main", d => { svc(d).runner = { type: "process" }; }, /process runner requires runner.main/],
+    ["a systemd runner without unit", d => { delete svc(d).runner.unit; }, /systemd runner requires/],
+    ["a launchd runner without label", d => { svc(d).runner = { type: "launchd", plist: "ops/svc1.plist" }; }, /launchd runner requires/],
+    ["a managed runner without startCmd", d => { svc(d).runner = { ...MANAGED, startCmd: undefined }; }, /managed runner requires/],
+    ["a managed runner without stopCmd", d => { svc(d).runner = { ...MANAGED, stopCmd: undefined }; }, /managed runner requires/],
+    ["a managed runner without healthCmd", d => { svc(d).runner = { ...MANAGED, healthCmd: undefined }; }, /managed runner requires/],
+    ["a systemd service without a health path", d => { delete svc(d).network.healthPath; }, /network.healthPath is required/],
+    ["an unknown group in defaults", d => { d.defaults = { bogus: { x: true } }; }, /unknown (field|group) in defaults/],
+    ["a shard-only default on a control registry", d => { d.defaults = { network: { tailscaleServe: true } }; }, /shard-only field/],
+    ["a service scheme other than http or https", d => { svc(d).network.scheme = "ftp"; }, /network.scheme must be "http" or "https"/],
+    ["a default scheme other than http or https", d => { d.defaults = { network: { scheme: "ftp" } }; }, /defaults.network.scheme must be "http" or "https"/],
+    ["a shard scheme other than http or https", d => { d.shards = [{ hostId: "host1", port: 5007, scheme: "ftp" }]; }, /scheme must be "http" or "https"/],
+    ["ops.install with no artifacts", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [] } }; }, /svc1.*ops.install.artifacts/],
+    ["an artifact without a to", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a" }] } }; }, /svc1.*to/],
+    ["an absolute artifact to", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a", to: "/usr/local/bin/app" }] } }; }, /svc1.*relative/],
+    ["an artifact to climbing out with ..", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a", to: "../app" }] } }; }, /svc1.*relative/],
+    ["an absolute artifact from", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "/tmp/app", to: "app" }] } }; }, /svc1.*relative/],
+    ["ops.install with no working directory", d => { svc(d).ops = { install: INSTALL.install }; }, /svc1.*workingDirectory/],
+    ["intervals that are not an object", d => { d.intervals = 5; }, /intervals must be an object/],
+    ["an unknown interval", d => { d.intervals = { pollMs: 1000 }; }, /unknown field in intervals/],
+    ["an interval that is not a positive integer", d => { d.intervals = { healthMs: 0 }; }, /intervals.healthMs must be a positive integer/],
+    ["a shard poll interval on a shard", d => { d.type = "shard"; d.intervals = { shardPollMs: 1000 }; }, /shardPollMs is control-only/],
+  ];
+  it.each(REJECTED)("refuses %s", async (_, edit, error) => {
+    await write(edit);
+    await expect(loadRegistry(registryPath)).rejects.toThrow(error);
   });
 
-  it("loads a service with loadStrategy:demand and preserves the value", async () => {
-    const reg = {
-      ...validRegistry,
-      services: [{ ...validRegistry.services[0], lifecycle: { loadStrategy: "demand" as const } }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].lifecycle?.loadStrategy).toBe("demand");
+  it("fills a service's missing fields from defaults, its own values winning", async () => {
+    await write(d => {
+      d.type = "shard";
+      d.defaults = { network: { tailscaleServe: true }, lifecycle: { idleTimeout: 600000, idleUnload: false } };
+      d.services.push({ ...svc(d), id: "svc2", network: { port: 3001, healthPath: "/health", tailscaleServe: false } });
+    });
+    const [first, second] = (await loadRegistry(registryPath)).services;
+    expect([first.network.tailscaleServe, first.lifecycle?.idleTimeout, first.lifecycle?.idleUnload]).toEqual([true, 600000, false]);
+    expect(second.network.tailscaleServe).toBe(false);
   });
 
-  it("loads a service with idleUnload:true and preserves the value", async () => {
-    const reg = {
-      ...validRegistry,
-      services: [{ ...validRegistry.services[0], lifecycle: { loadStrategy: "startup" as const, idleUnload: true } }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].lifecycle?.idleUnload).toBe(true);
+  it("accepts an external runner, and a managed one with no network, for which it derives no endpoint", async () => {
+    await write(d => {
+      svc(d).runner = { type: "external" };
+      d.services.push({ ...svc(d), id: "managed", runner: MANAGED, network: undefined });
+      d.services.push({ ...svc(d), id: "managed-port", runner: MANAGED, network: { port: 6767 } });
+    });
+    const services = (await loadRegistry(registryPath)).services;
+    expect(services.map(s => s.runner?.type)).toEqual(["external", "managed", "managed"]);
+    expect(services[2].network.endpoint).toBeUndefined();
   });
 
-  it("service without protected field gets value from defaults", async () => {
-    const shardRegistry = {
-      version: 2 as const,
-      type: "shard" as const,
-      defaults: {
-        permissions: { protected: false },
-        lifecycle: { loadStrategy: "startup" as const, idleUnload: false }
-      },
-      hosts: validRegistry.hosts,
-      capabilities: validRegistry.capabilities,
-      services: [{ ...validRegistry.services[0] }]
-    };
-    await writeFile(registryPath, JSON.stringify(shardRegistry));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].permissions.protected).toBe(false);
+  const ENDPOINTS: [string, (doc: Doc) => void, string][] = [
+    // Banter defaults to http, where platform defaults to https off loopback
+    // (dev/design/platform-divergence.md, "Decided").
+    ["http by default", () => {}, "http://host1.ts.net:3000"],
+    ["the service's own scheme", d => { svc(d).network.scheme = "https"; }, "https://host1.ts.net:3000"],
+    ["http for a listenAddress, which says nothing about protocol", d => { svc(d).network.listenAddress = "host1.ts.net"; }, "http://host1.ts.net:3000"],
+    ["http on loopback", d => { svc(d).network.listenAddress = "localhost"; }, "http://localhost:3000"],
+    ["an explicit scheme on loopback", d => { Object.assign(svc(d).network, { listenAddress: "localhost", scheme: "https" }); }, "https://localhost:3000"],
+    ["the defaults' scheme when the service sets none", d => { d.defaults = { network: { scheme: "https" } }; }, "https://host1.ts.net:3000"],
+  ];
+  it.each(ENDPOINTS)("derives a service endpoint with %s", async (_, edit, endpoint) => {
+    await write(edit);
+    expect((await loadRegistry(registryPath)).services[0].network.endpoint).toBe(endpoint);
   });
 
-  it("service without loadStrategy field gets value from defaults", async () => {
-    const shardRegistry = {
-      version: 2 as const,
-      type: "shard" as const,
-      defaults: {
-        permissions: { protected: false },
-        lifecycle: { loadStrategy: "startup" as const, idleUnload: false }
-      },
-      hosts: validRegistry.hosts,
-      capabilities: validRegistry.capabilities,
-      services: [{ ...validRegistry.services[0], lifecycle: undefined }]
-    };
-    await writeFile(registryPath, JSON.stringify(shardRegistry));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].lifecycle?.loadStrategy).toBe("startup");
+  it("derives a shard endpoint as http unless the shard names its scheme", async () => {
+    await write(d => { d.shards = [{ hostId: "host1", port: 5007 }, { hostId: "host1", port: 5008, scheme: "https" }]; });
+    expect((await loadRegistry(registryPath)).shards!.map(s => s.endpoint)).toEqual(["http://host1.ts.net:5007", "https://host1.ts.net:5008"]);
   });
 
-  it("service without idleUnload field gets value from defaults", async () => {
-    const shardRegistry = {
-      version: 2 as const,
-      type: "shard" as const,
-      defaults: {
-        permissions: { protected: false },
-        lifecycle: { loadStrategy: "startup" as const, idleUnload: false }
-      },
-      hosts: validRegistry.hosts,
-      capabilities: validRegistry.capabilities,
-      services: [{ ...validRegistry.services[0], lifecycle: undefined }]
-    };
-    await writeFile(registryPath, JSON.stringify(shardRegistry));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].lifecycle?.idleUnload).toBe(false);
-  });
-});
-
-describe("Registry loader — roster", () => {
-  const ROSTER: NodeRoster = {
-    providers: {
-      svc1: { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] },
-    },
-    voices: [],
-  };
-
-  it("loads a registry with a valid roster, present on the loaded object", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, roster: ROSTER }));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.roster).toEqual(ROSTER);
-  });
-
-  it("loads a registry with no roster section with an empty roster", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.roster).toEqual({ providers: {}, voices: [] });
-  });
-
-  it("rejects a provider naming a service absent from the same registry", async () => {
-    const bad = { providers: { ghost: { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } }, voices: [] };
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, roster: bad }));
-    await expect(loadRegistry(registryPath)).rejects.toThrow(/registry\.json roster:.*ghost/);
+  it.each([
+    ["server --port 8000", 9000, true],
+    ["server --port 8000", 8000, false],
+    ["./run.sh", 8000, false],
+  ] as const)("warns about runner.main %s against network.port %i: %s", async (main, port, warns) => {
+    await write(d => { svc(d).runner = { type: "process", main }; svc(d).network.port = port; });
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (msg: string) => { warnings.push(msg); };
+    try {
+      await loadRegistry(registryPath);
+    } finally {
+      console.warn = original;
+    }
+    expect(warnings.some(w => /binds --port 8000 .* declares network.port 9000/.test(w))).toBe(warns);
+    if (!warns) expect(warnings).toEqual([]);
   });
 });
 
-describe("Registry loader — version and type validation", () => {
-  it("rejects a registry with no version field", async () => {
-    const bad = { type: "control", hosts: [], capabilities: [], services: [] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/version/);
-  });
-
-  it("rejects a registry with unsupported version", async () => {
-    const bad = { version: 99, type: "control", hosts: [], capabilities: [], services: [] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/unsupported version/);
-  });
-
-  it("rejects a registry with no type field", async () => {
-    const bad = { version: 2, hosts: [], capabilities: [], services: [] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/type/);
-  });
-
-  it("rejects a registry with invalid type", async () => {
-    const bad = { version: 2, type: "banana", hosts: [], capabilities: [], services: [] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/invalid type/);
-  });
-});
-
-describe("Registry loader — defaults", () => {
-  it("merges defaults into services missing optional fields", async () => {
-    const reg = {
-      ...validRegistry,
-      version: 2,
-      type: "shard" as const,
-      defaults: {
-        network: { tailscaleServe: true },
-        lifecycle: { idleTimeout: 600000 }
-      },
-      services: [{ ...validRegistry.services[0] }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].network.tailscaleServe).toBe(true);
-    expect(registry.services[0].lifecycle?.idleTimeout).toBe(600000);
-  });
-
-  it("per-service values override defaults", async () => {
-    const reg = {
-      ...validRegistry,
-      version: 2,
-      type: "shard" as const,
-      defaults: { network: { tailscaleServe: true } },
-      services: [{ ...validRegistry.services[0], network: { port: 3000, healthPath: "/health", tailscaleServe: false } }]
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].network.tailscaleServe).toBe(false);
-  });
-
-  it("works without a defaults section", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services).toHaveLength(1);
-    expect(registry.defaults).toBeUndefined();
-  });
-
-  it("rejects unknown keys in defaults", async () => {
-    const bad = { ...validRegistry, defaults: { bogusGroup: { bogusField: true } } };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/unknown (field|group) in defaults/);
-  });
-
-  it("rejects shard-only defaults on a control registry", async () => {
-    const bad = { ...validRegistry, defaults: { network: { tailscaleServe: true } } };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/shard-only field/);
-  });
-});
-
-describe("Registry loader — runner validation", () => {
-  it("rejects a service with no runner field", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: undefined }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/runner is required/);
-  });
-
-  it("rejects an unknown runner type", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "docker" } }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/runner.type must be one of/);
-  });
-
-  it("rejects a process runner without runner.main", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "process" } }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/process runner requires runner.main/);
-  });
-
-  it("rejects a systemd runner without runner.unit", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "systemd", unitFile: "ops/systemd/svc1.service" } }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/systemd runner requires/);
-  });
-
-  it("rejects a launchd runner without runner.label", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "launchd", plist: "ops/svc1.plist" } }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/launchd runner requires/);
-  });
-
-  it("accepts an external runner with no other fields", async () => {
-    const reg = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "external" } }] };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].runner?.type).toBe("external");
-  });
-
-  it("accepts a process runner with runner.main", async () => {
-    const reg = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "process", main: "./server --port 3000" } }] };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect((registry.services[0].runner as any).main).toBe("./server --port 3000");
-  });
-
-  it("rejects a managed runner without runner.startCmd", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "managed", stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" }, network: undefined }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/managed runner requires/);
-  });
-
-  it("rejects a managed runner without runner.stopCmd", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], healthCmd: "paseo daemon status" }, network: undefined }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/managed runner requires/);
-  });
-
-  it("rejects a managed runner without runner.healthCmd", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"] }, network: undefined }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/managed runner requires/);
-  });
-
-  it("accepts a managed runner with no network.healthPath", async () => {
-    const reg = {
-      ...validRegistry,
-      services: [{
-        ...validRegistry.services[0],
-        runner: {
-          type: "managed",
-          startCmd: ["paseo", "daemon", "start"],
-          stopCmd: ["paseo", "daemon", "stop"],
-          healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'",
-        },
-        network: { port: 6767 },
-      }],
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].runner?.type).toBe("managed");
-  });
-
-  it("does not derive network.endpoint for a managed runner, even when network.port is set", async () => {
-    // A managed runner has no HTTP health surface — a derived endpoint would
-    // wrongly imply one exists, even though network.port may be set for reference
-    // (e.g. the daemon's own listen port, unrelated to platform health checks).
-    const reg = {
-      ...validRegistry,
-      services: [{
-        ...validRegistry.services[0],
-        runner: {
-          type: "managed",
-          startCmd: ["paseo", "daemon", "start"],
-          stopCmd: ["paseo", "daemon", "stop"],
-          healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'",
-        },
-        network: { port: 6767 },
-      }],
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].network.endpoint).toBeUndefined();
-  });
-
-  it("accepts a managed runner with no network object at all", async () => {
-    const reg = {
-      ...validRegistry,
-      services: [{
-        ...validRegistry.services[0],
-        runner: {
-          type: "managed",
-          startCmd: ["paseo", "daemon", "start"],
-          stopCmd: ["paseo", "daemon", "stop"],
-          healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'",
-        },
-        network: undefined,
-      }],
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].runner?.type).toBe("managed");
-  });
-
-  it("still requires network.healthPath for a systemd runner (unaffected by the managed exemption)", async () => {
-    const bad = { ...validRegistry, services: [{ ...validRegistry.services[0], network: { port: 3000 } }] };
-    await writeFile(registryPath, JSON.stringify(bad));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/network.healthPath is required/);
-  });
-});
-
-describe("Registry loader — intervals", () => {
-  it("loads healthMs and shardPollMs on a control registry", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { healthMs: 60000, shardPollMs: 30000 } }));
-    const state = await loadRegistry(registryPath);
-    expect(state.intervals).toEqual({ healthMs: 60000, shardPollMs: 30000 });
-  });
-
-  it("rejects an unknown field in intervals", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { idleMs: 1000 } }));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/unknown field in intervals/);
-  });
-
-  it("rejects a non-positive interval", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { healthMs: 0 } }));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/positive integer/);
-  });
-
-  it("rejects intervals that are not an object", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: [900000] }));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/intervals must be an object/);
-  });
-
-  it("rejects shardPollMs on a shard registry", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, type: "shard", intervals: { shardPollMs: 1000 } }));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/control-only/);
-  });
-
-  it("updateService write-back keeps the intervals block", async () => {
-    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { healthMs: 60000 } }));
-    const state = await loadRegistry(registryPath);
-    await updateService(state, registryPath, "svc1", { network: { port: 4321 } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(reloaded.intervals).toEqual({ healthMs: 60000 });
-  });
-});
-
-describe("Registry writer — preserves version, type, and defaults", () => {
-  it("updateService round-trip preserves version, type, and defaults", async () => {
-    const reg = {
-      ...validRegistry,
-      version: 2,
-      type: "shard" as const,
-      defaults: { lifecycle: { idleTimeout: 300000 } }
-    };
-    await writeFile(registryPath, JSON.stringify(reg));
-    const state = await loadRegistry(registryPath);
-    await updateService(state, registryPath, "svc1", { network: { port: 4321 } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(reloaded.version).toBe(2);
-    expect(reloaded.type).toBe("shard");
-    expect(reloaded.defaults).toEqual({ lifecycle: { idleTimeout: 300000 } });
-  });
-});
-
-describe("Registry writer", () => {
-  it("updating a service's port persists to disk and endpoint is re-derived on reload", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
+describe("writing", () => {
+  it("persists an edit, re-deriving the endpoint, and keeps everything else in the file as it was", async () => {
+    const doc = await write(d => {
+      d.type = "shard";
+      d.defaults = { lifecycle: { idleTimeout: 300000 } };
+      d.roster = ROSTER;
+      d.intervals = { healthMs: 60000 };
+      svc(d).ops = INSTALL;
+      d.services.push({ ...svc(d), id: "svc2", runner: { type: "external" }, ops: undefined, network: { port: 4000, healthPath: "/health" } });
+    });
     const state = await loadRegistry(registryPath);
     await updateService(state, registryPath, "svc1", { network: { port: 9999 } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(reloaded.services[0].network.port).toBe(9999);
-    expect(reloaded.services[0].network.endpoint).toBe("http://host1.ts.net:9999");
+
+    expect(state.services[0].network.endpoint).toBe("http://host1.ts.net:9999");
+    const onDisk = JSON.parse(await readFile(registryPath, "utf-8"));
+    expect(onDisk.services[0].network).toEqual({ ...doc.services[0].network, port: 9999 });
+    expect(onDisk.services[0].lifecycle).toEqual(doc.services[0].lifecycle);
+    expect(onDisk.services[1]).toEqual(doc.services[1]);
+    for (const key of ["version", "type", "defaults", "roster", "intervals"]) expect(onDisk[key]).toEqual(doc[key]);
+    expect(onDisk.services[0].ops).toEqual(INSTALL);
+    expect(await readdir(tmpDir)).toEqual(["registry.json"]);
   });
 
-  it("patching a service with a listenAddress derives the same endpoint the loader would", async () => {
-    // The patched endpoint and the reloaded one must agree. They once did not:
-    // updateService inferred https from listenAddress, so a port patch wrote an
-    // endpoint that flipped back to http on the next load.
-    const withListen = {
-      ...validRegistry,
-      services: [{ ...validRegistry.services[0], network: { port: 3000, healthPath: "/health", listenAddress: "127.0.0.1" } }]
-    };
-    await writeFile(registryPath, JSON.stringify(withListen));
+  it("writes no roster section back to a registry that had none", async () => {
+    await write();
+    await updateService(await loadRegistry(registryPath), registryPath, "svc1", { notes: "edited" });
+    expect(JSON.parse(await readFile(registryPath, "utf-8")).roster).toBeUndefined();
+  });
+
+  it("re-derives the endpoint when the scheme changes, and keeps a set scheme when only the port does", async () => {
+    await write();
     const state = await loadRegistry(registryPath);
-    const patched = await updateService(state, registryPath, "svc1", { network: { port: 9999 } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(patched.network.endpoint).toBe("http://127.0.0.1:9999");
-    expect(reloaded.services[0].network.endpoint).toBe(patched.network.endpoint);
+    await updateService(state, registryPath, "svc1", { network: { scheme: "https" } });
+    await updateService(state, registryPath, "svc1", { network: { port: 9999 } });
+    expect(state.services[0].network.endpoint).toBe("https://host1.ts.net:9999");
+    expect((await loadRegistry(registryPath)).services[0].network.endpoint).toBe("https://host1.ts.net:9999");
   });
 
-  it("patching scheme re-derives the endpoint and agrees with a reload", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
+  it("persists enabling and disabling", async () => {
+    await write();
+    await setEnabled(await loadRegistry(registryPath), registryPath, "svc1", false);
+    expect((await loadRegistry(registryPath)).services[0].permissions.enabled).toBe(false);
+  });
+
+  it("clears an optional field given null, leaving no key, and re-derives the endpoint when listenAddress goes", async () => {
+    await write(d => {
+      Object.assign(svc(d), { notes: "temporary" });
+      svc(d).network.listenAddress = "127.0.0.1";
+      svc(d).lifecycle = { idleTimeout: 1800000, startupTime: 60000 };
+    });
     const state = await loadRegistry(registryPath);
-    const patched = await updateService(state, registryPath, "svc1", { network: { scheme: "https" } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(patched.network.endpoint).toBe("https://host1.ts.net:3000");
-    expect(reloaded.services[0].network.endpoint).toBe(patched.network.endpoint);
+    const updated = await updateService(state, registryPath, "svc1", {
+      notes: null,
+      network: { listenAddress: null },
+      lifecycle: { idleTimeout: null, startupTime: null },
+    } as any);
+
+    expect(updated.network.endpoint).toBe("http://host1.ts.net:3000");
+    const onDisk = JSON.parse(await readFile(registryPath, "utf-8")).services[0];
+    expect(["notes" in onDisk, "listenAddress" in onDisk.network, "idleTimeout" in onDisk.lifecycle, "startupTime" in onDisk.lifecycle]).toEqual([false, false, false, false]);
   });
 
-  it("patching a scheme that is neither http nor https is rejected", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const state = await loadRegistry(registryPath);
-    expect(updateService(state, registryPath, "svc1", { network: { scheme: "ftp" } })).rejects.toThrow(/http/);
-  });
-
-  it("a managed runner gets no derived endpoint from a patch, matching the loader", async () => {
-    const managed = {
-      ...validRegistry,
-      services: [{
-        id: "svc1", capabilityId: "cap1", hostId: "host1",
-        permissions: { enabled: true },
-        runner: { type: "managed" as const, startCmd: "start", stopCmd: "stop", healthCmd: "health" },
-        network: { port: 3000 }
-      }]
-    };
-    await writeFile(registryPath, JSON.stringify(managed));
-    const state = await loadRegistry(registryPath);
-    const patched = await updateService(state, registryPath, "svc1", { network: { port: 9999 } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(patched.network.endpoint).toBeUndefined();
-    expect(reloaded.services[0].network.endpoint).toBeUndefined();
-  });
-
-  it("toggling a service's enabled field persists to disk", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const state = await loadRegistry(registryPath);
-    await setEnabled(state, registryPath, "svc1", false);
-    const reloaded = await loadRegistry(registryPath);
-    expect(reloaded.services[0].permissions.enabled).toBe(false);
-  });
-
-  it("updating a nonexistent service ID returns an error", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const state = await loadRegistry(registryPath);
-    expect(updateService(state, registryPath, "nonexistent", { network: { port: 1234 } })).rejects.toThrow();
-  });
-
-  it("write does not corrupt other services in the file", async () => {
-    const multi = {
-      ...validRegistry,
-      services: [
-        validRegistry.services[0],
-        {
-          id: "svc2", capabilityId: "cap1", hostId: "host1",
-          permissions: { enabled: true },
-          runner: { type: "external" as const },
-          network: { port: 4000, healthPath: "/health" }
-        }
-      ]
-    };
-    await writeFile(registryPath, JSON.stringify(multi));
-    const state = await loadRegistry(registryPath);
-    await updateService(state, registryPath, "svc1", { network: { port: 1234 } });
-    const reloaded = await loadRegistry(registryPath);
-    expect(reloaded.services).toHaveLength(2);
-    expect(reloaded.services[1].id).toBe("svc2");
-  });
-
-  it("write is atomic — temp file is renamed into place, no partial file left behind", async () => {
-    await writeFile(registryPath, JSON.stringify(validRegistry));
-    const state = await loadRegistry(registryPath);
-    await updateService(state, registryPath, "svc1", { network: { port: 5678 } });
-    // No .registry.tmp.* files should remain after the write
-    const { readdir } = await import("node:fs/promises");
-    const files = await readdir(tmpDir);
-    const tmpFiles = files.filter(f => f.startsWith(".registry.tmp."));
-    expect(tmpFiles).toHaveLength(0);
-    // And the final file must be valid JSON
-    const result = await readFile(registryPath, "utf-8");
-    expect(() => JSON.parse(result)).not.toThrow();
-  });
-});
-
-describe("Registry loader — ops.install", () => {
-  const installing = (ops: unknown) => ({
-    ...validRegistry,
-    services: [{
-      ...validRegistry.services[0],
-      runner: { type: "process" as const, main: ".build/release/app" },
-      ops,
-    }],
-  });
-  const env = { workingDirectory: "/srv/app" };
-  const artifact = { from: "services/app/.build/release/app", to: ".build/release/app" };
-
-  it("accepts artifacts with a source-tree from and a working-directory to", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [artifact] } })));
-    const registry = await loadRegistry(registryPath);
-    expect(registry.services[0].ops?.install?.artifacts).toEqual([artifact]);
-  });
-
-  it("rejects ops.install without a non-empty artifacts array", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [] } })));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*ops.install.artifacts/);
-  });
-
-  it("rejects an artifact missing its from or to", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ from: artifact.from }] } })));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*to/);
-  });
-
-  it("rejects an absolute to, which would escape the working directory", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ ...artifact, to: "/usr/local/bin/app" }] } })));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*relative/);
-  });
-
-  it("rejects a to that climbs out with ..", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ ...artifact, to: "../other/app" }] } })));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*relative/);
-  });
-
-  it("rejects an absolute from, which would read outside the source tree", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [{ ...artifact, from: "/tmp/app" }] } })));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*relative/);
-  });
-
-  it("rejects ops.install on a service with no working directory to install into", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ install: { artifacts: [artifact] } })));
-    expect(loadRegistry(registryPath)).rejects.toThrow(/svc1.*workingDirectory/);
-  });
-
-  it("keeps ops.install across a dashboard edit that rewrites the registry", async () => {
-    await writeFile(registryPath, JSON.stringify(installing({ env, install: { artifacts: [artifact] } })));
-    const state = await loadRegistry(registryPath);
-    await setEnabled(state, registryPath, "svc1", false);
-    const reloaded = await loadRegistry(registryPath);
-    expect(reloaded.services[0].ops?.install?.artifacts).toEqual([artifact]);
+  const REFUSED: [string, string, Record<string, unknown>, RegExp][] = [
+    ["an unknown service", "nope", { network: { port: 1234 } }, /nope/],
+    ["a scheme other than http or https", "svc1", { network: { scheme: "ftp" } }, /network.scheme must be "http" or "https"/],
+    ["a note that is not a string", "svc1", { notes: 42 }, /notes must be a string/],
+    ["clearing the port", "svc1", { network: { port: null } }, /network.port cannot be cleared/],
+    ["clearing the health path", "svc1", { network: { healthPath: null } }, /network.healthPath cannot be cleared/],
+    ["clearing the host", "svc1", { hostId: null }, /hostId cannot be cleared/],
+  ];
+  it.each(REFUSED)("refuses %s, leaving the file as it was", async (_, id, patch, error) => {
+    await write();
+    const before = await readFile(registryPath, "utf-8");
+    await expect(updateService(await loadRegistry(registryPath), registryPath, id, patch as any)).rejects.toThrow(error);
+    expect(await readFile(registryPath, "utf-8")).toBe(before);
   });
 });
