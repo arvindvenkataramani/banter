@@ -1,0 +1,844 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:banter:schemas:platform",
+  "title": "Banter schemas",
+  "description": "Banter's configuration contracts, in one file. Each top-level entry under $defs that names a file or an API response is a contract something validates against; the rest are shared building blocks. Extend this file rather than adding siblings — one place, so a type cannot be defined twice and drift. Currently covers the model roster (design record: dev/design/model-roster.md). Still to be added: the service registry, and the control plane's config.",
+  "$defs": {
+    "nodeRoster": {
+      "title": "Node roster",
+      "description": "The roster section of a node's registry.json: the providers that node runs, the models each serves, and the voices those models render. A node declares only what it can verify, and the control plane assembles every node's roster.",
+      "type": "object",
+      "required": [
+        "providers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "type": "object",
+          "description": "Keyed by registry service id. The key being a service id is what makes availability checkable rather than asserted: a provider naming no registered service is a load error. Host and port come from that registry entry and are not stored here. A service absent from this map is one the platform will not route to — that is how a deprecated service is excluded, needing no code change.",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/provider"
+          }
+        },
+        "voices": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/voice"
+          }
+        }
+      }
+    },
+    "assembledRoster": {
+      "title": "Assembled roster",
+      "description": "What the assembler serves: the union of the node rosters, each provider tagged with its host and whether that host is answering. An unreachable node keeps its last known roster with its providers flagged rather than dropping out — a node being down is not evidence its models ceased to exist, and a picker should show a model as declared-but-unreachable rather than silently omitting it. Voices are merged by id across nodes and their model lists concatenated.",
+      "type": "object",
+      "required": [
+        "providers",
+        "voices"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assembledProvider"
+          }
+        },
+        "voices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/voice"
+          }
+        }
+      }
+    },
+    "servedModel": {
+      "title": "Served model",
+      "description": "One entry in the listing a platform-built model server returns. Everything the roster declares about the model comes back, plus what only the server can know: a client asking what a server serves gets the whole answer, not a record it must complete from elsewhere. The runtime key is the exception — it is the server's own handle, and publishing it would invite a caller to send it in place of the platform id.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "object",
+        "created",
+        "owned_by",
+        "loaded",
+        "loadable",
+        "kind",
+        "transport",
+        "present"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "const": "model"
+        },
+        "created": {
+          "type": "integer",
+          "description": "Seconds since the epoch. These models are not created by the server, so it reports process start rather than fabricating a per-request timestamp."
+        },
+        "owned_by": {
+          "type": "string"
+        },
+        "loaded": {
+          "type": "boolean",
+          "description": "Whether this model is resident. For a model capable of both modes, `modes` says which are up."
+        },
+        "loadable": {
+          "type": "boolean",
+          "description": "Whether this model can be made resident over /v1/models/load."
+        },
+        "kind": {
+          "enum": [
+            "batch",
+            "streaming",
+            "both"
+          ],
+          "description": "What the model is. Reported separately from transport, although the two correlate today: one says what the model is, the other how it is reached, and the API should not assert a coupling it does not guarantee."
+        },
+        "transport": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "http",
+              "websocket"
+            ]
+          },
+          "description": "How the model is reached. A set, not one value: a model capable of both modes is served over the transcription endpoint and the socket, and collapsing that to one would assert a coupling the server does not guarantee. Reported separately from kind — one says what the model is, the other how it is reached."
+        },
+        "present": {
+          "type": "boolean",
+          "description": "Whether the weights are on disk. NOT availability — availability is a platform fact: is there a registered service, does the roster list this model, can the assembler reach the node. This is one input a server contributes, and it is what makes advertising a model whose weights were never downloaded impossible to restate."
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "batch",
+              "streaming"
+            ]
+          },
+          "description": "Which modes are currently resident. Present for a model reporting kind `both`; a caller loads a mode explicitly, and more than one can be resident at once."
+        },
+        "name": {
+          "type": "string",
+          "description": "What to call this model in a listing. Carried from the roster: a client asking what a server serves should not have to complete the answer from somewhere else."
+        },
+        "params": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/modelParam"
+          },
+          "description": "What a load accepts, as the roster declares it. Reported so a caller can discover the choice rather than learn it from a refusal."
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/modelVariant"
+          },
+          "description": "The model's variants and the parameter values that select each, as the roster declares them."
+        },
+        "variant": {
+          "type": "string",
+          "description": "Which variant is resident, for the loaded model that has several."
+        },
+        "cloning": {
+          "$ref": "#/$defs/cloning"
+        },
+        "chunkProfile": {
+          "type": "object",
+          "required": [
+            "words",
+            "chars"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "words": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "chars": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "description": "The model's own chunker constraint, reported because a caller sending more text than the model tolerates gets degraded audio and no error."
+        },
+        "presetVoices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "Voices this model already knows by name, needing no reference recording."
+        },
+        "canClone": {
+          "type": "boolean",
+          "description": "Whether this model can render a voice from a reference recording. The common half of `cloning`, which states the whole rule."
+        },
+        "requiresRefText": {
+          "type": "boolean",
+          "description": "Whether cloning under this model needs a transcript alongside the audio."
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "description": "A service that serves models. Which model list is required follows from the provider's registry capabilityId, checked at load — an STT model lacking params fails then, naming the model, rather than at first use.",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "responseFormat": {
+          "description": "The audio format this runtime returns from /v1/audio/speech, the same for every model it serves. Absent means mp3.",
+          "enum": [
+            "mp3",
+            "aac",
+            "wav"
+          ]
+        },
+        "sttModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sttModel"
+          }
+        },
+        "ttsModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ttsModel"
+          }
+        },
+        "sessions": {
+          "type": "boolean",
+          "description": "Whether this runtime's streaming socket understands session ids and take-over. Absent means no."
+        },
+        "defaultModel": {
+          "type": "string",
+          "description": "The STT model a request naming none loads into an empty slot. Must name an sttModels entry that needs no parameter."
+        },
+        "idleUnloadMs": {
+          "type": "integer",
+          "description": "How long an STT runtime's model may go without work before it is unloaded. Absent or not positive means 30 minutes."
+        }
+      },
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "sttModels"
+          ],
+          "properties": {
+            "sttModels": {
+              "type": "array",
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "ttsModels"
+          ],
+          "properties": {
+            "ttsModels": {
+              "type": "array",
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    },
+    "assembledProvider": {
+      "type": "object",
+      "required": [
+        "serviceId",
+        "hostId",
+        "reachable",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "serviceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hostId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reachable": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sttModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sttModel"
+          }
+        },
+        "ttsModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ttsModel"
+          }
+        },
+        "sessions": {
+          "type": "boolean",
+          "description": "Whether this runtime's streaming socket understands session ids and take-over. Absent means no."
+        },
+        "defaultModel": {
+          "type": "string",
+          "description": "The STT model a request naming none loads into an empty slot. Must name an sttModels entry that needs no parameter."
+        },
+        "idleUnloadMs": {
+          "type": "integer",
+          "description": "How long an STT runtime's model may go without work before it is unloaded. Absent or not positive means 30 minutes."
+        }
+      }
+    },
+    "sttModel": {
+      "type": "object",
+      "description": "An ASR model: an identity, what it is capable of, and what it accepts. It does not name a Swift class, a loader or a directory — which class serves a request is the server's business, and a roster naming one would describe the runtime rather than the model.",
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The platform's identity for this model, used by selections and by anything referring to it."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The identifier this provider's runtime uses to reach the model. What files it resolves to, in which cache root, is the runtime's business."
+        },
+        "kind": {
+          "enum": [
+            "batch",
+            "streaming",
+            "both"
+          ],
+          "description": "What the model can do. A model reporting `both` must be asked to load with an explicit mode: loading it without one is refused rather than defaulted, so a caller does not discover the wrong choice as unexplained latency."
+        },
+        "params": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/modelParam"
+          },
+          "description": "What a load of this model accepts, each with the values it may take. A parameter selects weights only where a variant maps it; the server refuses one its manager cannot use."
+        },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/modelVariant"
+          },
+          "description": "The distinct sets of weights under this id. Absent, the model has one implicit variant. Each names the parameter values that select it — the whole of the coupling between parameters and variants, held as data so the server never knows per model which parameters change weights."
+        }
+      }
+    },
+    "modelParam": {
+      "type": "object",
+      "required": [
+        "name",
+        "values"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "paramBinding": {
+      "type": "object",
+      "required": [
+        "name",
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "integer"
+        }
+      }
+    },
+    "modelVariant": {
+      "type": "object",
+      "required": [
+        "id",
+        "params"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/paramBinding"
+          },
+          "description": "The parameter values that select this variant. No two variants of a model may be selected by the same values."
+        }
+      }
+    },
+    "ttsModel": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cloning": {
+          "$ref": "#/$defs/cloning"
+        },
+        "presetVoices": {
+          "type": "array",
+          "description": "Voice identifiers baked into this model that no voice entry claims. A preset a voice does claim is declared there instead, via a models[] entry whose key names it — that is what lets one person exist as a preset on one model and a clone on another.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "chunkProfile": {
+          "type": "object",
+          "description": "The model's own chunker constraint, not a preference. A voice rendered under a second model must use that model's profile, or one model's constraint silently shapes another's output.",
+          "required": [
+            "words",
+            "chars"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "words": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "chars": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "requestParams": {
+          "type": "object",
+          "description": "Model-specific synthesis parameters passed through to the service.",
+          "additionalProperties": true
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The identifier this provider's runtime uses to reach the model. `pocket-tts` under the FluidAudio server and `mlx-community/pocket-tts` under mlx-audio are one model reached by two runtimes that address it differently."
+        }
+      }
+    },
+    "cloning": {
+      "type": "object",
+      "description": "What this model DEMANDS of a recording. Whether a given model can use a given recording is arithmetic over this and a voiceReference, computed at load — never written down per voice, because a written mapping means editing every voice when a model is added, and missing one fails silently. Absent means the model cannot clone.",
+      "required": [
+        "available"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "requiresText": {
+          "type": "boolean",
+          "description": "The model needs a transcript alongside the audio."
+        },
+        "minDurationS": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "maxDurationS": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sampleRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Required rate, where the model constrains it."
+        }
+      }
+    },
+    "voice": {
+      "type": "object",
+      "description": "A conceptual identity: a person, with a name. Not a property of any model, because several may render her, and not a recording, because there may be several.",
+      "required": [
+        "id",
+        "name",
+        "models"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "description": "The recordings this voice was built from. Several, because models differ in what they accept and one voice may have a ten-second cut with a transcript and a five-second one without. Which to use when more than one qualifies is the consumer's decision, not the roster's. A voice with a clone entry must have at least one reference satisfying that model's cloning requirements.",
+          "items": {
+            "$ref": "#/$defs/voiceReference"
+          }
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/voiceModel"
+          }
+        }
+      }
+    },
+    "voiceReference": {
+      "type": "object",
+      "description": "What a recording IS — facts about the file, true regardless of which model reads it. Declared rather than probed: voices change rarely, and a filesystem read on every load buys protection against an edit that almost never happens, while a stale duration produces audio that sounds wrong, which is loud enough at this frequency.",
+      "required": [
+        "audio",
+        "durationS",
+        "sampleRate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute path, on the node that declares it."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute path to the transcript, where one exists."
+        },
+        "durationS": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sampleRate": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "voiceModel": {
+      "type": "object",
+      "description": "How one model reaches one voice. A model may have her baked in or clone her from a recording, and the same voice can be available both ways — a preset on one model and a cloning reference on another, the same person rendered differently. One shape for both, or that case cannot be represented at all.",
+      "required": [
+        "serviceId",
+        "model",
+        "key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "serviceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The provider serving this model. Present because the same model id can appear under two providers, making a model reference a service-and-model pair rather than an id alone."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model's own identifier for this voice, or \"clone\" to render her from one of the voice's references."
+        }
+      }
+    },
+    "loadRequest": {
+      "type": "object",
+      "description": "What POST /v1/models/load accepts. A model that offers a choice must be told which: loading a both-capable model with no mode, or a model with chunk sizes with no chunkMs, is refused naming the model and its choices, rather than defaulted into a latency the caller did not pick.",
+      "required": [
+        "model"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A model id as listed by /v1/models."
+        },
+        "mode": {
+          "enum": [
+            "batch",
+            "streaming",
+            "both"
+          ],
+          "description": "Required when the model reports kind `both`; rejected when it reports one kind that this does not name. `both` makes all components resident."
+        },
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which of the model's variants to load, by id. Refused when given with parameters that select a different variant."
+        },
+        "chunkMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The chunkMs parameter, for a model declaring it; must be one of its values. Where a variant maps the value, it selects that variant. A model with several variants must be given a variant or parameters that select one."
+        }
+      }
+    },
+    "sttSelection": {
+      "type": "object",
+      "description": "Which transcription a voice session asks for. A selection, not a definition: every field here names something the roster declares, and none of it says what exists. Tuning that belongs to this use rather than to the model — how long a pause ends a turn, what counts as noise — lives here too, because the same model serves differently in different places.",
+      "additionalProperties": true,
+      "properties": {
+        "serviceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The registered service to transcribe through. Names a provider in the assembled roster."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A model id the chosen provider serves. The server starts holding nothing and never loads implicitly, so a session loads this before its first utterance; without it nothing can be transcribed."
+        },
+        "preferStreaming": {
+          "type": "boolean",
+          "description": "Which half of a model reporting kind `both` to load. Consulted only there — a model that does one thing is not a choice, and this cannot make a batch model stream. Absent, batch: the more accurate of the two, and what the loop did before streaming existed."
+        },
+        "chunkMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which streaming latency tier to load, for a model declaring the chunkMs parameter; must be one of its values. Where the roster maps the value to a variant, this selects it."
+        },
+        "reconnect": {
+          "type": "object",
+          "description": "What a voice session does when its streaming socket drops. It reconnects rather than ending voice; words the dropped socket held unfinalized are lost. The first attempt goes at once and each one after waits delayMs longer than the last. A socket that stays up for stableMs resets the count.",
+          "additionalProperties": false,
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Failed connections in a row after which voice ends. Zero ends voice on the first drop."
+            },
+            "delayMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How much longer each attempt after the first waits than the one before it."
+            },
+            "stableMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How long a socket must stay up before its drop starts a fresh count. One that drops sooner counts as a failure, so a fault that recurs just after the server accepts the session still ends voice."
+            }
+          }
+        },
+        "maxRecordingMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How long an utterance may run before it is flushed regardless of turn detection. A safety net against a wedged VAD sitting on audio indefinitely, not a turn-taking setting."
+        },
+        "settleOnStopMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long voice-off waits for an utterance still being heard or held paused to finish transcribing before closing the transport regardless."
+        },
+        "pauseFlushMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long a paused utterance keeps streaming silence in the microphone's place, so a streaming model transcribes the words it already holds; it produces text for buffered audio only as further audio arrives behind it."
+        },
+        "reveal": {
+          "type": "object",
+          "description": "Pacing bounds for the streaming partial's word-by-word reveal.",
+          "additionalProperties": false,
+          "properties": {
+            "minIntervalMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Fastest interval between revealed words, in ms. Default: 55."
+            },
+            "maxIntervalMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Slowest interval between revealed words, in ms. Default: 200."
+            }
+          }
+        },
+        "vad": {
+          "type": "object",
+          "description": "What counts as speech rather than noise. Applied after a turn ends, to decide whether it is worth transcribing at all.",
+          "additionalProperties": false,
+          "properties": {
+            "minSpeechDurationS": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Utterances shorter than this are discarded."
+            },
+            "minSpeechProb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Peak speech probability an utterance must reach to be kept."
+            }
+          }
+        },
+        "turnTaking": {
+          "type": "object",
+          "description": "When a turn is over. A pause is detected, smart-turn judges whether the speaker is finished or mid-thought, and the commit is delayed accordingly — longer where the verdict is that more is coming.",
+          "additionalProperties": false,
+          "properties": {
+            "pauseThresholdMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Silence after speech before the pause is considered one worth judging."
+            },
+            "commitMinDelayMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The wait after a pause smart-turn is confident ended a turn."
+            },
+            "commitMaxDelayMs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The wait after a pause smart-turn reads as mid-thought. The speaker resuming cancels the commit, which is what this time is for."
+            },
+            "smartTurnThreshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "At or above this probability the turn is taken as ended, earning the minimum delay."
+            },
+            "smartTurnLowCutoff": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Below this the turn is taken as unfinished, earning the maximum delay. Between the two the delay is interpolated along the curve."
+            },
+            "curve": {
+              "type": "object",
+              "description": "How a probability between the cutoffs maps onto a delay.",
+              "oneOf": [
+                {
+                  "required": [
+                    "type",
+                    "exponent"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "power"
+                    },
+                    "exponent": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "type",
+                    "center",
+                    "steepness"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "sigmoid"
+                    },
+                    "center": {
+                      "type": "number"
+                    },
+                    "steepness": {
+                      "type": "number"
+                    }
+                  }
+                }
+              ]
+            },
+            "interruptionMinRemainingS": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Seconds of speech still to play for a barge-in to count as interrupting something, rather than landing on audio that was ending anyway."
+            }
+          }
+        }
+      }
+    }
+  }
+}
