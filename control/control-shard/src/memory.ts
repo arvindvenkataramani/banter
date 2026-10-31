@@ -1,5 +1,3 @@
-import { appendEvent } from "../../shared/src/events";
-
 export type RunFn = (cmd: string[]) => Promise<{ stdout: string; exitCode: number; stderr: string }>;
 
 export async function getFreeMem(runFn: RunFn): Promise<number> {
@@ -40,16 +38,3 @@ export async function getLmsFootprint(runFn: RunFn): Promise<number> {
   }
 }
 
-export async function checkMemoryBudget(
-  runFn: RunFn,
-  freeMem: number,
-  requestedMem: number,
-  footprintMap: Map<string, number>,
-  eventsPath: string
-): Promise<{ ok: boolean; error?: string }> {
-  // TODO: Implement proper memory pressure detection.
-  // macOS Activity Monitor, top, vm_stat, and memory_pressure all report memory differently.
-  // Research: https://github.com/exelban/stats — see how it calculates memory pressure.
-  // For now, allow all loads (no memory budget check).
-  return { ok: true };
-}

@@ -1,11 +1,10 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { deriveHealthMap, deriveHealth, deriveServiceHealth, readEvents, appendEvent } from "../../shared/src/events";
+import { deriveHealthMap, deriveHealth, deriveServiceHealth } from "../../shared/src/events";
 import { emptyRoster } from "../../shared/src/roster";
 import { reloadRegistry } from "../../shared/src/registry";
 import * as shardRoutes from "./routes";
 import type { Registry, Service } from "../../../shared/types";
 
-type CheckMemoryBudgetFn = () => Promise<{ ok: boolean; error?: string }>;
 type LoadServiceFn = (svc: Service) => Promise<{ ok: boolean; error?: string }>;
 type UnloadServiceFn = (svc: Service) => Promise<{ ok: boolean; error?: string }>;
 
@@ -13,7 +12,6 @@ interface ShardAppDeps {
   registryState: Registry;
   eventsPath: string;
   getFreeMem: () => Promise<number>;
-  checkMemoryBudget: CheckMemoryBudgetFn;
   loadService: LoadServiceFn;
   unloadService: UnloadServiceFn;
   /** Last-activity timestamps, keyed by service id. Must be the same map the
@@ -23,29 +21,9 @@ interface ShardAppDeps {
 }
 
 export function createShardApp(deps: ShardAppDeps) {
-  const { registryState, eventsPath, getFreeMem, checkMemoryBudget, loadService, unloadService } = deps;
+  const { registryState, eventsPath, getFreeMem, loadService, unloadService } = deps;
   const app = new OpenAPIHono();
   const pingMap = deps.pingMap ?? new Map<string, number>();
-
-  // GET /api/health
-  app.get("/api/health", (c) => {
-    return c.json({ status: "ok" });
-  });
-
-  // GET /api/services
-  app.get("/api/services", async (c) => {
-    const healthOf = await deriveServiceHealth(eventsPath);
-    const result = registryState.services.map((svc) => ({ ...svc, ...healthOf(svc) }));
-    return c.json(result);
-  });
-
-  // GET /api/events
-  app.get("/api/events", async (c) => {
-    const limit = c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50;
-    const subjectId = c.req.query("subjectId") ?? undefined;
-    const events = await readEvents(eventsPath, { limit, subjectId });
-    return c.json(events);
-  });
 
   // GET /status
   app.openapi(shardRoutes.getStatus, async (c) => {
@@ -81,20 +59,7 @@ export function createShardApp(deps: ShardAppDeps) {
     if (!svc) return c.json({ error: "service not found" }, 404);
     if (!svc.permissions.enabled) return c.json({ error: "service is disabled" }, 400);
 
-    // For demand-loaded services, check memory budget before starting
     if (svc.lifecycle?.loadStrategy === "demand") {
-      const budgetCheck = await checkMemoryBudget();
-      if (!budgetCheck.ok) {
-        await appendEvent(eventsPath, {
-          type: "memory.pressure",
-          subjectType: "service",
-          subjectId: svcId,
-          data: { error: budgetCheck.error },
-          actor: "system",
-        });
-        return c.json({ success: false, error: budgetCheck.error ?? "memory pressure" }, 503);
-      }
-
       // Fire-and-forget: submit and return 202 immediately. A concurrent
       // request against this service joins the same submission rather than
       // being rejected, so state handling and failure reporting belong to

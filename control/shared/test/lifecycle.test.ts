@@ -1,49 +1,30 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
+// Starting, stopping, adopting and recovering a service, against a fake node
+// that records every command and answers Tailscale Serve like the real CLI.
+
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEvents } from "../src/events";
-import { clearLocks, clearRestartCounts, startService as realStartService } from "../src/lifecycle";
+import { submit, clearExecutor, type TaskResult } from "../src/executor";
+import {
+  clearLocks,
+  clearRestartCounts,
+  clearChildren,
+  startService,
+  stopService,
+  restartService,
+  enableService,
+  disableService,
+  handleProcessExit,
+  deriveStartCmd,
+  deriveStopCmd,
+  deriveRestartCmd,
+  deriveEnableCmd,
+  deriveDisableCmd,
+} from "../src/lifecycle";
 import type { Service } from "../../../shared/types";
-import type { RunFn as SharedRunFn, PollHealthFn as SharedPollHealthFn, SpawnFn, ProbeFn } from "../src/tailscale";
-
-// startService's fast path probes localhost for an already-running instance
-// before falling through to the full sequence these tests exercise. Real
-// fetch() would make that outcome depend on what (if anything) is actually
-// listening on the test's chosen port — pin it to "not running" so every
-// test deterministically reaches the code path it's testing.
-//
-// "Not running" must be signaled by throwing, not by resolving with
-// { ok: false } — a connection refused (nothing listening) throws from
-// fetch(), while { ok: false } is what a *reachable* service serving a
-// non-2xx response produces. startService's healthExpect: "reachable"
-// handling treats any resolved probe (even { ok: false }) as "already up",
-// so a resolving fake falsely looks like a live, non-2xx-answering service.
-const notRunningProbeFn: ProbeFn = async () => {
-  throw new Error("ECONNREFUSED (test stub: nothing listening)");
-};
-
-function startService(
-  runFn: SharedRunFn,
-  pollHealthFn: SharedPollHealthFn,
-  svc: Service,
-  eventsPath: string,
-  spawnFn?: SpawnFn
-): ReturnType<typeof realStartService> {
-  return realStartService(runFn, pollHealthFn, svc, eventsPath, spawnFn, notRunningProbeFn);
-}
-
-// ── Types for injectable dependencies ───────────────────────────────────────
-
-type RunFn = (cmd: string[]) => Promise<{ stdout: string; exitCode: number; stderr: string }>;
-type PollHealthFn = (endpoint: string, timeout: number, opts?: { acceptsAnyResponse?: boolean }) => Promise<boolean>;
-type SpawnProcessFn = (cmd: string, opts: { cwd?: string; env?: Record<string, string> }) => {
-  pid: number;
-  exited: Promise<number>;
-  kill: () => void;
-};
-
-// ── Fixtures ────────────────────────────────────────────────────────────────
+import type { RunFn, PollHealthFn, SpawnFn, ProbeFn } from "../src/tailscale";
 
 let tmpDir: string;
 let eventsPath: string;
@@ -51,6 +32,8 @@ let eventsPath: string;
 beforeEach(async () => {
   clearLocks();
   clearRestartCounts();
+  clearChildren();
+  clearExecutor();
   tmpDir = await mkdtemp(join(tmpdir(), "lifecycle-test-"));
   eventsPath = join(tmpDir, "events.jsonl");
 });
@@ -59,1225 +42,382 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-function makeService(overrides: Partial<Service> = {}): Service {
-  const { permissions, network, runner, ops, lifecycle, ...rest } = overrides as any;
+function makeService(overrides: Record<string, any> = {}): Service {
+  const { network, runner, lifecycle, ...rest } = overrides;
   return {
     id: "test-svc",
     capabilityId: "cap",
     hostId: "host",
-    permissions: { enabled: true, ...permissions },
-    network: {
-      port: 8080,
-      healthPath: "/health",
-      endpoint: "http://localhost:8080",
-      healthTimeout: 5000,
-      tailscaleServe: true,
-      ...network,
-    },
+    permissions: { enabled: true },
+    network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", healthTimeout: 5000, tailscaleServe: true, ...network },
     runner: { type: "process", main: "./server --port 8080", ...runner },
-    ops: { env: { workingDirectory: "/tmp/test-svc" }, ...ops },
-    lifecycle: { startupTime: 30000, ...lifecycle },
+    ops: { env: { workingDirectory: "/tmp/test-svc" } },
+    lifecycle: { startupTime: 30000, serveRetryDelay: 1, ...lifecycle },
     ...rest,
   } as Service;
 }
 
-// Tailscale `serve status --json` probes need a parseable response.
-// For the add-serve verification probe we report the port as registered so
-// addTailscaleServe sees its entry and returns ok.
-function tailscaleStatusStdout(port: number): string {
-  return JSON.stringify({ Web: { [`test-host:${port}`]: {} } });
-}
+const SYSTEMD = { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" };
+const MANAGED = { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" };
+const NO_SERVE = { tailscaleServe: false };
 
-function successRunFn(): RunFn {
-  return async (cmd) => {
-    if (cmd.includes("status") && cmd.includes("--json")) {
-      return { stdout: tailscaleStatusStdout(8080), exitCode: 0, stderr: "" };
+/** A node with one Serve slot. `log` holds every command and lifecycle step in order. */
+class FakeNode {
+  log: string[] = [];
+  calls: string[][] = [];
+  served = false;
+  listening = false;
+  probeOk = true;
+  healthy = true;
+  serveWriteError: string | null = null;
+  serveOffError: string | null = null;
+  statusFails = false;
+  managedHealthy = true;
+  commandError: string | null = null;
+  polls: { url: string; timeout: number; acceptsAnyResponse?: boolean }[] = [];
+  spawned: string[][] = [];
+  kills = 0;
+  private exits: ((code: number) => void)[] = [];
+
+  runFn: RunFn = async (cmd) => {
+    this.calls.push(cmd);
+    if (cmd[0] === "tailscale" && cmd.includes("status")) {
+      if (this.statusFails) return { stdout: "", exitCode: 1, stderr: "tailscaled is not running" };
+      return { stdout: JSON.stringify({ Web: this.served ? { "host:8080": {} } : {} }), exitCode: 0, stderr: "" };
     }
+    if (cmd[0] === "tailscale" && cmd.includes("off")) {
+      this.log.push("serve-off");
+      if (this.serveOffError) return { stdout: "", exitCode: 1, stderr: this.serveOffError };
+      this.served = false;
+      return { stdout: "", exitCode: 0, stderr: "" };
+    }
+    if (cmd[0] === "tailscale") {
+      this.log.push("serve-add");
+      if (this.serveWriteError) return { stdout: "", exitCode: 1, stderr: this.serveWriteError };
+      this.served = true;
+      return { stdout: "", exitCode: 0, stderr: "" };
+    }
+    if (cmd[0] === "sh") return { stdout: "", exitCode: this.managedHealthy ? 0 : 1, stderr: "" };
+    this.log.push(cmd.join(" "));
+    if (this.commandError) return { stdout: "", exitCode: 1, stderr: this.commandError };
     return { stdout: "", exitCode: 0, stderr: "" };
   };
-}
 
-function trackingRunFn(): { runFn: RunFn; calls: string[][] } {
-  const calls: string[][] = [];
-  const runFn: RunFn = async (cmd) => {
-    calls.push(cmd);
-    if (cmd.includes("status") && cmd.includes("--json")) {
-      return { stdout: tailscaleStatusStdout(8080), exitCode: 0, stderr: "" };
-    }
-    return { stdout: "", exitCode: 0, stderr: "" };
+  pollHealthFn: PollHealthFn = async (url, timeout, opts) => {
+    this.log.push("poll-health");
+    this.polls.push({ url, timeout, acceptsAnyResponse: opts?.acceptsAnyResponse });
+    return this.healthy;
   };
-  return { runFn, calls };
+
+  spawnFn: SpawnFn = (cmd) => {
+    this.log.push("spawn");
+    this.spawned.push(cmd);
+    let exit!: (code: number) => void;
+    const exited = new Promise<number>(r => { exit = r; });
+    this.exits.push(exit);
+    return { kill: () => { this.kills++; }, exited };
+  };
+
+  probeFn: ProbeFn = async () => {
+    if (!this.listening) throw new Error("ECONNREFUSED");
+    return { ok: this.probeOk };
+  };
+
+  /** Ends the most recently spawned child (or the nth) with `code`. */
+  exit(code: number, nth = this.exits.length - 1): void {
+    this.exits[nth](code);
+  }
+
+  start(svc: Service) {
+    return startService(this.runFn, this.pollHealthFn, svc, eventsPath, this.spawnFn, this.probeFn);
+  }
+
+  stop(svc: Service) {
+    return stopService(this.runFn, svc, eventsPath);
+  }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Runner: command derivation
-// ═════════════════════════════════════════════════════════════════════════════
+async function events(type?: string) {
+  const all = (await readEvents(eventsPath)).reverse();
+  return type ? all.filter(e => e.type === type) : all;
+}
 
-describe("runner command derivation", () => {
-  describe("process runner", () => {
-    it("derives start command from runner.main", async () => {
-      const { runFn, calls } = trackingRunFn();
-      const pollHealthFn: PollHealthFn = async () => true;
+const tick = (ms = 20) => new Promise(r => setTimeout(r, ms));
 
-      const svc = makeService({ runner: { type: "process", main: ".venv/bin/uvicorn server:app --port 8080" } });
-      await startService(runFn, pollHealthFn, svc, eventsPath);
+describe("commands each runner type issues", () => {
+  const plist = `${process.env.HOME}/Library/LaunchAgents/com.example.svc.plist`;
+  const gui = `gui/${process.getuid?.() ?? 501}`;
+  const systemd = makeService({ runner: { type: "systemd", unit: "embedding" } });
+  const launchd = makeService({ runner: { type: "launchd", label: "com.example.svc" } });
+  const managed = makeService({ runner: MANAGED });
+  const process_ = makeService({ runner: { type: "process", main: ".venv/bin/uvicorn server:app --port 8080" } });
 
-      // The start command should contain the main command (spawned or via shell)
-      const startCmd = calls.find(c => c.some(arg => arg.includes("uvicorn")));
-      expect(startCmd).toBeDefined();
-    });
-
-    it("derives stop from held process reference, not command pattern matching", async () => {
-      // Process runner uses Bun.spawn and holds the child — stop kills the child,
-      // not pkill -f. This test verifies stop does not shell out to pkill.
-      const { runFn, calls } = trackingRunFn();
-
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({ runner: { type: "process", main: "./server" } });
-      await stopService(runFn, svc, eventsPath);
-
-      const pkillCmd = calls.find(c => c.some(arg => arg.includes("pkill")));
-      expect(pkillCmd).toBeUndefined();
-    });
+  const TABLE: [string, (s: Service) => string[] | null, Service, string[] | null][] = [
+    ["process start", deriveStartCmd, process_, [".venv/bin/uvicorn", "server:app", "--port", "8080"]],
+    ["process stop (the held child is killed instead)", deriveStopCmd, process_, null],
+    ["systemd start", deriveStartCmd, systemd, ["systemctl", "--user", "start", "embedding.service"]],
+    ["systemd stop", deriveStopCmd, systemd, ["systemctl", "--user", "stop", "embedding.service"]],
+    ["systemd restart", deriveRestartCmd, systemd, ["systemctl", "--user", "restart", "embedding.service"]],
+    ["systemd enable", deriveEnableCmd, systemd, ["systemctl", "--user", "enable", "--now", "embedding.service"]],
+    ["systemd disable", deriveDisableCmd, systemd, ["systemctl", "--user", "disable", "--now", "embedding.service"]],
+    ["launchd start", deriveStartCmd, launchd, ["launchctl", "bootstrap", gui, plist]],
+    ["launchd stop", deriveStopCmd, launchd, ["launchctl", "bootout", gui, plist]],
+    ["managed start, as argv with no shell", deriveStartCmd, managed, ["paseo", "daemon", "start"]],
+    ["managed stop, as argv with no shell", deriveStopCmd, managed, ["paseo", "daemon", "stop"]],
+  ];
+  it.each(TABLE)("%s", (_, derive, svc, expected) => {
+    expect(derive(svc)).toEqual(expected);
   });
 
-  describe("systemd runner", () => {
-    it("derives start command as systemctl --user start {unit}.service", async () => {
-      const { runFn, calls } = trackingRunFn();
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const svc = makeService({
-        runner: { type: "systemd", unit: "embedding", unitFile: "ops/systemd/embedding.service" },
-        network: { port: 8767, healthPath: "/health", endpoint: "http://localhost:8767", tailscaleServe: false },
-      });
-      await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      const startCmd = calls.find(c =>
-        c.includes("systemctl") && c.includes("start") && c.includes("embedding.service")
-      );
-      expect(startCmd).toBeDefined();
-      expect(startCmd).toContain("--user");
-    });
-
-    it("derives stop command as systemctl --user stop {unit}.service", async () => {
-      const { runFn, calls } = trackingRunFn();
-
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "systemd", unit: "embedding", unitFile: "ops/systemd/embedding.service" },
-        network: { port: 8767, healthPath: "/health", endpoint: "http://localhost:8767", tailscaleServe: false },
-      });
-      await stopService(runFn, svc, eventsPath);
-
-      const stopCmd = calls.find(c =>
-        c.includes("systemctl") && c.includes("stop") && c.includes("embedding.service")
-      );
-      expect(stopCmd).toBeDefined();
-    });
-
-    it("derives restart command as systemctl --user restart {unit}.service", async () => {
-      const { runFn, calls } = trackingRunFn();
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const { restartService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "systemd", unit: "embedding", unitFile: "ops/systemd/embedding.service" },
-      });
-      await restartService(runFn, pollHealthFn, svc, eventsPath);
-
-      const restartCmd = calls.find(c =>
-        c.includes("systemctl") && c.includes("restart") && c.includes("embedding.service")
-      );
-      expect(restartCmd).toBeDefined();
-    });
-
-    it("derives enable command as systemctl --user enable --now {unit}.service", async () => {
-      const { runFn, calls } = trackingRunFn();
-
-      const { enableService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "systemd", unit: "embedding", unitFile: "ops/systemd/embedding.service" },
-      });
-      await enableService(runFn, svc, eventsPath);
-
-      const enableCmd = calls.find(c =>
-        c.includes("systemctl") && c.includes("enable") && c.includes("--now")
-      );
-      expect(enableCmd).toBeDefined();
-    });
-
-    it("derives disable command as systemctl --user disable --now {unit}.service", async () => {
-      const { runFn, calls } = trackingRunFn();
-
-      const { disableService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "systemd", unit: "embedding", unitFile: "ops/systemd/embedding.service" },
-      });
-      await disableService(runFn, svc, eventsPath);
-
-      const disableCmd = calls.find(c =>
-        c.includes("systemctl") && c.includes("disable") && c.includes("--now")
-      );
-      expect(disableCmd).toBeDefined();
-    });
+  it("runs enable, disable and restart through those commands", async () => {
+    const node = new FakeNode();
+    const svc = makeService({ runner: SYSTEMD, network: NO_SERVE });
+    await enableService(node.runFn, svc, eventsPath);
+    await disableService(node.runFn, svc, eventsPath);
+    await restartService(node.runFn, node.pollHealthFn, svc, eventsPath);
+    expect(node.log.filter(l => l.startsWith("systemctl"))).toEqual([
+      "systemctl --user enable --now test-svc.service",
+      "systemctl --user disable --now test-svc.service",
+      "systemctl --user restart test-svc.service",
+    ]);
   });
 
-  describe("launchd runner", () => {
-    it("derives enable as launchctl bootstrap with the plist label", async () => {
-      const { runFn, calls } = trackingRunFn();
-
-      const { enableService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "launchd", label: "com.banter.control-shard", plist: "ops/com.banter.control-shard.plist" },
-      });
-      await enableService(runFn, svc, eventsPath);
-
-      const bootstrapCmd = calls.find(c =>
-        c.includes("launchctl") && c.includes("bootstrap")
-      );
-      expect(bootstrapCmd).toBeDefined();
-    });
-
-    it("derives disable as launchctl bootout with the plist label", async () => {
-      const { runFn, calls } = trackingRunFn();
-
-      const { disableService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "launchd", label: "com.banter.control-shard", plist: "ops/com.banter.control-shard.plist" },
-      });
-      await disableService(runFn, svc, eventsPath);
-
-      const bootoutCmd = calls.find(c =>
-        c.includes("launchctl") && c.includes("bootout")
-      );
-      expect(bootoutCmd).toBeDefined();
-    });
-  });
-
-  describe("managed runner", () => {
-    it("derives start command from runner.startCmd as argv, no shell wrapping", async () => {
-      const { runFn, calls } = trackingRunFn();
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      // The start command itself is argv, unwrapped — a separate sh -c call is
-      // expected later in the same sequence for the healthCmd poll, so assert
-      // on the start call specifically rather than the whole call list.
-      expect(calls).toContainEqual(["paseo", "daemon", "start"]);
-    });
-
-    it("derives stop command from runner.stopCmd as argv, no shell wrapping", async () => {
-      const calls: string[][] = [];
-      const runFn: RunFn = async (cmd) => {
-        calls.push(cmd);
-        // healthCmd (via sh -c) reports unhealthy so post-stop confirmation succeeds
-        if (cmd[0] === "sh" && cmd[1] === "-c") return { stdout: "", exitCode: 1, stderr: "" };
-        return { stdout: "", exitCode: 0, stderr: "" };
-      };
-
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      await stopService(runFn, svc, eventsPath);
-
-      expect(calls).toContainEqual(["paseo", "daemon", "stop"]);
-    });
-
-    it("does not spawn or hold a child process on start", async () => {
-      let spawnCalled = false;
-      const spawnFn: SpawnProcessFn = () => {
-        spawnCalled = true;
-        return { pid: 1, exited: new Promise(() => {}), kill: () => {} };
-      };
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const { startService, getChild } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      await startService(successRunFn(), pollHealthFn, svc, eventsPath, spawnFn as any);
-
-      expect(spawnCalled).toBe(false);
-      expect(getChild(svc.id)).toBeUndefined();
-    });
-
-    it("a start command exiting 0 immediately (fork-and-detach) is not treated as failure", async () => {
-      const runFn: RunFn = async (cmd) => {
-        // Simulates paseo's own start command: exits 0 right away, no lingering process
-        return { stdout: "Daemon starting in background (PID 1234).", exitCode: 0, stderr: "" };
-      };
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it("returns error if the start command itself fails (nonzero exit)", async () => {
-      const runFn: RunFn = async () => ({ stdout: "", exitCode: 1, stderr: "paseo: command not found" });
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("command not found");
-    });
-
-    it("returns error if the stop command fails (nonzero exit)", async () => {
-      const runFn: RunFn = async () => ({ stdout: "", exitCode: 1, stderr: "stop failed" });
-
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      const result = await stopService(runFn, svc, eventsPath);
-
-      expect(result.ok).toBe(false);
-    });
-
-    it("confirms the daemon is actually down via healthCmd after the stop command succeeds", async () => {
-      let healthChecked = false;
-      const runFn: RunFn = async (cmd) => {
-        if (cmd[0] === "sh" && cmd[1] === "-c") {
-          healthChecked = true;
-          return { stdout: "", exitCode: 1, stderr: "" }; // unhealthy — confirms stopped
-        }
-        return { stdout: "", exitCode: 0, stderr: "" }; // stop command succeeds
-      };
-
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      const result = await stopService(runFn, svc, eventsPath);
-
-      expect(healthChecked).toBe(true);
-      expect(result.ok).toBe(true);
-    });
-
-    it("returns error if the stop command succeeds but healthCmd still reports healthy", async () => {
-      // Stop command exiting 0 doesn't guarantee the daemon actually stopped —
-      // this is the scenario healthCmd confirmation exists to catch. This test
-      // exhausts the real MANAGED_STOP_CONFIRM_MS grace period (a few seconds),
-      // since it's asserting the negative case (never goes unhealthy).
-      const runFn: RunFn = async (cmd) => {
-        if (cmd[0] === "sh" && cmd[1] === "-c") return { stdout: "", exitCode: 0, stderr: "" }; // still healthy
-        return { stdout: "", exitCode: 0, stderr: "" }; // stop command reports success
-      };
-
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      const result = await stopService(runFn, svc, eventsPath);
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("healthy");
-    }, 10000);
-
-    it("polls health via healthCmd through runFn during startup, not HTTP", async () => {
-      let httpPolled = false;
-      const pollHealthFn: PollHealthFn = async () => {
-        httpPolled = true;
-        return true;
-      };
-      const runFn: RunFn = async (cmd) => {
-        if (cmd[0] === "sh" && cmd[1] === "-c" && cmd[2].includes("paseo daemon status")) {
-          return { stdout: '{"localDaemon":"running"}', exitCode: 0, stderr: "" };
-        }
-        return { stdout: "", exitCode: 0, stderr: "" };
-      };
-
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      expect(result.ok).toBe(true);
-      expect(httpPolled).toBe(false);
-    });
-
-    it("start fails if healthCmd never exits 0 within startupTime", async () => {
-      const pollHealthFn: PollHealthFn = async () => true; // unused by managed runner
-      const runFn: RunFn = async (cmd) => {
-        if (cmd[0] === "sh" && cmd[1] === "-c") {
-          return { stdout: "", exitCode: 1, stderr: "" }; // health check never succeeds
-        }
-        return { stdout: "", exitCode: 0, stderr: "" };
-      };
-
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-        lifecycle: { startupTime: 100 },
-      });
-      const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("startup");
-    });
-
-    it("does not require network.tailscaleServe steps when tailscaleServe is unset", async () => {
-      let tailscaleCalled = false;
-      const runFn: RunFn = async (cmd) => {
-        if (cmd[0] === "tailscale") tailscaleCalled = true;
-        if (cmd[0] === "sh" && cmd[1] === "-c") return { stdout: "", exitCode: 0, stderr: "" };
-        return { stdout: "", exitCode: 0, stderr: "" };
-      };
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const svc = makeService({
-        runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" },
-        network: { port: 6767, healthPath: "", tailscaleServe: false },
-      });
-      await startService(runFn, pollHealthFn, svc, eventsPath);
-
-      expect(tailscaleCalled).toBe(false);
-    });
-  });
-
-  describe("external runner", () => {
-    it("start returns error for external services", async () => {
-      const pollHealthFn: PollHealthFn = async () => true;
-
-      const svc = makeService({ runner: { type: "external" } });
-      const result = await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
+  it("refuses to start or stop an external service", async () => {
+    const node = new FakeNode();
+    const svc = makeService({ runner: { type: "external" } });
+    for (const result of [await node.start(svc), await node.stop(svc)]) {
       expect(result.ok).toBe(false);
       expect(result.error).toContain("external");
-    });
-
-    it("stop returns error for external services", async () => {
-      const { stopService } = await import("../src/lifecycle");
-      const svc = makeService({ runner: { type: "external" } });
-      const result = await stopService(successRunFn(), svc, eventsPath);
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("external");
-    });
+    }
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Start sequence: atomic lifecycle
-// ═════════════════════════════════════════════════════════════════════════════
+describe("starting a service", () => {
+  it("clears stale Serve, spawns, waits for local health for startupTime, registers Serve, then records service.up", async () => {
+    const node = new FakeNode();
+    node.served = true;
+    const svc = makeService({ network: { endpoint: "https://remote-host:8080" }, lifecycle: { startupTime: 60000 } });
 
-describe("startService — atomic lifecycle", () => {
-  it("sequence is: teardown serve → start → poll health → setup serve → emit event", async () => {
-    const order: string[] = [];
-    const runFn: RunFn = async (cmd) => {
-      // Return valid JSON for status check so isPortServed returns true and teardown actually fires
-      if (cmd.includes("status")) {
-        return { stdout: JSON.stringify({ Web: { "hostname:8080": {} } }), exitCode: 0, stderr: "" };
-      }
-      if (cmd[0] === "tailscale" && cmd.includes("off")) order.push("teardown-serve");
-      else if (cmd[0] === "tailscale" && !cmd.includes("off")) order.push("setup-serve");
-      else if (cmd.some(a => a.includes("server"))) order.push("start");
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => {
-      order.push("poll-health");
-      return true;
-    };
-
-    const svc = makeService();
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    // Process runner: no stop command (kills child directly). Verify remaining ordering.
-    expect(order.indexOf("teardown-serve")).toBeLessThan(order.indexOf("start"));
-    expect(order.indexOf("start")).toBeLessThan(order.indexOf("poll-health"));
-    expect(order.indexOf("poll-health")).toBeLessThan(order.indexOf("setup-serve"));
+    expect(await node.start(svc)).toEqual({ ok: true });
+    expect(node.log).toEqual(["serve-off", "spawn", "poll-health", "serve-add"]);
+    expect(node.polls).toEqual([{ url: "http://localhost:8080/health", timeout: 60000, acceptsAnyResponse: false }]);
+    expect((await events()).map(e => e.type)).toEqual(["service.started", "service.up"]);
   });
 
-  it("polls health at localhost, not the Tailscale endpoint", async () => {
-    let polledUrl = "";
-    const pollHealthFn: PollHealthFn = async (url) => {
-      polledUrl = url;
-      return true;
-    };
-
-    const svc = makeService({
-      network: { port: 9999, endpoint: "https://remote-host:9999", healthPath: "/healthz", healthTimeout: 5000 },
-    });
-    await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    expect(polledUrl).toBe("http://localhost:9999/healthz");
+  it("waits 30s by default, and treats any response as alive only for a reachable-only service", async () => {
+    const node = new FakeNode();
+    await node.start(makeService({ lifecycle: { startupTime: undefined } }));
+    await node.start(makeService({ network: { healthExpect: "reachable" } }));
+    expect(node.polls.map(p => [p.timeout, p.acceptsAnyResponse])).toEqual([[30000, false], [30000, true]]);
   });
 
-  it("passes startupTime to pollHealth, not healthTimeout", async () => {
-    let polledTimeout = 0;
-    const pollHealthFn: PollHealthFn = async (_url, timeout) => {
-      polledTimeout = timeout;
-      return true;
-    };
-
-    const svc = makeService({
-      network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", healthTimeout: 5000 },
-      lifecycle: { startupTime: 60000 },
-    });
-    await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    expect(polledTimeout).toBe(60000);
-  });
-
-  it("emits service.up event after successful start", async () => {
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const svc = makeService();
-    await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "service.up" && e.subjectId === "test-svc")).toBe(true);
-  });
-
-  it("returns error if health poll times out", async () => {
-    const pollHealthFn: PollHealthFn = async () => false;
-
-    // Use systemd runner so a stop command exists for cleanup
-    const svc = makeService({
-      runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
-      network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false },
-    });
-    const result = await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(false);
+  it.each([
+    ["process", {}, (n: FakeNode) => n.kills],
+    ["systemd", { runner: SYSTEMD }, (n: FakeNode) => n.log.filter(l => l === "systemctl --user stop test-svc.service").length - 1],
+  ] as const)("fails a %s service that never becomes healthy at the process stage, stops it, and registers no Serve", async (_, overrides, stops) => {
+    const node = new FakeNode();
+    node.healthy = false;
+    const result = await node.start(makeService(overrides));
+    expect(result).toMatchObject({ ok: false, stage: "process", processStarted: false });
     expect(result.error).toContain("startup");
+    expect(stops(node)).toBe(1);
+    expect(node.log).not.toContain("serve-add");
   });
 
-  it("issues stop command to clean up if health poll times out (systemd runner)", async () => {
-    const stopped: boolean[] = [];
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("stop") && cmd.includes("test-svc.service")) stopped.push(true);
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => false;
-
-    const svc = makeService({
-      runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
-      network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false },
-    });
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-    expect(stopped.length).toBeGreaterThan(0);
-  });
-
-  it("does not setup Tailscale Serve if health poll times out", async () => {
-    let serveAdded = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd[0] === "tailscale" && !cmd.includes("off") && !cmd.includes("status") && cmd.some(a => a.includes("localhost"))) {
-        serveAdded = true;
-      }
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => false;
-
-    const svc = makeService();
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(serveAdded).toBe(false);
-  });
-
-  it("reports ok with stage serve if Tailscale Serve setup fails", async () => {
-    const runFn: RunFn = async (cmd) => {
-      // Serve add fails
-      if (cmd[0] === "tailscale" && !cmd.includes("off") && !cmd.includes("status")) {
-        return { stdout: "", exitCode: 1, stderr: "serve failed" };
-      }
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const svc = makeService();
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
-    expect(result.stage).toBe("serve");
-    expect(result.error).toContain("serve failed");
-  });
-
-  it("does not issue a stop command after Tailscale Serve setup fails (systemd runner)", async () => {
-    // The start sequence runs an idempotent stop before spawning, so only a
-    // stop issued *after* the serve write counts as tearing the service down.
-    let serveFailed = false;
-    let stopCalled = false;
-    const runFn: RunFn = async (cmd) => {
-      // Serve add fails
-      if (cmd[0] === "tailscale" && !cmd.includes("off") && !cmd.includes("status")) {
-        serveFailed = true;
-        return { stdout: "", exitCode: 1, stderr: "serve failed" };
-      }
-      if (serveFailed && cmd.includes("stop") && cmd.includes("test-svc.service")) stopCalled = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const svc = makeService({
-      runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
-    });
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-    expect(stopCalled).toBe(false);
-  });
-
-  it("emits tailscale.serve_failed event when Tailscale Serve setup fails", async () => {
-    const runFn: RunFn = async (cmd) => {
-      if (cmd[0] === "tailscale" && !cmd.includes("off") && !cmd.includes("status") && cmd.some(a => a.includes("localhost"))) {
-        return { stdout: "", exitCode: 1, stderr: "serve failed" };
-      }
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const svc = makeService();
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "tailscale.serve_failed")).toBe(true);
-  });
-
-  it("skips Tailscale Serve steps when tailscaleServe is false", async () => {
-    let tailscaleCalled = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd[0] === "tailscale") tailscaleCalled = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const svc = makeService({ network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false } });
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(tailscaleCalled).toBe(false);
-  });
-
-  it("returns error if start command fails", async () => {
-    const runFn: RunFn = async (cmd) => {
-      // Fail on any start-like command that isn't a stop or tailscale command
-      if (!cmd.some(a => a.includes("stop")) && cmd[0] !== "tailscale") {
-        return { stdout: "", exitCode: 1, stderr: "start failed" };
-      }
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const svc = makeService();
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
+  it("fails when the start command fails, carrying its error", async () => {
+    const node = new FakeNode();
+    node.commandError = "start failed";
+    const result = await node.start(makeService({ runner: SYSTEMD }));
     expect(result.ok).toBe(false);
     expect(result.error).toContain("start failed");
   });
-});
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Fast path: already-running process, Tailscale Serve repair
-// ═════════════════════════════════════════════════════════════════════════════
+  it("keeps a healthy process running when only Serve registration fails, reporting the service degraded", async () => {
+    const node = new FakeNode();
+    node.serveWriteError = "etag mismatch";
+    const result = await node.start(makeService({ lifecycle: { serveRetryAttempts: 2 } }));
 
-describe("startService — fast path Tailscale Serve repair", () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+    expect(result).toEqual({ ok: true, stage: "serve", processStarted: true, error: "etag mismatch" });
+    expect(node.kills).toBe(0);
+    expect(node.log.filter(l => l === "serve-add")).toHaveLength(2);
+    expect((await events()).map(e => e.type)).toEqual(["service.started", "tailscale.serve_failed", "service.degraded"]);
   });
 
-  function mockHealthyFetch() {
-    globalThis.fetch = (async () => new Response(null, { status: 200 })) as typeof fetch;
-  }
-
-  // Reports the port as NOT registered with Tailscale Serve until an add command
-  // runs — mirrors real `tailscale serve` state so addTailscaleServe's own
-  // post-add verification (tailscale.ts) succeeds.
-  function unservedRunFn(port = 8080): { runFn: RunFn; calls: string[][] } {
-    const calls: string[][] = [];
-    let served = false;
-    const runFn: RunFn = async (cmd) => {
-      calls.push(cmd);
-      if (cmd.includes("status") && cmd.includes("--json")) {
-        return { stdout: JSON.stringify({ Web: served ? { [`test-host:${port}`]: {} } : {} }), exitCode: 0, stderr: "" };
-      }
-      if (cmd[0] === "tailscale" && !cmd.includes("off")) served = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    return { runFn, calls };
-  }
-
-  it("repairs a missing Tailscale Serve entry instead of respawning when no child is held", async () => {
-    mockHealthyFetch();
-    const { runFn, calls } = unservedRunFn();
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const svc = makeService();
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
-    // The process start command must never run — respawning would collide on the
-    // port with the still-running (unmanaged) process.
-    expect(calls.some(c => c.some(a => a.includes("server")))).toBe(false);
-    // But the missing Serve entry must be repaired.
-    expect(calls.some(c => c[0] === "tailscale" && !c.includes("off") && !c.includes("status"))).toBe(true);
-  });
-
-  it("emits service.up with alreadyRunning after repairing Tailscale Serve", async () => {
-    mockHealthyFetch();
-    const { runFn } = unservedRunFn();
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const svc = makeService();
-    await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    const events = await readEvents(eventsPath);
-    const upEvent = events.find(e => e.type === "service.up" && e.subjectId === "test-svc");
-    expect(upEvent?.data).toEqual({ alreadyRunning: true, serveRepaired: true });
-  });
-
-  it("skips the Tailscale check entirely when tailscaleServe is false", async () => {
-    mockHealthyFetch();
-    const { runFn, calls } = unservedRunFn();
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const svc = makeService({ network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false } });
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
-    expect(calls.some(c => c[0] === "tailscale")).toBe(false);
-  });
-
-  it("short-circuits without re-registering when Serve is already present", async () => {
-    mockHealthyFetch();
-    const { runFn, calls } = trackingRunFn(); // reports port 8080 as already served
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const svc = makeService();
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
-    // Only the status check should have run — no redundant add/remove.
-    expect(calls.filter(c => c[0] === "tailscale" && !c.includes("status")).length).toBe(0);
-    // Assert the adopt-existing event specifically: without this the call-count
-    // check above would also pass for a full restart that skipped Serve entirely.
-    const events = await readEvents(eventsPath);
-    const upEvent = events.find(e => e.type === "service.up" && e.subjectId === "test-svc");
-    expect(upEvent?.data).toEqual({ alreadyRunning: true });
-    // The process must not have been respawned.
-    expect(calls.some(c => c.some(a => a.includes("server")))).toBe(false);
-  });
-
-  // Finding 3: the "Serve missing AND we hold a child reference" branch — the case
-  // the fast-path comment is specifically about, previously uncovered. Here a
-  // restart IS safe (we own the process), so it must take the full sequence:
-  // kill the tracked child, respawn, and re-register Serve.
-  it("falls through to a full restart when Serve is missing and a child is held", async () => {
-    const { startService, clearChildren, getChild } = await import("../src/lifecycle");
-    clearChildren();
-
-    let killed = 0;
-    let spawned: string[][] = [];
-    const spawnFn = (cmd: string[]) => { spawned.push(cmd); return { kill: () => { killed++; } }; };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    // First start: probe fails, so the full path runs and seeds a child reference.
-    globalThis.fetch = (async () => { throw new Error("connection refused"); }) as typeof fetch;
-    const seed = unservedRunFn();
-    await startService(seed.runFn, pollHealthFn, makeService(), eventsPath, spawnFn as any);
-    expect(getChild("test-svc")).toBeDefined();
-
-    // Now the process answers locally but its Serve entry is gone, and we still
-    // hold the child — the fast path must NOT adopt-and-repair here.
-    mockHealthyFetch();
-    spawned = [];
-    const { runFn, calls } = unservedRunFn();
-    const result = await startService(runFn, pollHealthFn, makeService(), eventsPath, spawnFn as any);
-
-    expect(result.ok).toBe(true);
-    expect(killed).toBe(1);                              // old child torn down
-    expect(spawned).toEqual([["./server", "--port", "8080"]]); // and respawned
-    // Serve re-registered as part of the full sequence.
-    expect(calls.some(c => c[0] === "tailscale" && c.includes("localhost:8080"))).toBe(true);
-    // A full restart emits a plain service.up, not the adopt-existing shape.
-    const events = await readEvents(eventsPath);
-    const ups = events.filter(e => e.type === "service.up" && e.subjectId === "test-svc");
-    expect(ups[ups.length - 1]?.data).toEqual({});
-  });
-
-  // Finding 5: a failed `tailscale serve status` is not evidence the entry is
-  // missing. Treating "unknown" as "not-served" would turn a transient tailscaled
-  // blip into a failed start for a service that is running fine.
-  it("does not attempt a repair when the Serve status query itself fails", async () => {
-    mockHealthyFetch();
-    const calls: string[][] = [];
-    const runFn: RunFn = async (cmd) => {
-      calls.push(cmd);
-      if (cmd.includes("status") && cmd.includes("--json")) {
-        return { stdout: "", exitCode: 1, stderr: "tailscaled is not running" };
-      }
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const result = await startService(runFn, pollHealthFn, makeService(), eventsPath);
-
-    // Adopted as already-running rather than failed on an unverifiable status.
-    expect(result.ok).toBe(true);
-    // No add attempted — the previous behaviour tried one and failed the start.
-    expect(calls.some(c => c[0] === "tailscale" && !c.includes("status"))).toBe(false);
-    const events = await readEvents(eventsPath);
-    const upEvent = events.find(e => e.type === "service.up" && e.subjectId === "test-svc");
-    expect(upEvent?.data).toEqual({ alreadyRunning: true });
-  });
-
-  it("reports ok with stage serve if repairing the Tailscale Serve entry fails", async () => {
-    mockHealthyFetch();
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("status") && cmd.includes("--json")) {
-        return { stdout: JSON.stringify({ Web: {} }), exitCode: 0, stderr: "" };
-      }
-      if (cmd[0] === "tailscale") return { stdout: "", exitCode: 1, stderr: "etag mismatch" };
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const svc = makeService();
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
-    expect(result.stage).toBe("serve");
-    expect(result.processStarted).toBe(true);
-    expect(result.error).toContain("etag mismatch");
-  });
-
-  // healthExpect: "reachable" services (e.g. an MCP streamable-HTTP endpoint that
-  // 406s a plain GET) must be adopted as already-running on a non-2xx response,
-  // the same leniency checkService already applies to the periodic health check.
-  it("adopts an already-running reachable-only service even when its probe returns non-2xx", async () => {
-    globalThis.fetch = (async () => new Response(null, { status: 406 })) as typeof fetch;
-    const { runFn } = unservedRunFn();
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startService, clearChildren } = await import("../src/lifecycle");
-    clearChildren();
-    const svc = makeService({
-      network: { port: 8080, healthPath: "/mcp", endpoint: "http://localhost:8080", tailscaleServe: true, healthExpect: "reachable" },
-    });
-    const result = await startService(runFn, pollHealthFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
-    const events = await readEvents(eventsPath);
-    const upEvent = events.find(e => e.type === "service.up" && e.subjectId === "test-svc");
-    expect(upEvent?.data).toEqual({ alreadyRunning: true, serveRepaired: true });
+  it("never touches Tailscale for a service without tailscaleServe", async () => {
+    const node = new FakeNode();
+    const svc = makeService({ network: NO_SERVE });
+    await node.start(svc);
+    await node.stop(svc);
+    expect(node.calls.some(c => c[0] === "tailscale")).toBe(false);
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Stop sequence
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe("stopService", () => {
-  it("tears down Tailscale Serve before stopping the process (systemd runner)", async () => {
-    const order: string[] = [];
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("status")) {
-        return { stdout: JSON.stringify({ Web: { "hostname:8080": {} } }), exitCode: 0, stderr: "" };
-      }
-      if (cmd[0] === "tailscale") order.push("tailscale");
-      else order.push("stop");
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { stopService } = await import("../src/lifecycle");
-    const svc = makeService({
-      runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
-    });
-    await stopService(runFn, svc, eventsPath);
-
-    expect(order.indexOf("tailscale")).toBeLessThan(order.indexOf("stop"));
+describe("adopting a service that is already running", () => {
+  it("records it up without respawning, registering Serve if the entry is missing", async () => {
+    const node = new FakeNode();
+    node.listening = true;
+    expect(await node.start(makeService())).toEqual({ ok: true });
+    expect(node.log).toEqual(["serve-add"]);
+    expect((await events("service.up"))[0].data).toEqual({ alreadyRunning: true, serveRepaired: true });
   });
 
-  it("stops the process even if Tailscale Serve teardown fails (systemd runner)", async () => {
-    let stopped = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("status")) {
-        return { stdout: JSON.stringify({ Web: { "hostname:8080": {} } }), exitCode: 0, stderr: "" };
-      }
-      if (cmd[0] === "tailscale") return { stdout: "", exitCode: 1, stderr: "error" };
-      stopped = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { stopService } = await import("../src/lifecycle");
-    const svc = makeService({
-      runner: { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" },
-    });
-    await stopService(runFn, svc, eventsPath);
-
-    expect(stopped).toBe(true);
+  it.each([
+    ["Serve is already registered", (n: FakeNode) => { n.served = true; }],
+    ["the Serve status cannot be read", (n: FakeNode) => { n.statusFails = true; }],
+  ])("leaves Serve alone when %s", async (_, setup) => {
+    const node = new FakeNode();
+    node.listening = true;
+    setup(node);
+    await node.start(makeService());
+    expect(node.log).toEqual([]);
+    expect((await events("service.up"))[0].data).toEqual({ alreadyRunning: true });
   });
 
-  it("emits service.stopped event", async () => {
-    const { stopService } = await import("../src/lifecycle");
-    const svc = makeService();
-    await stopService(successRunFn(), svc, eventsPath);
-
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "service.stopped" && e.subjectId === "test-svc")).toBe(true);
+  it("adopts a reachable-only service whose probe answers non-2xx", async () => {
+    const node = new FakeNode();
+    node.listening = true;
+    node.probeOk = false;
+    await node.start(makeService({ network: { healthExpect: "reachable" } }));
+    expect(node.spawned).toEqual([]);
   });
 
-  it("returns ok even if Tailscale Serve teardown fails", async () => {
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("status")) return { stdout: JSON.stringify({ Web: { "hostname:8080": {} } }), exitCode: 0, stderr: "" };
-      if (cmd[0] === "tailscale") return { stdout: "", exitCode: 1, stderr: "error" };
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
+  it("respawns instead when Serve is missing and the platform holds a child for the service", async () => {
+    const node = new FakeNode();
+    await node.start(makeService());
+    node.listening = true;
+    node.served = false;
 
-    const { stopService } = await import("../src/lifecycle");
-    const svc = makeService();
-    const result = await stopService(runFn, svc, eventsPath);
-
-    expect(result.ok).toBe(true);
+    expect(await node.start(makeService())).toEqual({ ok: true });
+    expect(node.kills).toBe(1);
+    expect(node.spawned).toHaveLength(2);
+    expect(node.served).toBe(true);
   });
 
-  it("emits tailscale.serve_remove_failed when teardown fails", async () => {
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("status")) return { stdout: JSON.stringify({ Web: { "hostname:8080": {} } }), exitCode: 0, stderr: "" };
-      if (cmd[0] === "tailscale" && cmd.includes("off")) return { stdout: "", exitCode: 1, stderr: "error" };
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { stopService } = await import("../src/lifecycle");
-    const svc = makeService();
-    await stopService(runFn, svc, eventsPath);
-
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "tailscale.serve_remove_failed")).toBe(true);
-  });
-
-  it("skips Tailscale Serve teardown when tailscaleServe is false", async () => {
-    let tailscaleCalled = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd[0] === "tailscale") tailscaleCalled = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { stopService } = await import("../src/lifecycle");
-    const svc = makeService({ network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", tailscaleServe: false } });
-    await stopService(runFn, svc, eventsPath);
-
-    expect(tailscaleCalled).toBe(false);
+  it("reports the service degraded when registering the missing Serve entry fails", async () => {
+    const node = new FakeNode();
+    node.listening = true;
+    node.serveWriteError = "etag mismatch";
+    expect(await node.start(makeService())).toEqual({ ok: true, stage: "serve", processStarted: true, error: "etag mismatch" });
+    expect((await events("service.degraded"))).toHaveLength(1);
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Crash recovery
-// ═════════════════════════════════════════════════════════════════════════════
+describe("a managed runner", () => {
+  it("starts through its own command without spawning, and is healthy when healthCmd exits 0", async () => {
+    const node = new FakeNode();
+    const result = await node.start(makeService({ runner: MANAGED, network: NO_SERVE }));
+    expect(result.ok).toBe(true);
+    expect(node.log).toEqual(["paseo daemon stop", "paseo daemon start"]);
+    expect(node.spawned).toEqual([]);
+    expect(node.polls).toEqual([]);
+  });
+
+  it.each([
+    ["its start command fails", (n: FakeNode) => { n.commandError = "paseo: command not found"; }, "command not found"],
+    ["healthCmd never passes within startupTime", (n: FakeNode) => { n.managedHealthy = false; }, "startup"],
+  ])("fails a start when %s", async (_, setup, error) => {
+    const node = new FakeNode();
+    setup(node);
+    const result = await node.start(makeService({ runner: MANAGED, network: NO_SERVE, lifecycle: { startupTime: 100 } }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain(error);
+  });
+
+  it("confirms a stop only once healthCmd reports the daemon down", async () => {
+    const svc = makeService({ runner: MANAGED, network: NO_SERVE });
+    const down = new FakeNode();
+    down.managedHealthy = false;
+    expect((await down.stop(svc)).ok).toBe(true);
+
+    const stillUp = new FakeNode();
+    const result = await stillUp.stop(svc);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("healthy");
+
+    const failing = new FakeNode();
+    failing.commandError = "stop failed";
+    expect((await failing.stop(svc)).ok).toBe(false);
+  }, 10000);
+});
+
+describe("stopping a service", () => {
+  it("removes Serve before stopping the process, then records service.stopped", async () => {
+    const node = new FakeNode();
+    node.served = true;
+    expect((await node.stop(makeService({ runner: SYSTEMD }))).ok).toBe(true);
+    expect(node.log).toEqual(["serve-off", "systemctl --user stop test-svc.service"]);
+    expect((await events()).map(e => e.type)).toEqual(["service.stopped"]);
+  });
+
+  it("still stops and succeeds when Serve removal fails, recording the failure", async () => {
+    const node = new FakeNode();
+    node.served = true;
+    node.serveOffError = "error";
+    expect((await node.stop(makeService({ runner: SYSTEMD }))).ok).toBe(true);
+    expect(node.log).toContain("systemctl --user stop test-svc.service");
+    expect((await events()).map(e => e.type)).toEqual(["tailscale.serve_remove_failed", "service.stopped"]);
+  });
+});
 
 describe("crash recovery", () => {
-  it("emits service.crashed event when a process exits unexpectedly", async () => {
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({ lifecycle: { restartOnCrash: false } });
-    await handleProcessExit(successRunFn(), svc, eventsPath, 1);
+  it("records a nonzero exit of the held child as a crash, removes its Serve entry, and marks it down when restart is off", async () => {
+    const node = new FakeNode();
+    await node.start(makeService());
+    node.exit(1);
+    await tick();
 
-    const events = await readEvents(eventsPath);
-    const crashEvent = events.find(e => e.type === "service.crashed");
-    expect(crashEvent).toBeDefined();
-    expect(crashEvent!.subjectId).toBe("test-svc");
-    expect(crashEvent!.data.exitCode).toBe(1);
+    const crashed = await events("service.crashed");
+    expect(crashed.map(e => e.data.exitCode)).toEqual([1]);
+    expect(node.served).toBe(false);
+    expect(await events("service.down")).toHaveLength(1);
+    expect(node.spawned).toHaveLength(1);
   });
 
-  it("tears down Tailscale Serve on crash", async () => {
-    let serveRemoved = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.includes("status")) {
-        return { stdout: JSON.stringify({ Web: { "hostname:8080": {} } }), exitCode: 0, stderr: "" };
-      }
-      if (cmd[0] === "tailscale" && cmd.includes("off")) serveRemoved = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({ lifecycle: { restartOnCrash: false } });
-    await handleProcessExit(runFn, svc, eventsPath, 1);
-
-    expect(serveRemoved).toBe(true);
+  it.each([
+    ["a deliberate stop", async (n: FakeNode, svc: Service) => { await n.stop(svc); n.exit(143, 0); }],
+    ["the exit of a child already replaced", async (n: FakeNode, svc: Service) => { await n.start(svc); n.exit(1, 0); }],
+    ["a clean exit", async (n: FakeNode) => { n.exit(0, 0); }],
+  ])("does not treat %s as a crash", async (_, act) => {
+    const node = new FakeNode();
+    const svc = makeService({ lifecycle: { restartOnCrash: true, restartBackoff: 1 } });
+    await node.start(svc);
+    await act(node, svc);
+    await tick();
+    expect(await events("service.crashed")).toEqual([]);
   });
 
-  it("does not restart when restartOnCrash is false", async () => {
-    let startCalled = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.some(a => a.includes("server"))) startCalled = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({ lifecycle: { restartOnCrash: false } });
-    await handleProcessExit(runFn, svc, eventsPath, 1);
-
-    expect(startCalled).toBe(false);
+  it("restarts a crashed service, and a restart that comes up healthy resets the budget", async () => {
+    const node = new FakeNode();
+    await node.start(makeService({ lifecycle: { restartOnCrash: true, restartBackoff: 1, maxRestarts: 1 } }));
+    for (const spawns of [2, 3]) {
+      node.exit(1);
+      await tick(60);
+      expect(node.spawned).toHaveLength(spawns);
+    }
+    expect(await events("service.down")).toEqual([]);
   });
 
-  it("emits service.down when restartOnCrash is false", async () => {
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({ lifecycle: { restartOnCrash: false } });
-    await handleProcessExit(successRunFn(), svc, eventsPath, 1);
-
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "service.down")).toBe(true);
+  it.each([[2, true], [3, false]])("with %i failed recoveries behind it and a budget of 3, restarts: %s", async (restartCount, restarts) => {
+    const node = new FakeNode();
+    const svc = makeService({ lifecycle: { restartOnCrash: true, restartBackoff: 1, maxRestarts: 3 } });
+    await handleProcessExit(node.runFn, svc, eventsPath, 1, { restartCount, pollHealthFn: node.pollHealthFn, spawnFn: node.spawnFn });
+    expect(node.spawned.length > 0).toBe(restarts);
+    expect((await events("service.down")).length).toBe(restarts ? 0 : 1);
   });
 
-  it("attempts restart when restartOnCrash is true and budget remains", async () => {
-    const { runFn, calls } = trackingRunFn();
-    const pollHealthFn: PollHealthFn = async () => true;
+  it("records a crash but skips recovery while a lifecycle request for the service is pending", async () => {
+    const node = new FakeNode();
+    const svc = makeService({ lifecycle: { restartOnCrash: true, restartBackoff: 1 } });
+    await node.start(svc);
 
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({
-      lifecycle: { restartOnCrash: true, maxRestarts: 3, restartBackoff: 10 },
-    });
-    await handleProcessExit(runFn, svc, eventsPath, 1, { restartCount: 0, pollHealthFn });
+    let release!: () => void;
+    const pending = submit(svc.id, "stop", () => new Promise<TaskResult>(r => { release = () => r({ ok: true }); }));
+    node.exit(1);
+    await tick(60);
 
-    // Should have attempted to start the service
-    const startAttempt = calls.some(c => c.some(a => a.includes("server") || a.includes("start")));
-    expect(startAttempt).toBe(true);
-  });
-
-  it("emits service.down and does not restart when maxRestarts is exhausted", async () => {
-    let startCalled = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.some(a => a.includes("server"))) startCalled = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({
-      lifecycle: { restartOnCrash: true, maxRestarts: 3, restartBackoff: 10 },
-    });
-    await handleProcessExit(runFn, svc, eventsPath, 1, { restartCount: 3, pollHealthFn: async () => true });
-
-    expect(startCalled).toBe(false);
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "service.down")).toBe(true);
-  });
-
-  it("restart count of maxRestarts - 1 still allows one more restart", async () => {
-    const { runFn, calls } = trackingRunFn();
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({
-      lifecycle: { restartOnCrash: true, maxRestarts: 3, restartBackoff: 10 },
-    });
-    await handleProcessExit(runFn, svc, eventsPath, 1, { restartCount: 2, pollHealthFn });
-
-    // Should still attempt restart (count 2, max 3 — one more allowed)
-    const startAttempt = calls.some(c => c.some(a => a.includes("server") || a.includes("start")));
-    expect(startAttempt).toBe(true);
-  });
-
-  it("does not attempt restart for exit code 0 (clean exit)", async () => {
-    let startCalled = false;
-    const runFn: RunFn = async (cmd) => {
-      if (cmd.some(a => a.includes("server"))) startCalled = true;
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { handleProcessExit } = await import("../src/lifecycle");
-    const svc = makeService({
-      lifecycle: { restartOnCrash: true, maxRestarts: 3, restartBackoff: 10 },
-    });
-    await handleProcessExit(runFn, svc, eventsPath, 0, { restartCount: 0, pollHealthFn: async () => true });
-
-    expect(startCalled).toBe(false);
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Startup time vs health timeout
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe("startupTime", () => {
-  it("uses startupTime as the health poll timeout during startup, not healthTimeout", async () => {
-    let polledTimeout = 0;
-    const pollHealthFn: PollHealthFn = async (_url, timeout) => {
-      polledTimeout = timeout;
-      return true;
-    };
-
-    const svc = makeService({
-      network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", healthTimeout: 5000 },
-      lifecycle: { startupTime: 120000 },
-    });
-    await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    // startupTime (120s) should be used, not healthTimeout (5s)
-    expect(polledTimeout).toBe(120000);
-    expect(polledTimeout).not.toBe(5000);
-  });
-
-  it("defaults startupTime to 30000ms when not specified", async () => {
-    let polledTimeout = 0;
-    const pollHealthFn: PollHealthFn = async (_url, timeout) => {
-      polledTimeout = timeout;
-      return true;
-    };
-
-    const svc = makeService({ lifecycle: {} });
-    // Remove startupTime to test default
-    delete (svc as any).lifecycle.startupTime;
-    await startService(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    expect(polledTimeout).toBe(30000);
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Lifecycle locking
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe("lifecycle locking", () => {
-  it("rejects concurrent start on the same service", async () => {
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startServiceWithLock, acquireLock, releaseLock, isLocked } = await import("../src/lifecycle");
-    const svc = makeService();
-
-    // Simulate a lock already held (e.g. a prior start is in progress)
-    acquireLock(svc.id);
-    expect(isLocked(svc.id)).toBe(true);
-
-    // A second call should be rejected
-    const result = await startServiceWithLock(successRunFn(), pollHealthFn, svc, eventsPath);
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("in progress");
-
-    releaseLock(svc.id);
-    expect(isLocked(svc.id)).toBe(false);
-  });
-
-  it("releases lock after successful start", async () => {
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { startServiceWithLock, isLocked } = await import("../src/lifecycle");
-    const svc = makeService();
-    await startServiceWithLock(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    expect(isLocked(svc.id)).toBe(false);
-  });
-
-  it("releases lock after failed start", async () => {
-    const pollHealthFn: PollHealthFn = async () => false; // health fails
-
-    const { startServiceWithLock, isLocked } = await import("../src/lifecycle");
-    const svc = makeService();
-    await startServiceWithLock(successRunFn(), pollHealthFn, svc, eventsPath);
-
-    expect(isLocked(svc.id)).toBe(false);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("crash detection — spawn-site exit wiring", () => {
-  // startService has to observe the child's exit itself. Wiring this in the
-  // entry points instead would leave restarted children unmonitored, since the
-  // restart path goes back through startService.
-  function makeSpawnFn() {
-    let resolveExit: ((code: number) => void) | undefined;
-    const killed = { value: false };
-    const spawnFn: SpawnFn = () => ({
-      kill: () => { killed.value = true; },
-      exited: new Promise<number>(r => { resolveExit = r; }),
-    });
-    return { spawnFn, exit: (code: number) => resolveExit!(code), killed };
-  }
-
-  it("emits service.crashed when a spawned child exits nonzero", async () => {
-    const svc = makeService({ id: "crash-1", lifecycle: { restartOnCrash: false } } as any);
-    const { spawnFn, exit } = makeSpawnFn();
-
-    await startService(successRunFn(), async () => true, svc, eventsPath, spawnFn);
-    exit(1);
-    await new Promise(r => setTimeout(r, 20));
-
-    const events = await readEvents(eventsPath);
-    const crashed = events.filter(e => e.type === "service.crashed" && e.subjectId === "crash-1");
-    expect(crashed.length).toBe(1);
-    expect(crashed[0]!.data).toMatchObject({ exitCode: 1 });
-  });
-
-  it("does not emit service.crashed when the service was deliberately stopped", async () => {
-    const { startService, stopService } = await import("../src/lifecycle");
-    const svc = makeService({ id: "crash-2", lifecycle: { restartOnCrash: true } } as any);
-    const { spawnFn, exit } = makeSpawnFn();
-
-    await startService(successRunFn(), async () => true, svc, eventsPath, spawnFn);
-    await stopService(successRunFn(), svc, eventsPath);
-    // A killed process still resolves `exited`; that must not read as a crash.
-    exit(143);
-    await new Promise(r => setTimeout(r, 20));
-
-    const events = await readEvents(eventsPath);
-    expect(events.filter(e => e.type === "service.crashed" && e.subjectId === "crash-2").length).toBe(0);
-  });
-
-  it("ignores an exit from a superseded child (restarted under the same id)", async () => {
-    const svc = makeService({ id: "crash-3", lifecycle: { restartOnCrash: false } } as any);
-    const first = makeSpawnFn();
-    const second = makeSpawnFn();
-
-    await startService(successRunFn(), async () => true, svc, eventsPath, first.spawnFn);
-    // A second start replaces the tracked child before the first one's exit lands.
-    await startService(successRunFn(), async () => true, svc, eventsPath, second.spawnFn);
-    first.exit(1);
-    await new Promise(r => setTimeout(r, 20));
-
-    const events = await readEvents(eventsPath);
-    expect(events.filter(e => e.type === "service.crashed" && e.subjectId === "crash-3").length).toBe(0);
-  });
-
-  it("restarts a crashed service when restartOnCrash is true", async () => {
-    const svc = makeService({
-      id: "crash-4",
-      lifecycle: { restartOnCrash: true, restartBackoff: 1, maxRestarts: 3 },
-    } as any);
-
-    let spawns = 0;
-    let resolveExit: ((code: number) => void) | undefined;
-    const spawnFn: SpawnFn = () => {
-      spawns++;
-      return { kill: () => {}, exited: new Promise<number>(r => { resolveExit = r; }) };
-    };
-
-    await startService(successRunFn(), async () => true, svc, eventsPath, spawnFn);
-    expect(spawns).toBe(1);
-
-    resolveExit!(1);
-    await new Promise(r => setTimeout(r, 60));
-
-    expect(spawns).toBe(2);
+    expect(node.spawned).toHaveLength(1);
+    expect((await events("service.crashed"))[0].data.recovery).toContain("skipped");
+    release();
+    await pending;
   });
 });

@@ -1,65 +1,56 @@
+// The routes only a shard serves: /status, demand-loaded start and stop, the
+// roster, and registry reload. Promises: docs/control-shard.md, "Additional
+// HTTP endpoints". The ping route is tested with idle eviction in idle.test.ts.
+
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createShardApp } from "../src/shard-api";
 import { loadRegistry } from "../../shared/src/registry";
-import { appendEvent, readEvents } from "../../shared/src/events";
+import { appendEvent } from "../../shared/src/events";
+import { clearFileLocks } from "../../shared/src/atomic-write";
 import type { Registry, Service } from "../../../shared/types";
 
-type CheckMemoryBudgetFn = (
-  freeMem: number,
-  requestedMem: number,
-  footprintMap: Map<string, number>
-) => Promise<{ ok: boolean; error?: string }>;
-type LoadServiceFn = (service: Service) => Promise<{ ok: boolean; error?: string }>;
-type UnloadServiceFn = (service: Service) => Promise<{ ok: boolean; error?: string }>;
+type Outcome = { ok: boolean; error?: string };
 
 let tmpDir: string;
 let registryPath: string;
 let eventsPath: string;
 let registry: Registry;
 
-const SEED: Registry = {
-  version: 2,
-  type: "shard",
-  hosts: [{ id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.example.ts.net", role: "worker" }],
-  capabilities: [{ id: "tts", name: "Text to Speech" }],
-  services: [
-    {
-      id: "voxtral",
-      capabilityId: "tts",
-      hostId: "gpu-machine",
-      permissions: { enabled: true },
-      runner: { type: "process", main: ".venv/bin/uvicorn server:app --port 8000" },
-      network: { port: 8000, healthPath: "/health" },
-      lifecycle: { loadStrategy: "demand", idleUnload: true, idleTimeout: 300000 },
-    },
-    {
-      id: "parakeet",
-      capabilityId: "tts",
-      hostId: "gpu-machine",
-      permissions: { enabled: true },
-      runner: { type: "process", main: ".venv/bin/parakeet-server --port 8001" },
-      network: { port: 8001, healthPath: "/health" },
-      lifecycle: { loadStrategy: "demand", idleUnload: false },
-    },
-    {
-      id: "disabled-svc",
-      capabilityId: "tts",
-      hostId: "gpu-machine",
-      permissions: { enabled: false },
-      runner: { type: "process", main: "start.sh" },
-      network: { port: 8002, healthPath: "/health" },
-      lifecycle: { loadStrategy: "demand", idleUnload: false },
-    },
-  ],
-};
+const service = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  capabilityId: "tts",
+  hostId: "gpu-machine",
+  permissions: { enabled: true },
+  runner: { type: "process", main: ".venv/bin/server" },
+  network: { port: 8000, healthPath: "/health" },
+  lifecycle: { loadStrategy: "demand" },
+  ...over,
+});
+
+function doc(modelName = "Model A") {
+  return {
+    version: 2,
+    type: "shard",
+    hosts: [{ id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.example.ts.net", role: "worker" }],
+    capabilities: [{ id: "tts", name: "TTS" }],
+    services: [
+      service("demand"),
+      service("off", { permissions: { enabled: false } }),
+      service("always", { lifecycle: { loadStrategy: "startup" } }),
+    ],
+    roster: { providers: { demand: { ttsModels: [{ id: "model-a", name: modelName, key: "model-a" }] } }, voices: [] },
+  };
+}
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(join(tmpdir(), "shard-api-test-"));
+  clearFileLocks();
+  tmpDir = await mkdtemp(join(tmpdir(), "shard-api-"));
   registryPath = join(tmpDir, "registry.json");
   eventsPath = join(tmpDir, "events.jsonl");
-  await writeFile(registryPath, JSON.stringify(SEED, null, 2));
+  await writeFile(registryPath, JSON.stringify(doc()));
   registry = await loadRegistry(registryPath);
 });
 
@@ -67,243 +58,101 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-async function makeShardApp(opts: {
-  getFreeMem?: () => Promise<number>;
-  checkMemoryBudget?: CheckMemoryBudgetFn;
-  loadService?: LoadServiceFn;
-  unloadService?: UnloadServiceFn;
+function shardApp(opts: {
+  loadService?: (svc: Service) => Promise<Outcome>;
+  unloadService?: (svc: Service) => Promise<Outcome>;
+  pingMap?: Map<string, number>;
+  registryPath?: string | "none";
 } = {}) {
-  const { createShardApp } = await import("../src/shard-api");
-
-  const getFreeMem = opts.getFreeMem ?? (async () => 8 * 1024 * 1024 * 1024); // 8 GB
-  const checkMemoryBudgetOpts = opts.checkMemoryBudget ?? (async () => ({ ok: true }));
-  const loadService = opts.loadService ?? (async () => ({ ok: true }));
-  const unloadService = opts.unloadService ?? (async () => ({ ok: true }));
-
-  // Wrap 3-arg checkMemoryBudget into the 0-arg form expected by createShardApp
-  const checkMemoryBudget = async () => {
-    const freeMem = await getFreeMem();
-    return checkMemoryBudgetOpts(freeMem, 0, new Map());
-  };
-
   return createShardApp({
     registryState: registry,
     eventsPath,
-    getFreeMem,
-    checkMemoryBudget,
-    loadService,
-    unloadService,
+    getFreeMem: async () => 4096,
+    loadService: opts.loadService ?? (async () => ({ ok: true })),
+    unloadService: opts.unloadService ?? (async () => ({ ok: true })),
+    pingMap: opts.pingMap,
+    registryPath: opts.registryPath === "none" ? undefined : registryPath,
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+async function call(app: ReturnType<typeof shardApp>, method: string, path: string) {
+  const res = await app.fetch(new Request(`http://localhost${path}`, { method }));
+  return { status: res.status, body: await res.json() as any };
+}
 
 describe("GET /status", () => {
-  it("returns freeMem as a number", async () => {
-    const getFreeMem = async () => 5 * 1024 * 1024 * 1024; // 5 GB
-    const app = await makeShardApp({ getFreeMem });
-    const res = await app.request("/status");
-    expect(res.status).toBe(200);
-    const body = await res.json() as { freeMem: number };
-    expect(typeof body.freeMem).toBe("number");
-    expect(body.freeMem).toBe(5 * 1024 * 1024 * 1024);
-  });
+  it("reports free memory, and each service's health and last ping, null until pinged", async () => {
+    await appendEvent(eventsPath, { type: "service.up", subjectType: "service", subjectId: "demand", data: {}, actor: "system" });
+    const app = shardApp({ pingMap: new Map([["demand", 1234]]) });
 
-  it("includes all service ids present in the registry", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/status");
-    expect(res.status).toBe(200);
-    const body = await res.json() as { services: Record<string, unknown> };
-    expect("voxtral" in body.services).toBe(true);
-    expect("parakeet" in body.services).toBe(true);
-  });
-
-  it("each service entry includes health and lastPing fields", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/status");
-    const body = await res.json() as { services: Record<string, any> };
-    const svc = body.services.voxtral;
-    expect("health" in svc).toBe(true);
-    expect("lastPing" in svc).toBe(true);
-  });
-
-  it("lastPing is null for a service that has never been pinged", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/status");
-    const body = await res.json() as { services: Record<string, any> };
-    expect(body.services.voxtral.lastPing).toBeNull();
-  });
-
-  it("lastPing is a number (milliseconds) for a service that has been pinged", async () => {
-    const app = await makeShardApp();
-    // First, ping the service
-    await app.request("/ping/voxtral", { method: "POST" });
-    // Then, check status
-    const res = await app.request("/status");
-    const body = await res.json() as { services: Record<string, any> };
-    expect(typeof body.services.voxtral.lastPing).toBe("number");
-    expect(body.services.voxtral.lastPing).toBeGreaterThan(0);
+    expect((await call(app, "GET", "/status")).body).toEqual({
+      freeMem: 4096,
+      services: {
+        demand: { health: "healthy", lastPing: 1234 },
+        off: { health: "disabled", lastPing: null },
+        always: { health: "unknown", lastPing: null },
+      },
+    });
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+describe("starting and stopping", () => {
+  it.each([
+    ["start", "nope", 404],
+    ["start", "off", 400],
+    ["start", "always", 400],
+    ["stop", "nope", 404],
+    ["stop", "always", 400],
+  ])("refuses to %s %s with %i", async (action, id, status) => {
+    let called = false;
+    const app = shardApp({ loadService: async () => { called = true; return { ok: true }; }, unloadService: async () => { called = true; return { ok: true }; } });
 
-describe("POST /ping/:service", () => {
-  it("returns 200 for a known service id", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/ping/voxtral", { method: "POST" });
-    expect(res.status).toBe(200);
+    expect((await call(app, "POST", `/api/services/${id}/${action}`)).status).toBe(status);
+    expect(called).toBe(false);
   });
 
-  it("returns 404 for an unknown service id", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/ping/unknown-svc", { method: "POST" });
-    expect(res.status).toBe(404);
+  it("answers a start with 202 as soon as the load begins, whatever the load later does", async () => {
+    let fail!: (err: Error) => void;
+    const loading: string[] = [];
+    const app = shardApp({ loadService: svc => { loading.push(svc.id); return new Promise((_, reject) => { fail = reject; }); } });
+
+    expect((await call(app, "POST", "/api/services/demand/start")).status).toBe(202);
+    expect(loading).toEqual(["demand"]);
+    fail(new Error("load failed"));
   });
 
-  it("updates the lastPing value returned by the next GET /status call", async () => {
-    const app = await makeShardApp();
-
-    const status1 = await app.request("/status");
-    const body1 = await status1.json() as { services: Record<string, any> };
-    const before = body1.services.voxtral.lastPing;
-
-    await app.request("/ping/voxtral", { method: "POST" });
-
-    const status2 = await app.request("/status");
-    const body2 = await status2.json() as { services: Record<string, any> };
-    const after = body2.services.voxtral.lastPing;
-
-    expect(after).not.toBe(before);
-    expect(typeof after).toBe("number");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("POST /api/services/:id/start (demand services)", () => {
-  it("calls checkMemoryBudget before calling loadService", async () => {
-    const order: string[] = [];
-    const checkMemoryBudget = async () => {
-      order.push("check");
-      return { ok: true };
-    };
-    const loadService = async () => {
-      order.push("load");
-      return { ok: true };
-    };
-    const app = await makeShardApp({ checkMemoryBudget, loadService });
-
-    await app.request("/api/services/voxtral/start", { method: "POST" });
-
-    expect(order.indexOf("check")).toBeLessThan(order.indexOf("load"));
-  });
-
-  it("returns 503 when checkMemoryBudget fails", async () => {
-    const checkMemoryBudget = async () => ({
-      ok: false,
-      error: "memory pressure",
-    });
-    const app = await makeShardApp({ checkMemoryBudget });
-
-    const res = await app.request("/api/services/voxtral/start", { method: "POST" });
-    expect(res.status).toBe(503);
-  });
-
-  it("emits memory.pressure event in the response when checkMemoryBudget fails", async () => {
-    const checkMemoryBudget = async () => ({
-      ok: false,
-      error: "memory pressure",
-    });
-    const app = await makeShardApp({ checkMemoryBudget });
-
-    await app.request("/api/services/voxtral/start", { method: "POST" });
-
-    const events = await readEvents(eventsPath);
-    expect(events.some(e => e.type === "memory.pressure")).toBe(true);
-  });
-
-  it("calls loadService when checkMemoryBudget passes", async () => {
-    let loadCalled = false;
-    const loadService = async () => {
-      loadCalled = true;
-      return { ok: true };
-    };
-    const app = await makeShardApp({ loadService });
-
-    await app.request("/api/services/voxtral/start", { method: "POST" });
-
-    expect(loadCalled).toBe(true);
-  });
-
-  it("returns 202 when load is initiated successfully", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/api/services/voxtral/start", { method: "POST" });
-    expect(res.status).toBe(202);
-  });
-
-  it("returns 404 for an unknown service id", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/api/services/unknown-svc/start", { method: "POST" });
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 400 for a disabled service", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/api/services/disabled-svc/start", { method: "POST" });
-    expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
-    expect(body.error).toBe("service is disabled");
-  });
-
-  it("returns 202 even when loadService will fail (fire-and-forget)", async () => {
-    const loadService = async () => ({
-      ok: false,
-      error: "process failed to start",
-    });
-    const app = await makeShardApp({ loadService });
-
-    const res = await app.request("/api/services/voxtral/start", { method: "POST" });
-    expect(res.status).toBe(202);
+  it.each([
+    [{ ok: true }, 200],
+    [{ ok: false, error: "unload failed" }, 500],
+  ] as [Outcome, number][])("waits for the unload and answers a stop that ends %j with %i", async (outcome, status) => {
+    const app = shardApp({ unloadService: async () => outcome });
+    const res = await call(app, "POST", "/api/services/demand/stop");
+    expect(res.status).toBe(status);
+    if (outcome.error) expect(res.body.error).toBe(outcome.error);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+describe("the roster and reload", () => {
+  it("serves the roster as reloaded, with a warning naming the provider that changed", async () => {
+    const app = shardApp();
+    await writeFile(registryPath, JSON.stringify(doc("Model A v2")));
 
-describe("POST /api/services/:id/stop (demand services)", () => {
-  it("calls unloadService for the named service", async () => {
-    let capturedSvcId: string | null = null;
-    const unloadService = async (svc: Service) => {
-      capturedSvcId = svc.id;
-      return { ok: true };
-    };
-    const app = await makeShardApp({ unloadService });
-
-    await app.request("/api/services/voxtral/stop", { method: "POST" });
-
-    expect(capturedSvcId as string | null).toBe("voxtral");
+    const reload = await call(app, "POST", "/api/config/reload");
+    expect(reload.status).toBe(200);
+    expect(reload.body.registry).toEqual({ ok: true });
+    expect(reload.body.warnings).toContainEqual(expect.objectContaining({ kind: "provider-changed", serviceId: "demand" }));
+    expect((await call(app, "GET", "/api/roster")).body.providers.demand.ttsModels[0].name).toBe("Model A v2");
   });
 
-  it("returns 200 on success", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/api/services/voxtral/stop", { method: "POST" });
-    expect(res.status).toBe(200);
-  });
+  it.each([
+    ["a file that is not JSON", "{ not json", undefined],
+    ["no registry path", undefined, "none"],
+  ] as [string, string | undefined, "none" | undefined][])("answers 500 with the error for %s", async (_, contents, path) => {
+    if (contents !== undefined) await writeFile(registryPath, contents);
+    const res = await call(shardApp({ registryPath: path }), "POST", "/api/config/reload");
 
-  it("returns 404 for an unknown service id", async () => {
-    const app = await makeShardApp();
-    const res = await app.request("/api/services/unknown-svc/stop", { method: "POST" });
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 500 when unloadService returns an error", async () => {
-    const unloadService = async () => ({
-      ok: false,
-      error: "process failed to stop",
-    });
-    const app = await makeShardApp({ unloadService });
-
-    const res = await app.request("/api/services/voxtral/stop", { method: "POST" });
     expect(res.status).toBe(500);
+    expect(res.body.registry.ok).toBe(false);
+    expect(res.body.registry.error).toBeTruthy();
   });
 });

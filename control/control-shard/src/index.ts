@@ -7,7 +7,7 @@ import { startService, stopService, startDeadlineMs, stopDeadlineMs } from "../.
 import type { StartResult } from "../../shared/src/lifecycle";
 import { appendEvent } from "../../shared/src/events";
 import { submit } from "../../shared/src/executor";
-import { getFreeMem, checkMemoryBudget } from "./memory";
+import { getFreeMem } from "./memory";
 import { shardStartup, shardShutdown } from "./lifecycle";
 import { startIdleLoop } from "./idle";
 import { createShardApp } from "./shard-api";
@@ -94,10 +94,6 @@ const shardApp = createShardApp({
   registryState: registry,
   eventsPath: EVENTS_PATH,
   getFreeMem: () => getFreeMem(runFn),
-  checkMemoryBudget: async () => {
-    const freeMem = await getFreeMem(runFn);
-    return checkMemoryBudget(runFn, freeMem, 0, new Map(), EVENTS_PATH);
-  },
   loadService,
   unloadService,
   pingMap,

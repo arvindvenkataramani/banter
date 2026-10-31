@@ -71,10 +71,6 @@ export const shardStartService = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
       description: "Load failed",
     },
-    503: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Memory pressure",
-    },
   },
 });
 

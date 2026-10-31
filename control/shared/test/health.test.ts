@@ -1,3 +1,6 @@
+// Probing services and recording what the probe finds.
+// Promises: docs/components/health-checker.md; healthExpect and managed runners in registry.md.
+
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +11,7 @@ import type { Service, Registry } from "../../../shared/types";
 
 let tmpDir: string;
 let eventsPath: string;
+const servers: ReturnType<typeof Bun.serve>[] = [];
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "health-test-"));
@@ -16,440 +20,193 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const s of servers) s.stop(true);
+  servers.length = 0;
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-function makeService(overrides: Partial<Service> = {}): Service {
-  const { permissions, network, ...rest } = overrides;
+const REFUSED = "http://localhost:19876";
+
+type Over = Partial<Omit<Service, "network">> & { network?: Partial<Service["network"]> };
+
+function service(endpoint: string, over: Over = {}): Service {
+  const { network, ...rest } = over;
   return {
     id: "svc1",
     capabilityId: "cap1",
     hostId: "host1",
-    permissions: { enabled: true, ...permissions },
-    network: { port: 9999, healthPath: "/health", endpoint: "http://localhost:9999", ...network },
+    permissions: { enabled: true },
+    network: { port: Number(new URL(endpoint).port), healthPath: "/health", endpoint, ...network },
     ...rest,
-  };
+  } as Service;
 }
 
-describe("Single service check", () => {
-  it("service responding 200 on healthPath → emits service.up event with latency", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const svc = makeService({ network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.up");
-    expect(typeof (events[0].data as Record<string, unknown>).latencyMs).toBe("number");
-    server.stop(true);
+/** A server answering every request with `status`, after `delayMs`. */
+function serve(status = 200, delayMs = 0): string {
+  const server = Bun.serve({
+    port: 0,
+    fetch: async () => {
+      if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+      return new Response("x", { status });
+    },
+  });
+  servers.push(server);
+  return `http://localhost:${server.port}`;
+}
+
+const types = async (subjectId?: string): Promise<string[]> => (await readEvents(eventsPath, { subjectId })).map(e => e.type);
+const once = { bypassThreshold: true };
+
+describe("a single check", () => {
+  it.each([
+    ["a 2xx", () => serve(200), undefined, "service.up"],
+    ["a non-2xx", () => serve(500), undefined, "service.down"],
+    ["a refused connection", () => REFUSED, undefined, "service.down"],
+    ["no answer within the timeout", () => serve(200, 300), undefined, "service.timed_out"],
+    ["a non-2xx, for a service whose healthExpect is reachable", () => serve(406), "reachable", "service.up"],
+    ["a 5xx, for a service whose healthExpect is reachable", () => serve(500), "reachable", "service.up"],
+    ["a refused connection, for a service whose healthExpect is reachable", () => REFUSED, "reachable", "service.down"],
+    ["no answer within the timeout, for a service whose healthExpect is reachable", () => serve(200, 300), "reachable", "service.timed_out"],
+    ["a non-2xx, for a service whose healthExpect is ok", () => serve(406), "ok", "service.down"],
+  ] as [string, () => string, "ok" | "reachable" | undefined, string][])("records %s as %s", async (_, endpoint, healthExpect, type) => {
+    await checkService(service(endpoint(), { network: { healthExpect } }), eventsPath, { ...once, timeoutMs: 100 });
+    expect(await types()).toEqual([type]);
   });
 
-  it("service responding 500 → emits service.down event", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("err", { status: 500 }) });
-    const svc = makeService({ network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.down");
-    server.stop(true);
+  it("records the latency of a service that is up", async () => {
+    await checkService(service(serve()), eventsPath, once);
+    const [event] = await readEvents(eventsPath);
+    expect(typeof event.data.latencyMs).toBe("number");
   });
 
-  it("service not responding (connection refused) → emits service.down event", async () => {
-    const svc = makeService({ network: { port: 19876, healthPath: "/health", endpoint: "http://localhost:19876" } });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.down");
+  it("records a local service that answers on localhost but not at its endpoint as degraded; a remote one as down", async () => {
+    const local = serve();
+    const port = Number(new URL(local).port);
+    await checkService(service(REFUSED, { id: "local", network: { port } }), eventsPath, { ...once, localHostId: "host1" });
+    await checkService(service(REFUSED, { id: "remote", network: { port } }), eventsPath, { ...once, localHostId: "elsewhere" });
+
+    expect(await types("local")).toEqual(["service.degraded"]);
+    expect(await types("remote")).toEqual(["service.down"]);
   });
 
-  it("service responding but exceeding timeout → emits service.timed_out event", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: async () => {
-        await new Promise(r => setTimeout(r, 500));
-        return new Response("ok");
-      }
-    });
-    const svc = makeService({ network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } });
-    await checkService(svc, eventsPath, { bypassThreshold: true, timeoutMs: 100 });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.timed_out");
-    server.stop(true);
+  it("skips a disabled service", async () => {
+    let ran = false;
+    const runFn = async () => { ran = true; return { exitCode: 0, stdout: "", stderr: "" }; };
+    await checkService(service(serve(), { permissions: { enabled: false } }), eventsPath, once);
+    await checkService(managed({ permissions: { enabled: false } }), eventsPath, { ...once, runFn });
+
+    expect(await types()).toEqual([]);
+    expect(ran).toBe(false);
   });
 
-  it("disabled service is skipped — no event emitted", async () => {
-    const svc = makeService({ permissions: { enabled: false } });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events).toHaveLength(0);
-  });
-});
+  it("logs a repeated result once, and the next change again", async () => {
+    let status = 200;
+    const server = Bun.serve({ port: 0, fetch: () => new Response("x", { status }) });
+    servers.push(server);
+    const svc = service(`http://localhost:${server.port}`);
+    await checkService(svc, eventsPath, once);
+    await checkService(svc, eventsPath, once);
+    status = 500;
+    await checkService(svc, eventsPath, once);
+    await checkService(svc, eventsPath, once);
 
-describe("Consecutive failure threshold", () => {
-  it("does not emit service.down until consecutive failure threshold is reached", async () => {
-    const svc = makeService({ network: { port: 19877, healthPath: "/health", endpoint: "http://localhost:19877" } });
-    // First failure — should not emit yet (threshold = 2)
-    await checkService(svc, eventsPath, {});
-    const events = await readEvents(eventsPath, {});
-    expect(events).toHaveLength(0);
-  });
-
-  it("emits service.down once the consecutive failure threshold is reached", async () => {
-    const svc = makeService({ network: { port: 19877, healthPath: "/health", endpoint: "http://localhost:19877" } });
-    await checkService(svc, eventsPath, {});
-    // First failure — no event yet
-    let events = await readEvents(eventsPath, {});
-    expect(events).toHaveLength(0);
-    // Second failure — threshold reached, event emitted
-    await checkService(svc, eventsPath, {});
-    events = await readEvents(eventsPath, {});
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("service.down");
-  });
-
-  it("emits service.up immediately on first success", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const svc = makeService({ network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } });
-    await checkService(svc, eventsPath, {});
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.up");
-    server.stop(true);
-  });
-
-  it("resets failure counter on success after consecutive failures", async () => {
-    const svc = makeService({ id: "svc-reset", network: { port: 19878, healthPath: "/health", endpoint: "http://localhost:19878" } });
-    // Two failures (threshold reached)
-    await checkService(svc, eventsPath, {});
-    await checkService(svc, eventsPath, {});
-    // Now success
-    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const svcSuccess = { ...svc, network: { ...svc.network, endpoint: `http://localhost:${server.port}` } };
-    await checkService(svcSuccess, eventsPath, {});
-    const events = await readEvents(eventsPath, { subjectId: "svc-reset" });
-    const lastEvent = events[0];
-    expect(lastEvent.type).toBe("service.up");
-    server.stop(true);
+    expect(await types()).toEqual(["service.down", "service.up"]);
   });
 });
 
-describe("healthExpect: reachable", () => {
-  it("healthExpect 'reachable' + service responding 406 → emits service.up event", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("not acceptable", { status: 406 }) });
-    const svc = makeService({
-      network: {
-        port: server.port!,
-        healthPath: "/mcp",
-        healthExpect: "reachable",
-        endpoint: `http://localhost:${server.port}`,
-      },
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.up");
-    server.stop(true);
+describe("the consecutive failure threshold", () => {
+  it("records a failure only on the second in a row, and a success at once, which resets the count", async () => {
+    const down = service(REFUSED);
+    await checkService(down, eventsPath);
+    expect(await types()).toEqual([]);
+    await checkService(down, eventsPath);
+    expect(await types()).toEqual(["service.down"]);
+
+    await checkService(service(serve()), eventsPath);
+    await checkService(down, eventsPath);
+    expect(await types()).toEqual(["service.up", "service.down"]);
   });
 
-  it("healthExpect 'reachable' + service responding 500 → emits service.up event", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("err", { status: 500 }) });
-    const svc = makeService({
-      network: {
-        port: server.port!,
-        healthPath: "/mcp",
-        healthExpect: "reachable",
-        endpoint: `http://localhost:${server.port}`,
-      },
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.up");
-    server.stop(true);
-  });
-
-  // Reachability is about getting *a response*. Nothing listening is still down,
-  // otherwise the setting would mean "never report this service as broken".
-  it("healthExpect 'reachable' + connection refused → still emits service.down event", async () => {
-    const svc = makeService({
-      network: {
-        port: 19877,
-        healthPath: "/mcp",
-        healthExpect: "reachable",
-        endpoint: "http://localhost:19877",
-      },
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.down");
-  });
-
-  it("healthExpect 'reachable' + timeout → still emits service.timed_out event", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: async () => {
-        await new Promise(r => setTimeout(r, 200));
-        return new Response("ok");
-      },
-    });
-    const svc = makeService({
-      network: {
-        port: server.port!,
-        healthPath: "/mcp",
-        healthExpect: "reachable",
-        endpoint: `http://localhost:${server.port}`,
-      },
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true, timeoutMs: 50 });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.timed_out");
-    server.stop(true);
-  });
-
-  it("healthExpect omitted + service responding 406 → emits service.down event (default unchanged)", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("not acceptable", { status: 406 }) });
-    const svc = makeService({
-      network: { port: server.port!, healthPath: "/mcp", endpoint: `http://localhost:${server.port}` },
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.down");
-    server.stop(true);
-  });
-
-  it("healthExpect 'ok' + service responding 406 → emits service.down event", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("not acceptable", { status: 406 }) });
-    const svc = makeService({
-      network: {
-        port: server.port!,
-        healthPath: "/mcp",
-        healthExpect: "ok",
-        endpoint: `http://localhost:${server.port}`,
-      },
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.down");
-    server.stop(true);
+  it("applies to a managed runner's health command too", async () => {
+    const runFn = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    await checkService(managed(), eventsPath, { runFn });
+    expect(await types()).toEqual([]);
+    await checkService(managed(), eventsPath, { runFn });
+    expect(await types()).toEqual(["service.down"]);
   });
 });
 
-describe("managed runner health check", () => {
-  function makeManagedService(overrides: Partial<Service> = {}): Service {
-    return makeService({
-      runner: {
-        type: "managed",
-        startCmd: ["paseo", "daemon", "start"],
-        stopCmd: ["paseo", "daemon", "stop"],
-        healthCmd: "paseo daemon status --json",
-      },
-      network: { port: 6767, healthPath: "", endpoint: "" },
-      ...overrides,
-    } as Partial<Service>);
-  }
+function managed(over: Over = {}): Service {
+  return service("http://localhost:6767", {
+    runner: { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'" },
+    network: { healthPath: "", endpoint: "" },
+    ...over,
+  } as Over);
+}
 
-  it("healthCmd exits 0 → emits service.up event, no HTTP request made", async () => {
-    let httpCalled = false;
+describe("a managed runner", () => {
+  it.each([
+    [0, "service.up"],
+    [1, "service.down"],
+  ])("is checked by running its health command through sh -c, exit %i recording %s, with no HTTP request", async (exitCode, type) => {
+    const ran: string[][] = [];
+    const runFn = async (cmd: string[]) => { ran.push(cmd); return { exitCode, stdout: "", stderr: "" }; };
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
-      httpCalled = true;
-      return originalFetch(...args);
-    }) as typeof fetch;
-
-    const runFn = async (_cmd: string[]) => ({ stdout: '{"localDaemon":"running"}', exitCode: 0, stderr: "" });
-    const svc = makeManagedService();
+    let fetched = false;
+    globalThis.fetch = (async () => { fetched = true; throw new Error("no HTTP expected"); }) as unknown as typeof fetch;
     try {
-      await checkService(svc, eventsPath, { bypassThreshold: true, runFn });
+      await checkService(managed(), eventsPath, { ...once, runFn });
     } finally {
-      // Restored unconditionally: a throw here would otherwise leave the fake
-      // installed for every test file that runs after this one.
       globalThis.fetch = originalFetch;
     }
 
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.up");
-    expect(httpCalled).toBe(false);
-  });
-
-  it("healthCmd exits nonzero → emits service.down event", async () => {
-    const runFn = async (_cmd: string[]) => ({ stdout: '{"localDaemon":"stale_pid"}', exitCode: 1, stderr: "" });
-    const svc = makeManagedService();
-    await checkService(svc, eventsPath, { bypassThreshold: true, runFn });
-
-    const events = await readEvents(eventsPath, {});
-    expect(events[0].type).toBe("service.down");
-  });
-
-  it("healthCmd is run via the injected runFn as a single shell string through sh -c", async () => {
-    let receivedCmd: string[] = [];
-    const runFn = async (cmd: string[]) => {
-      receivedCmd = cmd;
-      return { exitCode: 0, stdout: "", stderr: "" };
-    };
-    const svc = makeManagedService({
-      runner: {
-        type: "managed",
-        startCmd: ["paseo", "daemon", "start"],
-        stopCmd: ["paseo", "daemon", "stop"],
-        healthCmd: "paseo daemon status --json | jq -e '.localDaemon == \"running\"'",
-      } as any,
-    });
-    await checkService(svc, eventsPath, { bypassThreshold: true, runFn });
-
-    expect(receivedCmd).toEqual(["sh", "-c", "paseo daemon status --json | jq -e '.localDaemon == \"running\"'"]);
-  });
-
-  it("consecutive failure threshold still applies to managed runner health checks", async () => {
-    const runFn = async (_cmd: string[]) => ({ exitCode: 1, stdout: "", stderr: "" });
-    const svc = makeManagedService();
-
-    await checkService(svc, eventsPath, { runFn });
-    let events = await readEvents(eventsPath, {});
-    expect(events).toHaveLength(0);
-
-    await checkService(svc, eventsPath, { runFn });
-    events = await readEvents(eventsPath, {});
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("service.down");
-  });
-
-  it("disabled managed-runner service is skipped — no health command run", async () => {
-    let called = false;
-    const runFn = async (_cmd: string[]) => {
-      called = true;
-      return { exitCode: 0, stdout: "", stderr: "" };
-    };
-    const svc = makeManagedService({ permissions: { enabled: false } });
-    await checkService(svc, eventsPath, { bypassThreshold: true, runFn });
-
-    expect(called).toBe(false);
+    expect(ran).toEqual([["sh", "-c", "paseo daemon status --json | jq -e '.localDaemon == \"running\"'"]]);
+    expect(fetched).toBe(false);
+    expect(await types()).toEqual([type]);
   });
 });
 
-describe("Health check loop", () => {
-  it("checks all enabled services on each interval tick", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const registry: Registry = {
-      version: 2,
-      type: "control",
-      hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
-      capabilities: [{ id: "c1", name: "c1" }],
-      services: [
-        makeService({ id: "s1", network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } }),
-        makeService({ id: "s2", network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } }),
-      ]
-    };
-    const { stop } = startHealthLoop(registry, eventsPath, 100);
-    await new Promise(r => setTimeout(r, 200));
-    stop();
-    const events = await readEvents(eventsPath, {});
-    const s1Events = events.filter(e => e.subjectId === "s1");
-    const s2Events = events.filter(e => e.subjectId === "s2");
-    expect(s1Events.length).toBeGreaterThan(0);
-    expect(s2Events.length).toBeGreaterThan(0);
-    server.stop(true);
-  });
+function registry(services: Service[]): Registry {
+  return {
+    version: 2,
+    type: "control",
+    hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
+    capabilities: [{ id: "c1", name: "c1" }],
+    services,
+  };
+}
 
-  it("does not check disabled services", async () => {
-    const registry: Registry = {
-      version: 2,
-      type: "control",
-      hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
-      capabilities: [{ id: "c1", name: "c1" }],
-      services: [makeService({ id: "disabled-svc", permissions: { enabled: false } })]
-    };
-    const { stop } = startHealthLoop(registry, eventsPath, 50);
+describe("the loop", () => {
+  it("checks every enabled service in parallel, so a slow or failing one holds up no other", async () => {
+    const reg = registry([
+      service(serve(), { id: "fast" }),
+      service(serve(200, 1000), { id: "slow" }),
+      service(REFUSED, { id: "refused" }),
+      service(serve(), { id: "off", permissions: { enabled: false } }),
+    ]);
+    const { stop } = startHealthLoop(reg, eventsPath, 5000);
     await new Promise(r => setTimeout(r, 150));
     stop();
-    const events = await readEvents(eventsPath, { subjectId: "disabled-svc" });
-    expect(events).toHaveLength(0);
-  });
 
-  it("a slow service does not block checking other services", async () => {
-    const fastServer = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const slowServer = Bun.serve({
-      port: 0,
-      fetch: async () => {
-        await new Promise(r => setTimeout(r, 300));
-        return new Response("ok");
-      }
-    });
-    const registry: Registry = {
-      version: 2,
-      type: "control",
-      hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
-      capabilities: [{ id: "c1", name: "c1" }],
-      services: [
-        makeService({ id: "fast", network: { port: fastServer.port!, healthPath: "/health", endpoint: `http://localhost:${fastServer.port}` } }),
-        makeService({ id: "slow", network: { port: slowServer.port!, healthPath: "/health", endpoint: `http://localhost:${slowServer.port}` } }),
-      ]
-    };
-    const { stop } = startHealthLoop(registry, eventsPath, 2000);
-    await new Promise(r => setTimeout(r, 150));
-    stop();
-    const fastEvents = await readEvents(eventsPath, { subjectId: "fast" });
-    // Fast service should have been checked even while slow was pending
-    expect(fastEvents.length).toBeGreaterThan(0);
-    fastServer.stop(true);
-    slowServer.stop(true);
-  });
-
-  it("an unexpected error in one check does not prevent other checks from completing", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const registry: Registry = {
-      version: 2,
-      type: "control",
-      hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
-      capabilities: [{ id: "c1", name: "c1" }],
-      services: [
-        makeService({ id: "good", network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } }),
-        makeService({ id: "bad", network: { port: 29999, healthPath: "/health", endpoint: "http://localhost:29999" } }), // connection refused
-      ]
-    };
-    const { stop } = startHealthLoop(registry, eventsPath, 100);
-    await new Promise(r => setTimeout(r, 200));
-    stop();
-    const goodEvents = await readEvents(eventsPath, { subjectId: "good" });
-    expect(goodEvents.length).toBeGreaterThan(0);
-    server.stop(true);
-  });
-});
-
-describe("What the checker logs", () => {
-  it("logs a repeated result once and the next change again", async () => {
-    let status = 200;
-    const server = Bun.serve({ port: 0, fetch: () => new Response("x", { status }) });
-    const svc = makeService({ network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` } });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    status = 500;
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    await checkService(svc, eventsPath, { bypassThreshold: true });
-    const types = (await readEvents(eventsPath, {})).map(e => e.type);
-    expect(types).toEqual(["service.down", "service.up"]);
-    server.stop(true);
+    expect(await types("fast")).toEqual(["service.up"]);
+    expect(await types("off")).toEqual([]);
   });
 
   it("checks a demand-loaded service only while its latest run intent is to run", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
-    const registry: Registry = {
-      version: 2,
-      type: "control",
-      hosts: [{ id: "h1", name: "h1", hostname: "h1.ts.net", role: "control" }],
-      capabilities: [{ id: "c1", name: "c1" }],
-      services: [makeService({
-        id: "d1",
-        lifecycle: { loadStrategy: "demand" },
-        network: { port: server.port!, healthPath: "/health", endpoint: `http://localhost:${server.port}` },
-      })],
-    };
+    const reg = registry([service(serve(), { id: "d1", lifecycle: { loadStrategy: "demand" } })]);
     const intent = (type: "service.started" | "service.stopped") =>
       appendEvent(eventsPath, { type, subjectType: "service", subjectId: "d1", data: {}, actor: "user" });
-    const lastType = async () => (await readEvents(eventsPath, { subjectId: "d1", limit: 1 }))[0]?.type;
+    const last = async () => (await readEvents(eventsPath, { subjectId: "d1", limit: 1 }))[0]?.type;
 
-    await checkAllServices(registry, eventsPath);
-    expect(await lastType()).toBeUndefined();
+    await checkAllServices(reg, eventsPath);
+    expect(await last()).toBeUndefined();
 
     await intent("service.started");
-    await checkAllServices(registry, eventsPath);
-    expect(await lastType()).toBe("service.up");
+    await checkAllServices(reg, eventsPath);
+    expect(await last()).toBe("service.up");
 
     await intent("service.stopped");
-    await checkAllServices(registry, eventsPath);
-    expect(await lastType()).toBe("service.stopped");
-    server.stop(true);
+    await checkAllServices(reg, eventsPath);
+    expect(await last()).toBe("service.stopped");
   });
 });

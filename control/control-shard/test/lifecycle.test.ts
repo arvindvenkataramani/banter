@@ -1,28 +1,27 @@
+// What the shard starts when it comes up and stops when it goes down.
+
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEvents } from "../../shared/src/events";
 import { clearLocks } from "../../shared/src/lifecycle";
-import type { Registry } from "../../../shared/types";
-
-type RunFn = (cmd: string[]) => Promise<{ stdout: string; exitCode: number; stderr: string }>;
-type PollHealthFn = (endpoint: string, timeout: number) => Promise<boolean>;
+import { clearExecutor } from "../../shared/src/executor";
+import { shardStartup, shardShutdown } from "../src/lifecycle";
+import type { Registry, Service } from "../../../shared/types";
+import type { RunFn } from "../../shared/src/tailscale";
 
 let tmpDir: string;
 let eventsPath: string;
-
 const originalFetch = globalThis.fetch;
 
 beforeEach(async () => {
   clearLocks();
+  clearExecutor();
   tmpDir = await mkdtemp(join(tmpdir(), "shard-lifecycle-test-"));
   eventsPath = join(tmpDir, "events.jsonl");
-  // startService's fast path probes http://localhost:<port> directly. Left
-  // unstubbed it hits the real network, so an unrelated process listening on the
-  // fixture's port makes the service look already-running and the start is
-  // skipped. Always report "nothing there" so startup actually runs.
-  globalThis.fetch = (async () => { throw new Error("connection refused"); }) as typeof fetch;
+  // Nothing is already running, so every start takes the full path.
+  globalThis.fetch = (async () => { throw new Error("connection refused"); }) as unknown as typeof fetch;
 });
 
 afterEach(async () => {
@@ -30,203 +29,85 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-const SEED: Registry = {
-  version: 2,
-  type: "shard",
-  hosts: [{ id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.example.ts.net", role: "worker" }],
-  capabilities: [{ id: "tts", name: "TTS" }],
-  services: [
-    {
-      id: "svc-autostart",
-      capabilityId: "tts",
-      hostId: "gpu-machine",
-      permissions: { enabled: true },
-      runner: { type: "process", main: "start-svc-autostart" },
-      network: { port: 59000, healthPath: "/health", endpoint: "https://gpu-machine.example.ts.net:59000" },
-      lifecycle: { autoStart: true, shutdown: true },
-    },
-    {
-      id: "svc-manual",
-      capabilityId: "tts",
-      hostId: "gpu-machine",
-      permissions: { enabled: true },
-      runner: { type: "process", main: "start-svc-manual" },
-      network: { port: 59001, healthPath: "/health", endpoint: "https://gpu-machine.example.ts.net:59001" },
-      lifecycle: { autoStart: false, shutdown: false },
-    },
-  ],
-};
+function service(id: string, lifecycle: Record<string, unknown>, port: number): Service {
+  return {
+    id,
+    capabilityId: "tts",
+    hostId: "gpu-machine",
+    permissions: { enabled: true },
+    runner: { type: "systemd", unit: id },
+    network: { port, healthPath: "/health", endpoint: `https://gpu-machine.ts.net:${port}` },
+    lifecycle,
+  } as unknown as Service;
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shard-level: shardStartup
-// ─────────────────────────────────────────────────────────────────────────────
+function registry(): Registry {
+  return {
+    version: 2,
+    type: "shard",
+    hosts: [{ id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.ts.net", role: "worker" }],
+    capabilities: [{ id: "tts", name: "TTS" }],
+    services: [
+      service("broken", { autoStart: true, shutdown: true }, 59000),
+      service("auto", { autoStart: true, shutdown: true }, 59001),
+      service("manual", { autoStart: false, shutdown: false }, 59002),
+    ],
+  };
+}
+
+/** Records the systemctl commands issued; `failing` names units whose start or stop fails, `throwing` ones that throw. */
+function node(opts: { failing?: string; throwing?: string } = {}) {
+  const issued: string[] = [];
+  const runFn: RunFn = async (cmd) => {
+    if (cmd[0] !== "systemctl") return { stdout: "", exitCode: 0, stderr: "" };
+    issued.push(`${cmd[2]} ${cmd[3]}`);
+    if (opts.throwing && cmd[3] === `${opts.throwing}.service`) throw new Error("stop failed");
+    const failed = opts.failing && cmd[3] === `${opts.failing}.service` && cmd[2] === "start";
+    return { stdout: "", exitCode: failed ? 1 : 0, stderr: failed ? "fail" : "" };
+  };
+  return { runFn, issued };
+}
 
 describe("shardStartup", () => {
-  it("auto-start services are loaded on startup", async () => {
-    const startedCmds: string[][] = [];
-    const runFn: RunFn = async (cmd) => {
-      startedCmds.push(cmd);
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
+  it("starts each autoStart service, past one that fails, and marks only those that came up as loaded", async () => {
+    const reg = registry();
+    const { runFn, issued } = node({ failing: "broken" });
+    await shardStartup({ registryState: reg, eventsPath, runFn, pollHealthFn: async () => true });
 
-    const { shardStartup } = await import("../src/lifecycle");
-    await shardStartup({ registryState: SEED, eventsPath, runFn, pollHealthFn });
-
-    // svc-autostart has autoStart:true, its main command should have been called
-    expect(startedCmds.some(c => c[0] === "start-svc-autostart")).toBe(true);
-  });
-
-  it("services with autoStart:false are not started during startup", async () => {
-    const startedCmds: string[][] = [];
-    const runFn: RunFn = async (cmd) => {
-      startedCmds.push(cmd);
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { shardStartup } = await import("../src/lifecycle");
-    await shardStartup({ registryState: SEED, eventsPath, runFn, pollHealthFn });
-
-    expect(startedCmds.some(c => c[0] === "start-svc-manual")).toBe(false);
-  });
-
-  it("startup continues loading remaining services if one auto-start service fails", async () => {
-    const runFn: RunFn = async (cmd) => {
-      // svc-autostart start fails
-      if (cmd[0] === "start-svc-autostart") return { stdout: "", exitCode: 1, stderr: "fail" };
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const { shardStartup } = await import("../src/lifecycle");
-    // Should not throw — errors are caught and logged
-    await shardStartup({ registryState: SEED, eventsPath, runFn, pollHealthFn });
-  });
-
-  it("sets loadTime on successfully auto-started services", async () => {
-    const runFn: RunFn = async () => ({ stdout: "", exitCode: 0, stderr: "" });
-    const pollHealthFn: PollHealthFn = async () => true;
-
-    const registry = JSON.parse(JSON.stringify(SEED)) as Registry;
-
-    const { shardStartup } = await import("../src/lifecycle");
-    await shardStartup({ registryState: registry, eventsPath, runFn, pollHealthFn });
-
-    const autostart = registry.services.find(s => s.id === "svc-autostart");
-    expect(autostart?.state?.loadTime).toBeGreaterThan(0);
+    expect(issued.filter(c => c.startsWith("start"))).toEqual(["start broken.service", "start auto.service"]);
+    expect(reg.services.map(s => [s.id, (s.state?.loadTime ?? 0) > 0])).toEqual([["broken", false], ["auto", true], ["manual", false]]);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shard-level: shardShutdown
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("shardShutdown", () => {
-  it("services with shutdown:true are stopped on shutdown", async () => {
-    const stoppedCmds: string[][] = [];
-    const runFn: RunFn = async (cmd) => {
-      stoppedCmds.push(cmd);
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { shardShutdown } = await import("../src/lifecycle");
-
-    const origExit = process.exit;
-    process.exit = (() => {}) as never;
-    try {
-      await shardShutdown({
-        registryState: SEED,
-        eventsPath,
-        runFn,
-        stopHealth: () => {},
-        stopIdle: () => {},
-        stopServer: () => {},
-      });
-    } finally {
-      process.exit = origExit;
-    }
-
-    // svc-autostart has shutdown:true — its stop sequence should have run (tailscale off + stop)
-    const events = await readEvents(eventsPath, { subjectId: "svc-autostart" });
-    expect(events.some(e => e.type === "service.stopped")).toBe(true);
-  });
-
-  it("services with shutdown:false are not stopped on shutdown", async () => {
-    const runFn: RunFn = async () => ({ stdout: "", exitCode: 0, stderr: "" });
-
-    const { shardShutdown } = await import("../src/lifecycle");
-
-    const origExit = process.exit;
-    process.exit = (() => {}) as never;
-    try {
-      await shardShutdown({
-        registryState: SEED,
-        eventsPath,
-        runFn,
-        stopHealth: () => {},
-        stopIdle: () => {},
-        stopServer: () => {},
-      });
-    } finally {
-      process.exit = origExit;
-    }
-
-    const events = await readEvents(eventsPath, { subjectId: "svc-manual" });
-    expect(events.some(e => e.type === "service.stopped")).toBe(false);
-  });
-
-  it("calls stopHealth, stopIdle, and stopServer on shutdown", async () => {
+  async function shutDown(runFn: RunFn) {
     const order: string[] = [];
-    const runFn: RunFn = async () => ({ stdout: "", exitCode: 0, stderr: "" });
-
-    const { shardShutdown } = await import("../src/lifecycle");
-
-    const origExit = process.exit;
+    const exit = process.exit;
     process.exit = (() => {}) as never;
     try {
       await shardShutdown({
-        registryState: SEED,
+        registryState: registry(),
         eventsPath,
-        runFn,
-        stopHealth: () => { order.push("stopHealth"); },
-        stopIdle: () => { order.push("stopIdle"); },
-        stopServer: () => { order.push("stopServer"); },
+        runFn: async (cmd) => { if (cmd[0] === "systemctl") order.push(`stop ${cmd[3]}`); return runFn(cmd); },
+        stopServer: () => { order.push("server"); },
+        stopHealth: () => { order.push("health"); },
+        stopIdle: () => { order.push("idle"); },
       });
     } finally {
-      process.exit = origExit;
+      process.exit = exit;
     }
+    return order;
+  }
 
-    expect(order).toContain("stopHealth");
-    expect(order).toContain("stopIdle");
-    expect(order).toContain("stopServer");
+  it("closes the server and loops first, then stops only the services marked shutdown", async () => {
+    const order = await shutDown(node().runFn);
+    expect(order).toEqual(["server", "health", "idle", "stop broken.service", "stop auto.service"]);
+    const stopped = (await readEvents(eventsPath)).reverse().filter(e => e.type === "service.stopped");
+    expect(stopped.map(e => e.subjectId)).toEqual(["broken", "auto"]);
   });
 
-  it("continues shutting down even if a service stop throws", async () => {
-    let serverStopped = false;
-    const runFn: RunFn = async (cmd) => {
-      // Cause the stop to throw for svc-autostart (reject after the tailscale check)
-      if (cmd[0] === "start-svc-autostart" || cmd[0] === "stop") throw new Error("stop failed");
-      return { stdout: "", exitCode: 0, stderr: "" };
-    };
-
-    const { shardShutdown } = await import("../src/lifecycle");
-
-    const origExit = process.exit;
-    process.exit = (() => {}) as never;
-    try {
-      await shardShutdown({
-        registryState: SEED,
-        eventsPath,
-        runFn,
-        stopHealth: () => {},
-        stopIdle: () => {},
-        stopServer: () => { serverStopped = true; },
-      });
-    } finally {
-      process.exit = origExit;
-    }
-
-    expect(serverStopped).toBe(true);
+  it("keeps stopping services after one stop throws", async () => {
+    const order = await shutDown(node({ throwing: "broken" }).runFn);
+    expect(order).toContain("stop auto.service");
   });
 });
