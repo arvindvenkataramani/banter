@@ -2,7 +2,7 @@
 
 Changes in Banter (`~/Code/banter`) that platform (`~/Code/airavatha/sutradhara/platform`) does not have, for platform to assess and take or decline. Each item names the Banter files to read and, where one exists, platform's counterpart.
 
-Found by a file-by-file comparison on 2026-10-31 (Banter `5075d1f`, platform `bcead8b`). The full register of differences is [dev/design/platform-divergence.md](../design/platform-divergence.md).
+Found by a file-by-file comparison on 2026-10-31, rechecked against platform `6703915`. The full register of differences is [dev/design/platform-divergence.md](../design/platform-divergence.md).
 
 Most of these come from Banter having to run on setups platform doesn't: a single Mac running both nodes, Linux, an install somewhere other than the default, and users who aren't Arvind. Paths below are relative to each repo's root.
 
@@ -19,15 +19,10 @@ Most of these come from Banter having to run on setups platform doesn't: a singl
 - **Tests:** `control/test/shard-client-errors.test.ts`.
 - **Note:** the https hint matters most where the default scheme is http, which Banter uses and platform doesn't (an open decision in the register). The bounded, sanitised snippet is useful either way.
 
-### Registry validation and patching
+### Registry error messages
 
-All in `control/shared/src/registry.ts`.
-
-- **The `--port` mismatch warning only checks process runners** (lines 253–261). It reads the flag with `/(?:^|\s)--port[=\s]+(\d+)/`, so `--port 8000` and `--port=8000` both match. Platform runs the check on any `runner.main` and matches only `--port[= ]`.
-- **`updateService` derives the endpoint the way the loader does** (lines 398–406). It derives one only when the patch leaves a port, the runner isn't `managed`, and a hostname exists. Platform re-derives without the `managed` check, so a patch to a managed service can write an endpoint the next load replaces.
-- **Error messages include the bad value**, for example `network.scheme must be "http" or "https", got "ftp"` (lines 289, 313, 390).
-- **Tests:** `control/test/endpoint-derivation.test.ts`, plus four patch tests in `control/shared/test/registry.test.ts`. They cover `listenAddress` agreeing with the loader, scheme re-derivation agreeing with reload, an invalid scheme being rejected, and a managed runner getting no derived endpoint. Some of these expect http endpoints and would need platform's https default.
-- **Interval tests:** `control/test/registry-reload.test.ts` has two tests for the `intervals-changed` warning. Platform's `b017383` added the warning without tests.
+- **Banter:** `control/shared/src/registry.ts` error messages include the bad value, for example `network.scheme must be "http" or "https", got "ftp"` (lines 289, 313, 390).
+- Two earlier claims here are withdrawn after platform's `2b5b76b` and `f8995ef`. Platform now validates the whole file on every patch, so Banter's endpoint re-derivation on patch is unnecessary. The `--port` check behaves the same in both, since only process runners have `main`.
 
 ### Shard paths in one testable file
 
@@ -37,11 +32,6 @@ All in `control/shared/src/registry.ts`.
   - `positiveInt` (line 62) throws, naming the setting, when a value isn't a positive integer.
 - **Platform:** the same decisions sit inline in `control/control-shard/src/index.ts`, with `~/Services/platform/...` defaults (line 23).
 - **Note:** Banter also keeps the shard registry outside the deployed tree, so a deploy can't overwrite it. Platform keeps it in `data/registry.json`. That is an open decision, separate from the file itself.
-
-### Shard bind address
-
-- **Banter:** `control/control-shard/src/index.ts` binds to `BANTER_SHARD_HOST`, defaulting to `localhost`.
-- **Platform:** hardcodes `localhost`.
 
 ## Scripts
 
@@ -64,6 +54,11 @@ All in `control/shared/src/registry.ts`.
   - Homebrew and libopus.
 - Each failure says what is missing and how to install it, so a missing dependency stops the build before it starts, not halfway through.
 - **Platform:** has none of these checks.
+
+### Fluid smoke test
+
+- **Banter:** `scripts/fluid-smoke.sh` and `scripts/fluid-smoke-listen.ts` build the fluid servers, deploy them into a scratch folder under a throwaway bundle identifier, check transcription, speech and Deepgram `/listen`, and remove everything on exit. A running server is never touched.
+- **Platform:** has no equivalent.
 
 ### Dev mode
 
