@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Info } from 'lucide-react'
+import { InfoIcon } from '@phosphor-icons/react/dist/csr/Info'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -18,8 +19,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { getCapabilities, getHosts, updateService, type ServiceWithHealth, type Capability, type Host } from '@/lib/api'
-import { ServiceHistory } from '@/features/services/service-history'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getCapabilities, getHosts, setEnabled, updateService, type ServiceWithHealth, type Capability, type Host } from '@/lib/api'
+import { ServiceHistoryList } from '@/features/services/service-history'
 import { Badge } from '@/components/ui/badge'
 import { healthBadgeClass, healthLabel } from '@/lib/health-badge'
 
@@ -36,22 +38,28 @@ function InfoTip({ children }: { children: React.ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Info className="size-3 text-muted-foreground cursor-help inline-block ml-1" />
+        <InfoIcon weight="bold" className="size-3 text-muted-foreground cursor-help inline-block ml-1" />
       </TooltipTrigger>
       <TooltipContent className="max-w-56 text-xs">{children}</TooltipContent>
     </Tooltip>
   )
 }
 
+export type ServiceDetailTab = 'network' | 'lifecycle' | 'history'
+
 interface Props {
   service: ServiceWithHealth
   onUpdate: (updated: ServiceWithHealth) => void
+  /** Which tab opens first. The card's history icon opens straight to history. */
+  initialTab?: ServiceDetailTab
 }
 
-export function ServiceDetail({ service, onUpdate }: Props) {
+export function ServiceDetail({ service, onUpdate, initialTab = 'network' }: Props) {
+  const [tab, setTab] = useState<string>(initialTab)
   const [capabilities, setCapabilities] = useState<Capability[]>([])
   const [hosts, setHosts] = useState<Host[]>([])
 
+  const [notes, setNotes] = useState(service.notes ?? '')
   const [healthPath, setHealthPath] = useState(service.network.healthPath)
   const [capabilityId, setCapabilityId] = useState(service.capabilityId)
   const [hostId, setHostId] = useState(service.hostId)
@@ -70,6 +78,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
+    setNotes(service.notes ?? '')
     setHealthPath(service.network.healthPath)
     setCapabilityId(service.capabilityId)
     setHostId(service.hostId)
@@ -94,6 +103,16 @@ export function ServiceDetail({ service, onUpdate }: Props) {
 
   function markDirty() { setDirty(true) }
 
+  async function handleToggleEnabled(enabled: boolean) {
+    onUpdate({ ...service, health: enabled ? 'unknown' : 'disabled', permissions: { ...service.permissions, enabled } })
+    try {
+      onUpdate(await setEnabled(service.id, enabled))
+    } catch (err) {
+      onUpdate(service)
+      toast.error(err instanceof Error ? err.message : 'Toggle failed')
+    }
+  }
+
   async function handleSave() {
     const patch: Record<string, unknown> = {}
     const networkPatch: Record<string, unknown> = {}
@@ -102,45 +121,52 @@ export function ServiceDetail({ service, onUpdate }: Props) {
     if (capabilityId !== service.capabilityId) patch.capabilityId = capabilityId
     if (hostId !== service.hostId) patch.hostId = hostId
 
+    // An emptied field clears the value, and `null` is how that crosses the
+    // wire: JSON.stringify drops an `undefined` member, so the server would
+    // receive no key at all and leave the old value in place.
+    const notesVal = notes !== '' ? notes : null
+    if (notesVal !== (service.notes ?? null)) patch.notes = notesVal
+
     if (healthPath !== service.network.healthPath) networkPatch.healthPath = healthPath
     if (tailscaleServe !== (service.network.tailscaleServe ?? false)) networkPatch.tailscaleServe = tailscaleServe
 
-    const portNum = port !== '' ? parseInt(port, 10) : undefined
-    if (portNum !== service.network.port) {
-      if (port !== '' && isNaN(portNum!)) { toast.error('Port must be a number'); return }
-      networkPatch.port = portNum
-    }
+    // Port is not clearable: validateRegistry requires it, and a service saved
+    // without one makes the whole registry fail to load on the next restart.
+    if (port === '') { toast.error('Port is required'); return }
+    const portNum = parseInt(port, 10)
+    if (isNaN(portNum)) { toast.error('Port must be a number'); return }
+    if (portNum !== service.network.port) networkPatch.port = portNum
 
-    const listenAddressVal = listenAddress !== '' ? listenAddress : undefined
-    if (listenAddressVal !== service.network.listenAddress) networkPatch.listenAddress = listenAddressVal
+    const listenAddressVal = listenAddress !== '' ? listenAddress : null
+    if (listenAddressVal !== (service.network.listenAddress ?? null)) networkPatch.listenAddress = listenAddressVal
 
     if (loadStrategy !== (service.lifecycle?.loadStrategy ?? 'startup')) lifecyclePatch.loadStrategy = loadStrategy
     if (autoStart !== (service.lifecycle?.autoStart ?? false)) lifecyclePatch.autoStart = autoStart
     if (idleUnload !== (service.lifecycle?.idleUnload ?? false)) lifecyclePatch.idleUnload = idleUnload
 
-    const idleTimeoutMs = idleTimeout !== '' ? parseFloat(idleTimeout) * 60000 : undefined
-    if (idleTimeoutMs !== service.lifecycle?.idleTimeout) {
-      if (idleTimeout !== '' && isNaN(idleTimeoutMs!)) { toast.error('Idle timeout must be a number'); return }
+    const idleTimeoutMs = idleTimeout !== '' ? parseFloat(idleTimeout) * 60000 : null
+    if (idleTimeoutMs !== (service.lifecycle?.idleTimeout ?? null)) {
+      if (idleTimeoutMs !== null && isNaN(idleTimeoutMs)) { toast.error('Idle timeout must be a number'); return }
       lifecyclePatch.idleTimeout = idleTimeoutMs
     }
 
-    const startupTimeMs = startupTime !== '' ? parseFloat(startupTime) * 1000 : undefined
-    if (startupTimeMs !== service.lifecycle?.startupTime) {
-      if (startupTime !== '' && isNaN(startupTimeMs!)) { toast.error('Startup time must be a number'); return }
+    const startupTimeMs = startupTime !== '' ? parseFloat(startupTime) * 1000 : null
+    if (startupTimeMs !== (service.lifecycle?.startupTime ?? null)) {
+      if (startupTimeMs !== null && isNaN(startupTimeMs)) { toast.error('Startup time must be a number'); return }
       lifecyclePatch.startupTime = startupTimeMs
     }
 
     if (restartOnCrash !== (service.lifecycle?.restartOnCrash ?? false)) lifecyclePatch.restartOnCrash = restartOnCrash
 
-    const maxRestartsNum = maxRestarts !== '' ? parseInt(maxRestarts, 10) : undefined
-    if (maxRestartsNum !== service.lifecycle?.maxRestarts) {
-      if (maxRestarts !== '' && isNaN(maxRestartsNum!)) { toast.error('Max restarts must be a number'); return }
+    const maxRestartsNum = maxRestarts !== '' ? parseInt(maxRestarts, 10) : null
+    if (maxRestartsNum !== (service.lifecycle?.maxRestarts ?? null)) {
+      if (maxRestartsNum !== null && isNaN(maxRestartsNum)) { toast.error('Max restarts must be a number'); return }
       lifecyclePatch.maxRestarts = maxRestartsNum
     }
 
-    const restartBackoffMs = restartBackoff !== '' ? parseFloat(restartBackoff) * 1000 : undefined
-    if (restartBackoffMs !== service.lifecycle?.restartBackoff) {
-      if (restartBackoff !== '' && isNaN(restartBackoffMs!)) { toast.error('Restart backoff must be a number'); return }
+    const restartBackoffMs = restartBackoff !== '' ? parseFloat(restartBackoff) * 1000 : null
+    if (restartBackoffMs !== (service.lifecycle?.restartBackoff ?? null)) {
+      if (restartBackoffMs !== null && isNaN(restartBackoffMs)) { toast.error('Restart backoff must be a number'); return }
       lifecyclePatch.restartBackoff = restartBackoffMs
     }
 
@@ -163,6 +189,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
   }
 
   function handleCancel() {
+    setNotes(service.notes ?? '')
     setHealthPath(service.network.healthPath)
     setCapabilityId(service.capabilityId)
     setHostId(service.hostId)
@@ -180,41 +207,93 @@ export function ServiceDetail({ service, onUpdate }: Props) {
     setDirty(false)
   }
 
-  const capabilityName = capabilities.find((c) => c.id === capabilityId)?.name ?? capabilityId
-
   return (
-    <div className="space-y-4 -mt-3">
+    <div className="flex flex-col min-h-0 -mt-3">
 
-      {/* ── Status header ── */}
-      <div className="">
-        {/* Row 1: capability + protected/enabled */}
-        <div className="flex items-center text-base">
-          <span className="text-muted-foreground">{capabilityName}</span>
-          {service.permissions.protected && <Badge variant="outline">protected</Badge>}
-          <span className="text-muted-foreground">, is currently {service.permissions.enabled ? 'enabled' : 'disabled'}</span>
-        </div>
-
-        {/* Row 2: badge + timestamp + History */}
-        <div className="flex items-center gap-3 mt-5">
-          <Badge className={healthBadgeClass[service.health]}>{healthLabel[service.health]}</Badge>
-          {service.lastEvent && (
-            <span className="text-muted-foreground">{relativeTime(service.lastEvent.timestamp)}</span>
+      {/* ── Status header: state and the enable switch, above the tabs ──
+          The switch applies immediately while the fields below wait for Save,
+          so it stays out of the form and visible whichever tab is open. */}
+      <Tabs value={tab} onValueChange={setTab} className="flex flex-col min-h-0">
+        {/* Tabs, state and the enable switch share one row. The switch applies
+            immediately while the fields below wait for Save, so it sits outside
+            the form and stays visible whichever tab is open. */}
+        <div className="flex items-center gap-3">
+          <TabsList>
+            <TabsTrigger value="network">Network</TabsTrigger>
+            <TabsTrigger value="lifecycle">Lifecycle</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
+          </TabsList>
+          {/* Health only says something while the service is enabled; when it is
+              off, the switch already carries that state. */}
+          {service.permissions.enabled && (
+            <Badge className={healthBadgeClass[service.health]}>{healthLabel[service.health]}</Badge>
           )}
-          <div className="">
-            <ServiceHistory serviceId={service.id} serviceName={service.id} />
+          {service.permissions.enabled && service.lastEvent && (
+            <span className="text-xs text-muted-foreground">{relativeTime(service.lastEvent.timestamp)}</span>
+          )}
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            {service.permissions.protected ? (
+              <Badge variant="outline">protected</Badge>
+            ) : (
+              <>
+                <Label htmlFor="service-enabled" className="cursor-pointer text-muted-foreground">
+                  {service.permissions.enabled ? 'Enabled' : 'Disabled'}
+                </Label>
+                <Switch
+                  id="service-enabled"
+                  checked={service.permissions.enabled}
+                  onCheckedChange={handleToggleEnabled}
+                  aria-label="Enable service"
+                />
+              </>
+            )}
           </div>
         </div>
-      </div>
+
+        <TabsContent value="network" className="space-y-4 overflow-y-auto overscroll-contain pt-4">
+
+      {/* ── About ── */}
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium">About</h3>
+        <div className="space-y-2">
+          <Label className="text-muted-foreground">
+            Capability
+            <InfoTip>What this service provides. Services implementing the same capability are interchangeable to the rest of the platform.</InfoTip>
+          </Label>
+          <Select value={capabilityId} onValueChange={(v) => { setCapabilityId(v); markDirty() }}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {capabilities.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-muted-foreground">
+            Notes
+            <InfoTip>What this service is, how to drive it (UI/API/CLI), and where it came from. Shows up here so it's discoverable without re-deriving it from source each time.</InfoTip>
+          </Label>
+          <Textarea
+            value={notes}
+            onChange={(e) => { setNotes(e.target.value); markDirty() }}
+            placeholder="What is this, how do you use it, where did it come from?"
+            rows={3}
+            className="max-h-40 overflow-y-auto"
+          />
+        </div>
+      </section>
 
       <Separator />
 
       {/* ── Network ── */}
-      <div className="space-y-3">
-        <p className="text-base font-medium">Network</p>
-
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium">Network</h3>
         {/* Host + Port + Tailscale Serve */}
         <div className="flex items-center gap-6">
-          <div className="space-y-3">
+          <div className="space-y-2">
             <Label className="text-muted-foreground">Host</Label>
             <Select value={hostId} onValueChange={(v) => { setHostId(v); markDirty() }}>
               <SelectTrigger>
@@ -227,7 +306,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-3 w-20">
+          <div className="space-y-2 w-20">
             <Label className="text-muted-foreground">Port</Label>
             <Input
               value={port}
@@ -235,7 +314,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
               placeholder="8080"
             />
           </div>
-          <div className="flex items-center gap-2 pt-6">
+          <div className="flex items-center gap-2 self-end pb-2">
             <Switch
               id="tailscale-serve"
               checked={tailscaleServe}
@@ -246,14 +325,8 @@ export function ServiceDetail({ service, onUpdate }: Props) {
           </div>
         </div>
 
-        {/* URL (read-only, derived from host + port) */}
-        <div className="space-y-3">
-          <Label className="text-muted-foreground">URL</Label>
-          <p className="text-sm font-mono text-muted-foreground truncate">{service.network.endpoint}</p>
-        </div>
-
         {/* Health path + Listen address */}
-        <div className="grid grid-cols-2 gap-4 mt-5">
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="text-muted-foreground">Health path</Label>
             <Input
@@ -273,19 +346,23 @@ export function ServiceDetail({ service, onUpdate }: Props) {
             />
           </div>
         </div>
-      </div>
 
-      <Separator />
+        {/* URL (read-only, derived from host + port) */}
+        <div className="space-y-2">
+          <Label className="text-muted-foreground">URL</Label>
+          <p className="text-sm font-mono text-muted-foreground truncate">{service.network.endpoint}</p>
+        </div>
+      </section>
 
-      {/* ── Lifecycle ── */}
-      <div className="space-y-5">
-        <p className="text-base font-medium">Lifecycle</p>
+        </TabsContent>
+
+        <TabsContent value="lifecycle" className="space-y-5 overflow-y-auto overscroll-contain pt-4">
 
         {/* Loading */}
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Loading</p>
+          <h3 className="text-sm font-medium">Loading</h3>
           <div className="flex items-center gap-6">
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label className="text-muted-foreground">
                 Load strategy
                 <InfoTip>Startup: service is always running. Demand: service is started on first request and stopped when idle.</InfoTip>
@@ -300,7 +377,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 pt-5">
+            <div className="flex items-center gap-2 self-end pb-2">
               <Switch
                 id="auto-start"
                 checked={autoStart}
@@ -314,7 +391,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
 
         {/* Idle eviction */}
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Idle eviction</p>
+          <h3 className="text-sm font-medium">Idle eviction</h3>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Switch
@@ -333,7 +410,7 @@ export function ServiceDetail({ service, onUpdate }: Props) {
                 onChange={(e) => { setIdleTimeout(e.target.value); markDirty() }}
                 placeholder="5"
                 disabled={!idleUnload}
-                className="w-16"
+                className="w-20"
               />
               <span className="text-sm text-muted-foreground">min</span>
             </div>
@@ -342,76 +419,76 @@ export function ServiceDetail({ service, onUpdate }: Props) {
 
         {/* Startup & Restart */}
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Startup &amp; restart</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">
-                Startup grace period
-                <InfoTip>How long (in seconds) to wait before starting health checks after the service starts. Default: 30s.</InfoTip>
-              </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={startupTime}
-                  onChange={(e) => { setStartupTime(e.target.value); markDirty() }}
-                  placeholder="30"
-                  className="w-20"
-                />
-                <span className="text-sm text-muted-foreground">sec</span>
-              </div>
-            </div>
+          <h3 className="text-sm font-medium">Startup &amp; restart</h3>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="startup-time" className="text-muted-foreground">
+              Startup grace period
+              <InfoTip>How long (in seconds) to wait before starting health checks after the service starts. Default: 30s.</InfoTip>
+            </Label>
+            <Input
+              id="startup-time"
+              value={startupTime}
+              onChange={(e) => { setStartupTime(e.target.value); markDirty() }}
+              placeholder="30"
+              className="w-20"
+            />
+            <span className="text-sm text-muted-foreground">sec</span>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="restart-on-crash"
-                checked={restartOnCrash}
-                onCheckedChange={(v) => { setRestartOnCrash(v); markDirty() }}
-              />
-              <Label htmlFor="restart-on-crash" className="cursor-pointer">
-                Restart on crash
-                <InfoTip>Auto-restart the service when it exits unexpectedly. Process runner only.</InfoTip>
-              </Label>
-            </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="restart-on-crash"
+              checked={restartOnCrash}
+              onCheckedChange={(v) => { setRestartOnCrash(v); markDirty() }}
+            />
+            <Label htmlFor="restart-on-crash" className="cursor-pointer">
+              Restart on crash
+              <InfoTip>Auto-restart the service when it exits unexpectedly. Process runner only.</InfoTip>
+            </Label>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">
-                Max restarts
-                <InfoTip>Maximum number of restart attempts before giving up. Default: 3.</InfoTip>
-              </Label>
-              <Input
-                value={maxRestarts}
-                onChange={(e) => { setMaxRestarts(e.target.value); markDirty() }}
-                placeholder="3"
-                disabled={!restartOnCrash}
-                className="w-20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">
-                Restart backoff
-                <InfoTip>Initial delay before each restart attempt in seconds. Default: 5s.</InfoTip>
-              </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={restartBackoff}
-                  onChange={(e) => { setRestartBackoff(e.target.value); markDirty() }}
-                  placeholder="5"
-                  disabled={!restartOnCrash}
-                  className="w-20"
-                />
-                <span className="text-sm text-muted-foreground">sec</span>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="max-restarts" className="text-muted-foreground">
+              Max restarts
+              <InfoTip>Maximum number of restart attempts before giving up. Default: 3.</InfoTip>
+            </Label>
+            <Input
+              id="max-restarts"
+              value={maxRestarts}
+              onChange={(e) => { setMaxRestarts(e.target.value); markDirty() }}
+              placeholder="3"
+              disabled={!restartOnCrash}
+              className="w-20"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="restart-backoff" className="text-muted-foreground">
+              Restart backoff
+              <InfoTip>Initial delay before each restart attempt in seconds. Default: 5s.</InfoTip>
+            </Label>
+            <Input
+              id="restart-backoff"
+              value={restartBackoff}
+              onChange={(e) => { setRestartBackoff(e.target.value); markDirty() }}
+              placeholder="5"
+              disabled={!restartOnCrash}
+              className="w-20"
+            />
+            <span className="text-sm text-muted-foreground">sec</span>
           </div>
         </div>
-      </div>
+        </TabsContent>
 
-      {/* ── Save / Cancel ── */}
+        <TabsContent value="history" className="overflow-y-auto overscroll-contain pt-4">
+          <ServiceHistoryList serviceId={service.id} />
+        </TabsContent>
+      </Tabs>
+
+      {/* ── Save / Cancel ──
+          One dirty flag covers every tab, so the bar sits outside the tab
+          content: edits on a tab you have navigated away from still save. */}
       {dirty && (
         <>
-          <Separator />
-          <div className="flex justify-end gap-2">
+          <Separator className="mt-4" />
+          <div className="flex justify-end gap-2 pt-4">
             <Button variant="ghost" onClick={handleCancel}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}

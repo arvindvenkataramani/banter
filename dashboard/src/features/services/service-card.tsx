@@ -1,19 +1,22 @@
 import { useState } from 'react'
-import { Copy, RefreshCw, Play, Square, Lock } from 'lucide-react'
+import { CopyIcon } from '@phosphor-icons/react/dist/csr/Copy'
+import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
+import { PlayIcon } from '@phosphor-icons/react/dist/csr/Play'
+import { StopIcon } from '@phosphor-icons/react/dist/csr/Stop'
+import { LockIcon } from '@phosphor-icons/react/dist/csr/Lock'
+import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
+import { ClockCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
-import { checkService, setEnabled, startService, stopService, type ServiceWithHealth } from '@/lib/api'
-import { ServiceDetail } from '@/features/services/service-detail'
-import { ServiceHistory } from '@/features/services/service-history'
+import { checkService, startService, stopService, type ServiceWithHealth } from '@/lib/api'
+import { ServiceDetail, type ServiceDetailTab } from '@/features/services/service-detail'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { healthBadgeClass, healthLabel, serviceIsRunning } from '@/lib/health-badge'
@@ -28,15 +31,6 @@ function hostPort(endpoint: string): string {
   }
 }
 
-function relativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime()
-  const secs = Math.floor(diffMs / 1000)
-  if (secs < 60) return `${secs}s ago`
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ago`
-  return `${Math.floor(mins / 60)}h ago`
-}
-
 interface Props {
   service: ServiceWithHealth
   capabilityName?: string
@@ -46,6 +40,10 @@ interface Props {
 export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
   const [toggleState, setToggleState] = useState<null | 'starting' | 'timed-out' | 'stopping' | 'cancelling'>(null)
   const [refreshing, setRefreshing] = useState(false)
+  // Which tab the detail dialog opens on, and null when it is closed.
+  const [detailTab, setDetailTab] = useState<ServiceDetailTab | null>(null)
+
+  function openDetail(tab: ServiceDetailTab) { setDetailTab(tab) }
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -63,17 +61,6 @@ export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
       toast.success('Copied to clipboard')
     } catch {
       toast.error('Failed to copy')
-    }
-  }
-
-  async function handleToggle(enabled: boolean) {
-    onUpdate({ ...service, health: enabled ? 'unknown' : 'disabled', permissions: { ...service.permissions, enabled } })
-    try {
-      const updated = await setEnabled(service.id, enabled)
-      onUpdate(updated)
-    } catch (err) {
-      onUpdate(service)
-      toast.error(err instanceof Error ? err.message : 'Toggle failed')
     }
   }
 
@@ -156,96 +143,117 @@ export function ServiceCard({ service, capabilityName, onUpdate }: Props) {
   return (
     <Card className={cn('w-96', service.permissions.protected && 'bg-card-muted')}>
       <CardContent>
-        {/* Row 1: Service name + capability + enabled toggle */}
+        {/* Row 1: Service name + capability · history + status badge */}
         <div className="flex items-center gap-2">
-          {service.permissions.protected && <Lock className="size-4 shrink-0" />}
+          {service.permissions.protected && <LockIcon weight="bold" className="size-4 shrink-0" />}
           <p className="text-lg font-semibold truncate">{service.name ?? service.id}</p>
           <span className="text-muted-foreground truncate">{capabilityName ?? service.capabilityId}</span>
-          {!service.permissions.protected && (
-            <Switch
-              checked={service.permissions.enabled}
-              onCheckedChange={handleToggle}
-              aria-label="Toggle service"
-              className="ml-auto shrink-0"
-            />
-          )}
-        </div>
-
-        {/* Row 2: host:port + copy + open (left) · time ago + badge (right) */}
-        <div className="flex items-center gap-1 mt-2">
-          <a
-            href={disabled ? undefined : service.network.endpoint}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn('text-sm text-muted-foreground', !disabled && 'hover:underline')}
-            aria-disabled={disabled}
-          >
-            {hostPort(service.network.endpoint ?? '')}
-          </a>
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={handleCopy} title="Copy URL" disabled={disabled}>
-            <Copy />
-          </Button>
-          <Button variant="ghost" size="sm" className="shrink-0" disabled={disabled} asChild={!disabled}>
-            {disabled ? <span>Open</span> : <a href={service.network.endpoint} target="_blank" rel="noopener noreferrer">Open</a>}
-          </Button>
-          <div className="ml-auto flex items-center gap-2 shrink-0">
-            {service.lastEvent && (
-              <span className="text-muted-foreground">{relativeTime(service.lastEvent.timestamp)}</span>
+          <div className="ml-auto shrink-0">
+            {disabled ? (
+              <Badge className={badgeClass}>{healthLabel[service.health]}</Badge>
+            ) : (
+              // The badge is the refresh control: it already reports the health
+              // a re-check would update, so a separate button restated it.
+              <Badge asChild className={cn(badgeClass, 'group/badge cursor-pointer')}>
+                <button type="button" onClick={handleRefresh} disabled={refreshing} title="Refresh health">
+                  {/* Label and icon occupy the same grid cell, so swapping them
+                      on hover cannot change the badge's size or shift the row. */}
+                  <span className="grid grid-cols-1 grid-rows-1 place-items-center">
+                    <span
+                      className={cn(
+                        'col-start-1 row-start-1',
+                        refreshing ? 'invisible' : 'group-hover/badge:invisible group-focus-visible/badge:invisible'
+                      )}
+                    >
+                      {healthLabel[service.health]}
+                    </span>
+                    <ArrowClockwiseIcon weight="bold"
+                      className={cn(
+                        'col-start-1 row-start-1 size-3',
+                        refreshing ? 'animate-spin' : 'invisible group-hover/badge:visible group-focus-visible/badge:visible'
+                      )}
+                    />
+                  </span>
+                </button>
+              </Badge>
             )}
-            <Badge className={badgeClass}>{healthLabel[service.health]}</Badge>
           </div>
         </div>
 
-        {/* Row 4: Controls */}
-        <div className="flex items-center gap-2 mt-4 -mx-2">
+        {/* Row 2: start + history (left) · copy, url, settings (right) */}
+        <div className="flex items-center gap-1 mt-2 -mx-2">
           {!service.permissions.protected && service.runner && service.runner.type !== 'external' && (
             toggleState === 'timed-out' ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive"
+                className="shrink-0 text-destructive"
                 onClick={handleCancelStartup}
               >
-                <Square />
+                <StopIcon weight="bold" />
                 Cancel startup
               </Button>
             ) : (
               <Button
                 variant="ghost"
                 size="sm"
+                className="shrink-0"
                 onClick={handlePlayPause}
                 disabled={disabled || toggleState !== null}
               >
                 {toggleState === 'stopping' || toggleState === 'cancelling' || serviceIsRunning[service.health] ? (
                   <>
-                    <Square />
+                    <StopIcon weight="bold" />
                     {toggleState === 'stopping' ? 'Stopping…' : toggleState === 'cancelling' ? 'Cancelling…' : 'Stop'}
                   </>
                 ) : (
                   <>
-                    <Play />
+                    <PlayIcon weight="bold" />
                     {toggleState === 'starting' ? 'Starting…' : 'Start'}
                   </>
                 )}
               </Button>
             )
           )}
-          <div className="ml-auto flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={disabled || refreshing} title="Refresh">
-              <RefreshCw className={cn(refreshing && 'animate-spin')} />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            title="History"
+            onClick={() => openDetail('history')}
+          >
+            <ClockCounterClockwiseIcon weight="bold" />
+          </Button>
+          {/* The url and the button that copies it read as one unit. */}
+          <div className="ml-auto flex items-center gap-1 min-w-0">
+            <a
+              href={disabled ? undefined : service.network.endpoint}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn('text-sm text-muted-foreground truncate', !disabled && 'hover:underline')}
+              aria-disabled={disabled}
+            >
+              {hostPort(service.network.endpoint ?? '')}
+            </a>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={handleCopy} title="Copy URL" disabled={disabled}>
+              <CopyIcon weight="bold" />
             </Button>
-            <ServiceHistory serviceId={service.id} serviceName={service.name ?? service.id} disabled={disabled} />
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  Details
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[672px]">
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Never disabled: settings holds the enable toggle, so it is the
+                way back for a service that is switched off. */}
+            <Button variant="ghost" size="icon" title="Settings" onClick={() => openDetail('network')}>
+              <GearSixIcon weight="bold" />
+            </Button>
+            {/* One dialog, two ways in: the icon that opened it picks the tab. */}
+            <Dialog open={detailTab !== null} onOpenChange={(open) => !open && setDetailTab(null)}>
+              <DialogContent className="sm:max-w-[672px] max-h-[calc(100dvh-4rem)] grid-rows-[auto_minmax(0,1fr)]" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle className="text-xl">{service.name ?? service.id}</DialogTitle>
                 </DialogHeader>
-                <ServiceDetail service={service} onUpdate={onUpdate} />
+                {detailTab && (
+                  <ServiceDetail service={service} onUpdate={onUpdate} initialTab={detailTab} />
+                )}
               </DialogContent>
             </Dialog>
           </div>

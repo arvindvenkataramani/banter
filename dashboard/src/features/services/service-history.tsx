@@ -1,13 +1,4 @@
-import { useState } from 'react'
-import { History } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import { useEffect, useState } from 'react'
 import { getEvents, type Event } from '@/lib/api'
 
 function relativeTime(iso: string): string {
@@ -23,61 +14,42 @@ function dataSummary(data: Record<string, unknown>): string {
   return Object.entries(data).map(([k, v]) => `${k}: ${String(v)}`).join(', ')
 }
 
-interface Props {
-  serviceId: string
-  serviceName: string
-  disabled?: boolean
+/** The event list on its own, for embedding where a dialog is already open. */
+export function ServiceHistoryList({ serviceId }: { serviceId: string }) {
+  // Loading is derived: the stored result belongs to one service, so a
+  // different serviceId reads as loading without a setState in the effect.
+  const [result, setResult] = useState<{ serviceId: string; events: Event[] } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getEvents({ limit: 10, subjectId: serviceId })
+      .then((data) => { if (!cancelled) setResult({ serviceId, events: data }) })
+      .catch(() => { if (!cancelled) setResult({ serviceId, events: [] }) })
+    return () => { cancelled = true }
+  }, [serviceId])
+
+  const loaded = result?.serviceId === serviceId
+  return <EventList events={loaded ? result.events : []} loading={!loaded} />
 }
 
-export function ServiceHistory({ serviceId, serviceName, disabled }: Props) {
-  const [events, setEvents] = useState<Event[]>([])
-  const [loading, setLoading] = useState(false)
-
-  async function handleOpen(open: boolean) {
-    if (!open) return
-    setLoading(true)
-    try {
-      const data = await getEvents({ limit: 10, subjectId: serviceId })
-      setEvents(data)
-    } catch { /* ignore */ } finally {
-      setLoading(false)
-    }
-  }
+function EventList({ events, loading }: { events: Event[]; loading: boolean }) {
+  if (loading) return <p className="text-xs text-muted-foreground">Loading…</p>
+  if (events.length === 0) return <p className="text-xs text-muted-foreground">No events recorded.</p>
 
   return (
-    <Dialog onOpenChange={handleOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={disabled}>
-          <History />
-          History
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{serviceName} · History</DialogTitle>
-        </DialogHeader>
-        <div className="pt-2">
-          {loading ? (
-            <p className="text-xs text-muted-foreground">Loading…</p>
-          ) : events.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No events recorded.</p>
-          ) : (
-            <div className="space-y-2">
-              {events.map((evt) => (
-                <div key={evt.id} className="flex items-start gap-3 text-xs">
-                  <span className="text-muted-foreground shrink-0 tabular-nums w-14">
-                    {relativeTime(evt.timestamp)}
-                  </span>
-                  <span className="font-mono shrink-0">{evt.type}</span>
-                  {Object.keys(evt.data).length > 0 && (
-                    <span className="text-muted-foreground truncate">{dataSummary(evt.data)}</span>
-                  )}
-                </div>
-              ))}
-            </div>
+    <div className="space-y-2">
+      {events.map((evt) => (
+        <div key={evt.id} className="flex items-start gap-3 text-xs min-w-0">
+          <span className="text-muted-foreground shrink-0 tabular-nums w-14">
+            {relativeTime(evt.timestamp)}
+          </span>
+          <span className="font-mono shrink-0">{evt.type}</span>
+          {Object.keys(evt.data).length > 0 && (
+            <span className="text-muted-foreground min-w-0 break-all whitespace-pre-wrap">{dataSummary(evt.data)}</span>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      ))}
+    </div>
   )
 }
+

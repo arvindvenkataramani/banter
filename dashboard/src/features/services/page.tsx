@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { getServices, getCapabilities, getHosts, getShards, pollShard, type ServiceWithHealth, type HealthState, type Capability, type Host, type ShardStatus } from '@/lib/api'
 import { ServiceCard } from '@/features/services/service-card'
 import { Button } from '@/components/ui/button'
-import { RefreshCw } from 'lucide-react'
+import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
 
 interface Props {
   filter: string
@@ -125,7 +125,7 @@ export function ServicesPage({ filter, navigate }: Props) {
                   disabled={pollingHostId === hostId}
                   onClick={() => handlePollShard(hostId)}
                 >
-                  <RefreshCw className={`h-3 w-3 mr-1 ${pollingHostId === hostId ? 'animate-spin' : ''}`} />
+                  <ArrowClockwiseIcon weight="bold" className={`h-3 w-3 mr-1 ${pollingHostId === hostId ? 'animate-spin' : ''}`} />
                   {pollingHostId === hostId ? 'Checking' : 'Recheck'}
                 </Button>
               )}
