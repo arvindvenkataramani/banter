@@ -1,6 +1,6 @@
 # ControlShard
 
-*The platform pattern running on a worker host. Inherits the full three-plane architecture — registry, health checker, event log, API, dashboard assets — and adds the concerns specific to a demand-loaded worker: idle eviction and Tailscale Serve management.*
+*The platform pattern running on a worker host. Inherits the full three-plane architecture — registry, health checker, event log, API — and adds the concerns specific to a demand-loaded worker: idle eviction and Tailscale Serve management.*
 
 ---
 
@@ -14,7 +14,7 @@ It is not a lightweight proxy or a thin agent. It is a full platform instance th
 - Manages service lifecycle natively in TypeScript — spawning processes, polling health, retrying on failure
 - Appends events to its own local event log
 - Exposes the same REST API shape as the control plane
-- Serves the dashboard's static assets directly — no separate server process
+- Is API-only: it serves no dashboard, which talks only to the control plane
 - Reports state upward to the primary control plane via pull-based polling
 
 For the inherited behavior, see the component docs:

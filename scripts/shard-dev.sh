@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Start control shard (serves API + dashboard) and Vite dev server in the foreground.
-# Shard runs on the same port as production (4200). Vite runs on 5173 with HMR.
+# Start control shard (API only) in the foreground, on the same port as production (4200).
 # Automatically stops production agents on start and re-enables them on exit.
 # Stop with Ctrl+C.
 set -euo pipefail
@@ -17,9 +16,16 @@ SHARD_PORT=$(awk '
   found && /"port":/ { gsub(/[^0-9]/, "", $2); print $2; exit }
 ' "$REGISTRY")
 
+# One cleanup for every way out — Ctrl+C, a signal, or a failure under set -e —
+# so production is never left stopped. It runs once: the exit it ends with fires
+# the EXIT trap again.
+CLEANED=""
 cleanup() {
+  [[ -n "$CLEANED" ]] && return
+  CLEANED=1
+
   echo ""
-  echo "[shard-dev] Stopping dev servers..."
+  echo "[shard-dev] Stopping dev server..."
 
   # Tear down tailscale serve for the shard
   tailscale serve --bg --https="$SHARD_PORT" off 2>/dev/null || true
@@ -41,16 +47,15 @@ cleanup() {
   exit
 }
 
-trap cleanup INT TERM
+trap cleanup EXIT INT TERM
 
 # Stop production — always, regardless of whether it appears to be running.
 # Covers both launchd agents and any stale tailscale serve bindings.
 "$REPO/scripts/shard-stop.sh"
 
-echo "[shard-dev] Starting control shard and Vite..."
+echo "[shard-dev] Starting control shard..."
 
-(cd "$REPO/control" && BANTER_SHARD_REGISTRY_PATH="$REGISTRY" DASHBOARD_DIST="$REPO/dashboard/dist" bun run --watch control-shard/src/index.ts) &
-(cd "$REPO/dashboard" && VITE_PROXY_TARGET="http://localhost:$SHARD_PORT" bun run dev) &
+(cd "$REPO/control" && BANTER_SHARD_REGISTRY_PATH="$REGISTRY" bun run --watch control-shard/src/index.ts) &
 
 # Enable tailscale serve for the shard
 echo "[shard-dev] Enabling tailscale serve on port $SHARD_PORT"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy control shard to the worker machine (Mac). Builds and bundles the dashboard.
+# Deploy control shard to the worker machine (Mac). API-only: no dashboard is built or served.
 # Run from anywhere on the Mac.
 #
 # Usage:
@@ -16,14 +16,24 @@ UID_NUM="$(id -u)"
 SHARD_LABEL="com.banter.control-shard"
 SCRIPTS_DIR="$REPO/scripts"
 
+# Temporary directories to remove on exit, under one trap: bash keeps only one
+# EXIT trap, so each directory registers here rather than installing its own and
+# silently replacing the others (control-deploy.sh does the same).
+CLEANUP_DIRS=()
+cleanup() {
+  for d in ${CLEANUP_DIRS+"${CLEANUP_DIRS[@]}"}; do
+    rm -rf "$d"
+  done
+}
+trap cleanup EXIT
+
 # Determine deploy source
 SRC="$REPO"
 FORCE_REF="${1:-}"
 
 if [[ -n "$FORCE_REF" ]]; then
   if [[ "$FORCE_REF" == "main" ]]; then
-    SRC=$(platform_stage_dir "$BANTER_UNIT-shard")
-    trap "rm -rf '$SRC'" EXIT
+    SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); CLEANUP_DIRS+=("$SRC")
     echo "[shard-deploy] Extracting main from git archive..."
     git -C "$REPO" archive main | tar -x -C "$SRC"
   elif [[ "$FORCE_REF" != "dev" ]]; then
@@ -46,14 +56,14 @@ else
       case "$choice" in
         2) ;;
         3) echo "[shard-deploy] Aborted."; exit 0 ;;
-        *) SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); trap "rm -rf '$SRC'" EXIT
+        *) SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); CLEANUP_DIRS+=("$SRC")
            echo "[shard-deploy] Extracting main from git archive..."
            git -C "$REPO" archive main | tar -x -C "$SRC"
            ;;
       esac
     else
       echo "[shard-deploy] Non-interactive session: defaulting to main."
-      SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); trap "rm -rf '$SRC'" EXIT
+      SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); CLEANUP_DIRS+=("$SRC")
       echo "[shard-deploy] Extracting main from git archive..."
       git -C "$REPO" archive main | tar -x -C "$SRC"
     fi
@@ -62,13 +72,10 @@ else
   fi
 fi
 
-echo "[shard-deploy] Building dashboard..."
 if [[ "$SRC" != "$REPO" ]]; then
   echo "[shard-deploy] Installing build dependencies..."
   (cd "$SRC" && bun install)
 fi
-cd "$SRC/dashboard"
-bun run build
 
 # Compile Swift supervisor — always from $SRC source, output to $SRC so it gets copied
 SWIFT_SRC="$SRC/control/control-shard/ops/shard-runner.swift"
@@ -76,7 +83,13 @@ INFO_PLIST="$SRC/control/control-shard/ops/Info.plist"
 RUNNER_BIN="$SRC/control/control-shard/ops/shard-runner"
 
 echo "[shard-deploy] Compiling shard-runner..."
-swiftc "$SWIFT_SRC" -o "$RUNNER_BIN" \
+# Through xcrun: a toolchain binary called by its own path fails to find the SDK's
+# standard library.
+if ! xcrun -f swiftc >/dev/null 2>&1; then
+  echo "[shard-deploy] swiftc not found. Is Xcode or the Xcode Command Line Tools installed and selected (xcode-select -p)?" >&2
+  exit 1
+fi
+xcrun swiftc "$SWIFT_SRC" -o "$RUNNER_BIN" \
   -Xlinker -sectcreate \
   -Xlinker __TEXT \
   -Xlinker __info_plist \
@@ -118,9 +131,7 @@ mkdir -p "$PROD/control"
 cp -r "$SRC/control/shared"        "$PROD/control/shared"
 cp -r "$SRC/control/control-shard" "$PROD/control/control-shard"
 cp    "$SRC/control/package.json"  "$PROD/control/package.json"
-mkdir -p "$PROD/dashboard"
-cp -r "$SRC/dashboard/dist"        "$PROD/dashboard/dist"
-# Strip dashboard workspace from package.json — only dist is deployed, not the full package
+# Strip dashboard workspace from package.json — the shard is API-only, no dashboard is built or deployed
 bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
 cp    "$SRC/tsconfig.json"         "$PROD/tsconfig.json"
 cp    "$SRC/bun.lock"              "$PROD/bun.lock" 2>/dev/null || true

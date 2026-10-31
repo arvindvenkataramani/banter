@@ -40,7 +40,7 @@ Run these on the worker. See [../docs/shard-setup.md](../docs/shard-setup.md).
 | `shard-start.sh` | Bootstraps the launchd agent. Tailscale Serve is the supervisor's job, not this script's. |
 | `shard-stop.sh` | Stops and disables the agent. |
 | `shard-uninstall.sh` | Removes the agent and the deployed tree. |
-| `shard-dev.sh` | Development, as `control-dev.sh` but for the shard. |
+| `shard-dev.sh` | Development: the shard alone, API-only, with `--watch`. Stops the production agent while it runs and restores it on exit. |
 | `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by registry entries and the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
 
 ## Diagnostics and safety

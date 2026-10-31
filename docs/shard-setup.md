@@ -45,7 +45,7 @@ Older macOS installs used `~/Services` with a capital S. That still works — th
 scripts/shard-deploy.sh
 ```
 
-This builds the dashboard, copies files into place, compiles and code-signs the `shard-runner` Swift supervisor, and installs the launchd agent. It is short enough to read, and it is where the exact commands live — including the `swiftc` invocation, if you want to run the steps by hand.
+This copies files into place, compiles and code-signs the `shard-runner` Swift supervisor, and installs the launchd agent. It is short enough to read, and it is where the exact commands live — including the `swiftc` invocation, if you want to run the steps by hand.
 
 The launchd agent is generated, not hand-edited. launchd will not expand `~` or `$HOME` in a plist, so the installed file has to carry absolute paths — but the tracked one does not. `control/control-shard/ops/com.banter.control-shard.plist.template` carries a `__HOME__` placeholder, and the deploy substitutes your home directory into it before installing the result.
 
