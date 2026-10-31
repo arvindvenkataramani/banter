@@ -133,33 +133,41 @@ describe("event log path resolution", () => {
 })
 
 describe("interval resolution", () => {
-  it("takes the health check interval from config when present", () => {
-    const s = resolveRuntimeSettings(makeRegistry(), makeConfig({ healthIntervalMs: 60000 }), {})
+  it("takes the health check interval from the registry's intervals block", () => {
+    const s = resolveRuntimeSettings(makeRegistry({ intervals: { healthMs: 60000 } }), makeConfig(), {})
     expect(s.healthIntervalMs).toBe(60000)
   })
 
-  it("takes the shard poll interval from config when present", () => {
-    const s = resolveRuntimeSettings(makeRegistry(), makeConfig({ shardPollIntervalMs: 45000 }), {})
+  it("takes the shard poll interval from the registry's intervals block", () => {
+    const s = resolveRuntimeSettings(makeRegistry({ intervals: { shardPollMs: 45000 } }), makeConfig(), {})
     expect(s.shardPollIntervalMs).toBe(45000)
   })
 
-  it("prefers the BANTER_HEALTH_INTERVAL_MS environment override over the config value", () => {
-    const s = resolveRuntimeSettings(makeRegistry(), makeConfig({ healthIntervalMs: 60000 }), { BANTER_HEALTH_INTERVAL_MS: "1000" })
+  it("prefers the BANTER_HEALTH_INTERVAL_MS environment override over the registry value", () => {
+    const s = resolveRuntimeSettings(makeRegistry({ intervals: { healthMs: 60000 } }), makeConfig(), { BANTER_HEALTH_INTERVAL_MS: "1000" })
     expect(s.healthIntervalMs).toBe(1000)
   })
 
-  it("supplies positive interval defaults when config omits them", () => {
+  it("prefers the BANTER_SHARD_POLL_INTERVAL_MS environment override over the registry value", () => {
+    const s = resolveRuntimeSettings(makeRegistry({ intervals: { shardPollMs: 45000 } }), makeConfig(), { BANTER_SHARD_POLL_INTERVAL_MS: "2000" })
+    expect(s.shardPollIntervalMs).toBe(2000)
+  })
+
+  it("defaults both intervals to 900000 when the registry omits them", () => {
     const s = resolveRuntimeSettings(makeRegistry(), makeConfig(), {})
-    expect(s.healthIntervalMs).toBeGreaterThan(0)
-    expect(s.shardPollIntervalMs).toBeGreaterThan(0)
+    expect(s.healthIntervalMs).toBe(900_000)
+    expect(s.shardPollIntervalMs).toBe(900_000)
   })
 
-  it("rejects a zero interval rather than spinning a loop with no delay", () => {
-    expect(() => resolveRuntimeSettings(makeRegistry(), makeConfig({ healthIntervalMs: 0 }), {})).toThrow()
+  it("no longer reads intervals from the config's runtime block", () => {
+    const s = resolveRuntimeSettings(makeRegistry(), makeConfig({ healthIntervalMs: 60000, shardPollIntervalMs: 45000 }), {})
+    expect(s.healthIntervalMs).toBe(900_000)
+    expect(s.shardPollIntervalMs).toBe(900_000)
   })
 
-  it("rejects a negative interval", () => {
-    expect(() => resolveRuntimeSettings(makeRegistry(), makeConfig({ shardPollIntervalMs: -1 }), {})).toThrow()
+  it("rejects an unparseable environment override rather than silently falling back", () => {
+    expect(() => resolveRuntimeSettings(makeRegistry(), makeConfig(), { BANTER_HEALTH_INTERVAL_MS: "nonsense" }))
+      .toThrow(/BANTER_HEALTH_INTERVAL_MS must be a positive integer/)
   })
 })
 

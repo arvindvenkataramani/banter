@@ -447,6 +447,42 @@ describe("Registry loader — runner validation", () => {
   });
 });
 
+describe("Registry loader — intervals", () => {
+  it("loads healthMs and shardPollMs on a control registry", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { healthMs: 60000, shardPollMs: 30000 } }));
+    const state = await loadRegistry(registryPath);
+    expect(state.intervals).toEqual({ healthMs: 60000, shardPollMs: 30000 });
+  });
+
+  it("rejects an unknown field in intervals", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { idleMs: 1000 } }));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/unknown field in intervals/);
+  });
+
+  it("rejects a non-positive interval", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { healthMs: 0 } }));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/positive integer/);
+  });
+
+  it("rejects intervals that are not an object", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: [900000] }));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/intervals must be an object/);
+  });
+
+  it("rejects shardPollMs on a shard registry", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, type: "shard", intervals: { shardPollMs: 1000 } }));
+    expect(loadRegistry(registryPath)).rejects.toThrow(/control-only/);
+  });
+
+  it("updateService write-back keeps the intervals block", async () => {
+    await writeFile(registryPath, JSON.stringify({ ...validRegistry, intervals: { healthMs: 60000 } }));
+    const state = await loadRegistry(registryPath);
+    await updateService(state, registryPath, "svc1", { network: { port: 4321 } });
+    const reloaded = await loadRegistry(registryPath);
+    expect(reloaded.intervals).toEqual({ healthMs: 60000 });
+  });
+});
+
 describe("Registry writer — preserves version, type, and defaults", () => {
   it("updateService round-trip preserves version, type, and defaults", async () => {
     const reg = {

@@ -2,9 +2,7 @@
   "version": 2,
   "runtime": {
     "host": "localhost",
-    "eventsPath": "~/services/banter/logs/events.jsonl",
-    "healthIntervalMs": 900000,
-    "shardPollIntervalMs": 900000
+    "eventsPath": "~/services/banter/logs/events.jsonl"
   },
   "integrations": {
     "openclaw": {

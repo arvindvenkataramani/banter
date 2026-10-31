@@ -98,6 +98,20 @@ function validateRegistry(data: unknown): Registry {
   // Type check
   if (d.type !== "control" && d.type !== "shard") throw new Error(`registry: invalid type (expected "control" or "shard", got "${d.type}")`);
 
+  if (d.intervals !== undefined) {
+    if (typeof d.intervals !== "object" || d.intervals === null || Array.isArray(d.intervals)) {
+      throw new Error("registry: intervals must be an object");
+    }
+    const intervals = d.intervals as Record<string, unknown>;
+    for (const [key, value] of Object.entries(intervals)) {
+      if (key !== "healthMs" && key !== "shardPollMs") throw new Error(`registry: unknown field in intervals: "${key}"`);
+      if (key === "shardPollMs" && d.type === "shard") throw new Error("registry: intervals.shardPollMs is control-only");
+      if (!Number.isInteger(value) || (value as number) <= 0) {
+        throw new Error(`registry: intervals.${key} must be a positive integer, got ${JSON.stringify(value)}`);
+      }
+    }
+  }
+
   // Defaults validation
   if (d.defaults !== undefined) {
     if (typeof d.defaults !== "object" || d.defaults === null || Array.isArray(d.defaults)) {
@@ -447,6 +461,7 @@ export async function updateService(
       capabilities: state.capabilities,
       services: servicesForDisk,
       ...(state.shards && { shards: state.shards }),
+      ...(state.intervals && { intervals: state.intervals }),
       ...(hasRoster && { roster: state.roster }),
     }, null, 2));
 
@@ -533,6 +548,15 @@ export async function reloadRegistry(
       warnings.push({
         kind: "shards-changed",
         message: "the shards list changed — restart to pick up the edit; the running list is unchanged",
+      });
+    }
+
+    // The loops read their intervals at startup, so a change is reported and
+    // live.intervals is left as it was.
+    if (JSON.stringify(live.intervals ?? {}) !== JSON.stringify(fresh.intervals ?? {})) {
+      warnings.push({
+        kind: "intervals-changed",
+        message: "intervals changed — restart to pick up the edit; the running loops are unchanged",
       });
     }
 

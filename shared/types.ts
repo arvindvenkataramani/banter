@@ -125,6 +125,13 @@ export interface Shard {
 
 export type RegistryType = "control" | "shard";
 
+/** How often this node's periodic loops run, in milliseconds. Read at startup;
+ *  an environment variable of the same meaning overrides each. */
+export interface RegistryIntervals {
+  healthMs?: number;     // Health check round (BANTER_HEALTH_INTERVAL_MS), default 900000
+  shardPollMs?: number;  // Control registry only: shard poll (BANTER_SHARD_POLL_INTERVAL_MS), default 900000
+}
+
 export type ServiceDefaults = {
   permissions?: Partial<Pick<ServicePermissions, "protected">>;
   network?: Partial<Pick<ServiceNetwork, "healthTimeout" | "tailscaleServe" | "scheme">>;
@@ -140,6 +147,7 @@ export interface Registry {
   capabilities: Capability[];
   services: Service[];
   shards?: Shard[];
+  intervals?: RegistryIntervals;
   /** Always present on a loaded registry; empty when the file has none. */
   roster?: NodeRoster;
 }
@@ -310,7 +318,7 @@ export type PartResult = { ok: true } | { ok: false; error: string };
 
 /** Names what a reload could not apply. Reload never restarts anything itself. */
 export interface ReloadWarning {
-  kind: "provider-changed" | "service-removed" | "shards-changed";
+  kind: "provider-changed" | "service-removed" | "shards-changed" | "intervals-changed";
   serviceId?: string;
   message: string;
 }

@@ -76,20 +76,23 @@ function resolvePort(registry: Registry, env: Env): { port: number; portSource: 
   return { port: positiveInt(port, `registry service "${CONTROL_SERVICE_ID}" network.port`), portSource: "registry" }
 }
 
+/** The environment wins if set; otherwise the registry's `intervals` value,
+ *  which the registry loader has already validated. */
 function resolveInterval(
   envValue: string | undefined,
-  configValue: number | undefined,
+  registryValue: number | undefined,
   fallback: number,
   label: string,
 ): number {
   if (envValue !== undefined && envValue !== "") return positiveInt(envValue, label)
-  if (configValue !== undefined) return positiveInt(configValue, `config runtime.${label}`)
-  return fallback
+  return registryValue ?? fallback
 }
 
 /**
  * Resolve every runtime setting from the registry, the config, and the
- * environment, in that order of increasing precedence.
+ * environment, in that order of increasing precedence. The port and loop
+ * intervals come from the registry; the bind address and event log from the
+ * config.
  *
  * Pure by design: it reads no files and consults no globals, so tests can hand
  * it an empty environment and assert the files alone are sufficient.
@@ -120,10 +123,10 @@ export function resolveRuntimeSettings(
     host,
     eventsPath: isAbsolute(eventsPath) ? eventsPath : join(process.cwd(), eventsPath),
     healthIntervalMs: resolveInterval(
-      env.BANTER_HEALTH_INTERVAL_MS, runtime?.healthIntervalMs, DEFAULT_HEALTH_INTERVAL_MS, "BANTER_HEALTH_INTERVAL_MS",
+      env.BANTER_HEALTH_INTERVAL_MS, registry.intervals?.healthMs, DEFAULT_HEALTH_INTERVAL_MS, "BANTER_HEALTH_INTERVAL_MS",
     ),
     shardPollIntervalMs: resolveInterval(
-      env.BANTER_SHARD_POLL_INTERVAL_MS, runtime?.shardPollIntervalMs, DEFAULT_SHARD_POLL_INTERVAL_MS, "BANTER_SHARD_POLL_INTERVAL_MS",
+      env.BANTER_SHARD_POLL_INTERVAL_MS, registry.intervals?.shardPollMs, DEFAULT_SHARD_POLL_INTERVAL_MS, "BANTER_SHARD_POLL_INTERVAL_MS",
     ),
     portSource,
   }

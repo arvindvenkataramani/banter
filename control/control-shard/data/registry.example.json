@@ -181,6 +181,9 @@
       }
     }
   ],
+  "intervals": {
+    "healthMs": 900000
+  },
   "roster": {
     "providers": {
       "fluid-tts": {

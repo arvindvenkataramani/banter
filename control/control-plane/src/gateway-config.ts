@@ -17,17 +17,15 @@ export interface ModelChunkingPref {
 export interface PlatformConfig {
   version: number
   /**
-   * Process-level settings: where this deployment listens, logs, and how often
-   * its periodic loops run. Each has an environment override, but a normal run
-   * needs none. The listening port is deliberately absent — it comes from the
-   * registry's own `control` service entry, so it is declared in one place
-   * rather than two that could disagree. See runtime-settings.ts.
+   * Process-level settings: where this deployment listens and logs. Each has an
+   * environment override, but a normal run needs none. Loop intervals live in
+   * registry.json under `intervals`. The listening port is deliberately absent —
+   * it comes from the registry's own `control` service entry, so it is declared
+   * in one place rather than two that could disagree. See runtime-settings.ts.
    */
   runtime?: {
     host?: string
     eventsPath?: string
-    healthIntervalMs?: number
-    shardPollIntervalMs?: number
   }
   integrations?: {
     openclaw?: {

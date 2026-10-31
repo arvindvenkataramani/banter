@@ -37,6 +37,7 @@ A shard is optional — a single-machine install has no shard and no cross-host 
 | `capabilities` | Abstract things the system can do |
 | `services` | Concrete processes |
 | `shards` | (Control registries only) List of shard endpoints to poll |
+| `intervals` | How often this node's loops run, in ms: `healthMs` (health checks) and, on the control plane only, `shardPollMs` (shard poll). Each defaults to `900000`; `BANTER_HEALTH_INTERVAL_MS` and `BANTER_SHARD_POLL_INTERVAL_MS` override them. Read at startup; a reload that finds them changed warns that a restart is needed. |
 | `roster` | The models and voices this node's services offer; see [Roster](#roster). Always present on a loaded registry — a registry with none gets an empty one |
 | `defaults` | Default values for permissions, network, lifecycle, merged into each service at load time |
 

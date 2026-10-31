@@ -221,10 +221,8 @@ Optional. Under `runtime` in `config.json`:
 |---|---|---|
 | `host` | `localhost` | Bind address |
 | `eventsPath` | `logs/events.jsonl` in the deployment | Event log |
-| `healthIntervalMs` | `900000` | Health check interval |
-| `shardPollIntervalMs` | `900000` | Shard poll interval |
 
-The listening port is **not** here — it comes from the registry's `control` service entry, so it is declared in one place rather than two that can disagree.
+The listening port is **not** here — it comes from the registry's `control` service entry, so it is declared in one place rather than two that can disagree. Loop intervals are not here either: they live in `registry.json` under `intervals` (`healthMs`, and on the control plane `shardPollMs`, each defaulting to `900000`). See [registry.md](components/registry.md).
 
 Each has an environment override (`BANTER_CONTROL_HOST`, `BANTER_EVENTS_PATH`, `BANTER_HEALTH_INTERVAL_MS`, `BANTER_SHARD_POLL_INTERVAL_MS`, and `BANTER_CONTROL_PORT`), useful for local experiments. None is required.
 

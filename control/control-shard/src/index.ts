@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { resolveShardPaths } from "./paths";
+import { resolveShardPaths, positiveInt } from "./paths";
 import { loadRegistry } from "../../shared/src/registry";
 import { createApp } from "../../shared/src/api";
 import { checkService, startHealthLoop } from "../../shared/src/health";
@@ -15,7 +15,7 @@ import { isPlatformPath, routesToShardApp } from "./routing";
 import { createRunFn, createSpawnFn, createPollHealthFn } from "../../shared/src/exec";
 import type { Service } from "../../../shared/types";
 
-// Paths and intervals resolve in ./paths.ts, which takes the environment and
+// Paths, port and idle interval resolve in ./paths.ts, which takes the environment and
 // home directory as arguments so the answer can be tested without starting a
 // server. An unusable numeric override throws from here rather than reaching
 // Bun.serve as NaN.
@@ -26,7 +26,6 @@ const EVENTS_PATH = paths.eventsPath;
 const PORT = paths.port;
 // See BANTER_CONTROL_HOST in the control plane — loopback, fronted by Tailscale Serve.
 const HOST = process.env.BANTER_SHARD_HOST ?? "localhost";
-const HEALTH_INTERVAL_MS = paths.healthIntervalMs;
 const IDLE_INTERVAL_MS = paths.idleIntervalMs;
 
 const runFn = createRunFn({ timeoutMs: 10000 });
@@ -119,8 +118,10 @@ const server = Bun.serve({
 });
 console.log(`ControlShard running on :${PORT}`);
 
-// Step 5: Start health loop
-const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, HEALTH_INTERVAL_MS, { localHostId, runFn });
+// Step 5: Start health loop. The interval comes from the registry's
+// `intervals` block, so it is read only once the registry is loaded.
+const healthIntervalMs = positiveInt(process.env.BANTER_HEALTH_INTERVAL_MS, registry.intervals?.healthMs ?? 900000, "BANTER_HEALTH_INTERVAL_MS");
+const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, healthIntervalMs, { localHostId, runFn });
 
 // Step 6: Start idle loop — evicts idle services
 const { stop: stopIdle } = startIdleLoop(

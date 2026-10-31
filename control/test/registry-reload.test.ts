@@ -197,6 +197,30 @@ describe("reloadRegistry — service-removed warning", () => {
   });
 });
 
+describe("reloadRegistry — intervals-changed warning", () => {
+  it("names changed intervals and leaves live.intervals untouched", async () => {
+    const state = await freshState({ ...REGISTRY, intervals: { healthMs: 60000 } });
+
+    await writeFile(registryPath, JSON.stringify({ ...REGISTRY, intervals: { healthMs: 5000 } }, null, 2));
+    const result = await reloadRegistry(registryPath, state, neverRunning);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toContainEqual(expect.objectContaining({ kind: "intervals-changed" }));
+    }
+    expect(state.intervals).toEqual({ healthMs: 60000 });
+  });
+
+  it("does not warn when intervals are unchanged", async () => {
+    const state = await freshState({ ...REGISTRY, intervals: { healthMs: 60000 } });
+    const result = await reloadRegistry(registryPath, state, neverRunning);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings.some(w => w.kind === "intervals-changed")).toBe(false);
+    }
+  });
+});
+
 describe("reloadRegistry — shards-changed warning", () => {
   it("names a changed shards list and leaves live.shards untouched", async () => {
     const withShard: Registry = {

@@ -60,7 +60,7 @@ The API can trigger a one-off health check for a single service (`POST /api/serv
 
 ## Configuration
 
-| Variable | Default | Purpose |
+| Setting | Default | Purpose |
 |----------|---------|---------|
-| `BANTER_HEALTH_INTERVAL_MS` | `900000` | Check interval |
+| `intervals.healthMs` in `registry.json` | `900000` | Check interval; `BANTER_HEALTH_INTERVAL_MS` overrides it, and a change takes effect on restart |
 | (threshold) | `2` | Consecutive failures before emitting down event |

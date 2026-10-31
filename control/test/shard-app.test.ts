@@ -59,7 +59,6 @@ const REGISTRY: Registry = {
 
 beforeEach(async () => {
   clearLocks();
-  process.env.BANTER_SHARD_POLL_INTERVAL_MS = "50";
   tmpDir = await mkdtemp(join(tmpdir(), "shard-app-test-"));
   registryPath = join(tmpDir, "registry.json");
   eventsPath = join(tmpDir, "events.jsonl");
@@ -198,13 +197,12 @@ beforeEach(async () => {
       endpoint: `http://localhost:${mockShardServer.port}`, // pre-set for in-memory use; will be overwritten on reload
     },
   ];
-  await writeFile(registryPath, JSON.stringify({ ...REGISTRY, shards: [{ hostId: "gpu-machine", port: mockShardServer.port }] }, null, 2));
+  await writeFile(registryPath, JSON.stringify({ ...REGISTRY, shards: [{ hostId: "gpu-machine", port: mockShardServer.port }], intervals: { shardPollMs: 50 } }, null, 2));
 });
 
 afterEach(async () => {
   for (const a of createdApps) a.stopShardPoll?.();
   createdApps.length = 0;
-  delete process.env.BANTER_SHARD_POLL_INTERVAL_MS;
   mockShardServer.stop(true);
   await rm(tmpDir, { recursive: true, force: true });
 });

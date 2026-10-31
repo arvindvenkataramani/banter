@@ -17,7 +17,6 @@ export interface ShardPaths {
   registryPath: string;
   eventsPath: string;
   port: number;
-  healthIntervalMs: number;
   idleIntervalMs: number;
 }
 
@@ -60,7 +59,7 @@ export function shardRoot(env: Env, home: string): string {
  * Bun.serve it means "pick any free port", which is not what an operator who
  * typed 0 meant.
  */
-function positiveInt(raw: string | undefined, fallback: number, label: string): number {
+export function positiveInt(raw: string | undefined, fallback: number, label: string): number {
   if (raw === undefined || raw === "") return fallback;
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0) {
@@ -88,7 +87,6 @@ export function resolveShardPaths(env: Env, home: string): ShardPaths {
     registryPath: env.BANTER_SHARD_REGISTRY_PATH ?? join(root, "shard/registry.json"),
     eventsPath: env.BANTER_SHARD_EVENTS_PATH ?? join(root, "banter/logs/events.jsonl"),
     port: positiveInt(env.BANTER_SHARD_PORT, 4200, "BANTER_SHARD_PORT"),
-    healthIntervalMs: positiveInt(env.BANTER_HEALTH_INTERVAL_MS, 900000, "BANTER_HEALTH_INTERVAL_MS"),
     idleIntervalMs: positiveInt(env.BANTER_IDLE_INTERVAL_MS, 60000, "BANTER_IDLE_INTERVAL_MS"),
   };
 }

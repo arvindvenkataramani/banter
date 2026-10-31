@@ -53,7 +53,7 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     localHostId,
   });
 
-  const pollIntervalMs = shardPollIntervalMs ?? parseInt(process.env.BANTER_SHARD_POLL_INTERVAL_MS ?? "900000");
+  const pollIntervalMs = shardPollIntervalMs ?? registry.intervals?.shardPollMs ?? 900000;
 
   let poller: Poller | null = null;
   if (registry.shards && registry.shards.length > 0) {

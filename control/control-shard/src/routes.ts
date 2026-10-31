@@ -137,7 +137,7 @@ const PartResultSchema = z.union([
   z.object({ ok: z.literal(false), error: z.string() }),
 ]);
 const ReloadWarningSchema = z.object({
-  kind: z.enum(["provider-changed", "service-removed", "shards-changed"]),
+  kind: z.enum(["provider-changed", "service-removed", "shards-changed", "intervals-changed"]),
   serviceId: z.string().optional(),
   message: z.string(),
 });
