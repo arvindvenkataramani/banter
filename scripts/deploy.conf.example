@@ -15,4 +15,3 @@
 
 # The shard's equivalent, on a worker machine.
 #BANTER_SHARD_PROD="$HOME/services/banter"
-#BANTER_SHARD_SERVICES_DEST="$HOME/services"

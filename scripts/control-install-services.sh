@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Install system service units and sync lifecycle scripts for the control plane.
+# Install system service units and built artifacts for the control plane.
 # - Reads registry.json to find services with runner.type == "systemd"
 # - Copies the referenced unit files to ~/.config/systemd/user/
-# - Copies .sh scripts from services/ to ~/services/ (only where target dir exists)
 # - Installs the built artifacts each service declares in ops.install, the same
 #   way the shard does (install-artifacts.sh)
+# - Creates logs/ in each service directory that already exists
+#   Nothing under services/ is copied unless a service declares it in ops.install.
 # - Never touches venvs, app code, or models
 #
 # Usage:
@@ -105,24 +106,8 @@ if $INSTALL_ARTIFACTS && [[ -f "$REGISTRY" ]]; then
   fi
 fi
 
-# --- service lifecycle scripts ---
+# --- logs directories ---
 if [[ -d "$SERVICES_SRC" ]]; then
-  echo "[install-services] Syncing service scripts from $SERVICES_SRC..."
-
-  find "$SERVICES_SRC" -name .build -prune -o -type f -name '*.sh' -print | while read -r src_file; do
-    rel="${src_file#$SERVICES_SRC/}"
-    dest="$SERVICES_DEST/$rel"
-    dest_dir="$(dirname "$dest")"
-
-    if [[ -d "$dest_dir" ]]; then
-      cp "$src_file" "$dest"
-      chmod +x "$dest"
-      echo "  synced: $rel"
-    else
-      echo "  skipped (target dir missing): $rel"
-    fi
-  done
-
   # Ensure logs directories exist for each service
   find "$SERVICES_SRC" -mindepth 2 -maxdepth 3 -name .build -prune -o -mindepth 2 -maxdepth 3 -type d -print | while read -r src_dir; do
     rel="${src_dir#$SERVICES_SRC/}"
@@ -132,7 +117,7 @@ if [[ -d "$SERVICES_SRC" ]]; then
     fi
   done
 else
-  echo "[install-services] No services/ directory in $SRC, skipping scripts."
+  echo "[install-services] No services/ directory in $SRC, skipping logs directories."
 fi
 
 if $ARTIFACTS_FAILED; then

@@ -20,14 +20,13 @@ __deploy_conf="$(dirname "${BASH_SOURCE[0]}")/deploy.conf"
 if [[ -f "$__deploy_conf" ]]; then
   # Environment wins: stash anything already set, source, then put it back.
   __env_prod="${BANTER_PROD:-}"; __env_unit="${BANTER_UNIT:-}"
-  __env_shard="${BANTER_SHARD_PROD:-}"; __env_shard_dest="${BANTER_SHARD_SERVICES_DEST:-}"
+  __env_shard="${BANTER_SHARD_PROD:-}"
   # shellcheck source=/dev/null
   source "$__deploy_conf"
   [[ -n "$__env_prod" ]] && BANTER_PROD="$__env_prod"
   [[ -n "$__env_unit" ]] && BANTER_UNIT="$__env_unit"
   [[ -n "$__env_shard" ]] && BANTER_SHARD_PROD="$__env_shard"
-  [[ -n "$__env_shard_dest" ]] && BANTER_SHARD_SERVICES_DEST="$__env_shard_dest"
-  unset __env_prod __env_unit __env_shard __env_shard_dest
+  unset __env_prod __env_unit __env_shard
 fi
 unset __deploy_conf
 
@@ -42,7 +41,6 @@ BANTER_EVENTS_PATH="${BANTER_EVENTS_PATH:-$BANTER_PROD/logs/events.jsonl}"
 # `~/Services` is a different directory, and the shard's own path resolution
 # prefers the lowercase spelling.
 BANTER_SHARD_PROD="${BANTER_SHARD_PROD:-$HOME/services/banter}"
-BANTER_SHARD_SERVICES_DEST="${BANTER_SHARD_SERVICES_DEST:-$HOME/services}"
 # The shard's event log, where installs are recorded alongside everything else.
 # Same variable the shard itself reads.
 BANTER_SHARD_EVENTS_PATH="${BANTER_SHARD_EVENTS_PATH:-$BANTER_SHARD_PROD/logs/events.jsonl}"

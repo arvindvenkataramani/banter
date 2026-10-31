@@ -28,7 +28,7 @@ Two of these are called by the machinery rather than by you:
 |---|---|
 | `control-runner.sh` | The systemd unit's `ExecStart`. Sets up Tailscale Serve, then execs bun. |
 | `control-serve-off.sh` | The unit's `ExecStopPost`. Removes the Serve binding, reading the port from the registry. |
-| `control-install-services.sh` | `control-deploy.sh`. Installs the control plane's own unit plus any systemd units named by registry entries. |
+| `control-install-services.sh` | `control-deploy.sh`. Installs the control plane's own unit plus any systemd units named by registry entries, then the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
 
 ## Worker machine (shard)
 
@@ -41,7 +41,7 @@ Run these on the worker. See [../docs/shard-setup.md](../docs/shard-setup.md).
 | `shard-stop.sh` | Stops and disables the agent. |
 | `shard-uninstall.sh` | Removes the agent and the deployed tree. |
 | `shard-dev.sh` | Development, as `control-dev.sh` but for the shard. |
-| `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by registry entries. |
+| `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by registry entries and the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
 
 ## Diagnostics and safety
 
@@ -61,7 +61,6 @@ Where a deploy installs and what its systemd unit is called come from `deploy-en
 | `BANTER_PROD` | `~/services/banter` | Where the control plane installs |
 | `BANTER_UNIT` | `banter` | Its systemd unit name |
 | `BANTER_SHARD_PROD` | `~/services/banter` | Where a shard installs |
-| `BANTER_SHARD_SERVICES_DEST` | `~/services` | Where a shard puts service scripts |
 
 Precedence is environment > `deploy.conf` > defaults, so a one-off staging deploy can still set a variable inline without editing the file.
 

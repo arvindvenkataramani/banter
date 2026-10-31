@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Install launchd agents and sync lifecycle scripts for the control shard (Mac).
-# - Reads registry.json to find services with installCommand
+# Install launchd agents and built artifacts for the control shard (Mac).
+# - Reads registry.json to find services with runner.type == "launchd"
 # - Copies only the referenced .plist files to ~/Library/LaunchAgents/
-# - Copies .sh and .plist files from services/ to ~/Services/ (only where target dir exists)
 # - Installs the built artifacts each service declares in ops.install
-#   (install-artifacts.sh)
+#   (install-artifacts.sh). Any other file a service needs in its working
+#   directory is declared there as an artifact too; nothing under services/ is
+#   copied unless declared.
+# - Creates logs/ in each service's working directory
 # - Never touches venvs, app code, or models
 #
 # Usage:
@@ -24,8 +26,6 @@ SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 source "$(dirname "$0")/deploy-env.sh"
 source "$(dirname "$0")/install-artifacts.sh"
 REGISTRY="$SRC/control/control-shard/data/registry.json"
-SERVICES_SRC="$SRC/services"
-SERVICES_DEST="$BANTER_SHARD_SERVICES_DEST"
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 
 # --- launchd plists (registry-driven) ---
@@ -69,32 +69,6 @@ if $INSTALL_ARTIFACTS && [[ -f "$REGISTRY" ]]; then
     ARTIFACTS_FAILED=true
   fi
 fi
-
-# --- service lifecycle scripts ---
-if [[ ! -d "$SERVICES_SRC" ]]; then
-  echo "[install-services] No services/ directory in $SRC, skipping scripts."
-  if $ARTIFACTS_FAILED; then
-    echo "[install-services] Done, but installing built artifacts needs attention (see the errors above)." >&2
-    exit 1
-  fi
-  exit 0
-fi
-
-echo "[install-services] Syncing service scripts from $SERVICES_SRC..."
-
-find "$SERVICES_SRC" -name .build -prune -o -type f \( -name '*.sh' -o -name '*.plist' \) -print | while read -r src_file; do
-  rel="${src_file#$SERVICES_SRC/}"
-  dest="$SERVICES_DEST/$rel"
-  dest_dir="$(dirname "$dest")"
-
-  if [[ -d "$dest_dir" ]]; then
-    cp "$src_file" "$dest"
-    [[ "$dest" == *.sh ]] && chmod +x "$dest"
-    echo "  synced: $rel"
-  else
-    echo "  skipped (target dir missing): $rel"
-  fi
-done
 
 # Ensure logs directories exist for each shard-managed service
 echo "[install-services] Ensuring logs directories..."
