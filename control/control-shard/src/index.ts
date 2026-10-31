@@ -24,7 +24,9 @@ const paths = resolveShardPaths(process.env, homedir());
 const REGISTRY_PATH = paths.registryPath;
 const EVENTS_PATH = paths.eventsPath;
 const PORT = paths.port;
-// See BANTER_CONTROL_HOST in the control plane — loopback, fronted by Tailscale Serve.
+// Loopback by default, fronted by Tailscale Serve. A shard on a second machine
+// reached over a LAN without Tailscale sets BANTER_SHARD_HOST to listen beyond
+// loopback, as the control plane does with BANTER_CONTROL_HOST.
 const HOST = process.env.BANTER_SHARD_HOST ?? "localhost";
 const IDLE_INTERVAL_MS = paths.idleIntervalMs;
 

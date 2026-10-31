@@ -104,7 +104,6 @@ async function plane(opts: { registry?: Registry; runFn?: RunFn } = {}): Promise
     registryPath,
     registry: opts.registry,
     eventsPath,
-    mediaPath: join(tmpDir, "media"),
     shardPollIntervalMs: 3_600_000,
     checkService: async () => {},
     runFn: opts.runFn ?? ok,

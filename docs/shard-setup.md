@@ -83,7 +83,7 @@ All optional; the shard runs without any of them.
 | `BANTER_SHARD_REGISTRY_PATH` | `$BANTER_SHARD_ROOT/shard/registry.json` | Registry file |
 | `BANTER_SHARD_EVENTS_PATH` | `$BANTER_SHARD_ROOT/banter/logs/events.jsonl` | Event log |
 | `BANTER_SHARD_PORT` | `4200` | HTTP server port |
-| `BANTER_SHARD_HOST` | `localhost` | Bind address |
+| `BANTER_SHARD_HOST` | `localhost` | Bind address. Set it (for example to `0.0.0.0`) only when the control plane reaches this shard over a LAN without Tailscale; see [Hardening](../README.md#hardening) |
 | `BANTER_HEALTH_INTERVAL_MS` | `intervals.healthMs` in `registry.json`, else `900000` | Health check interval |
 | `BANTER_IDLE_INTERVAL_MS` | `60000` | Idle-eviction check interval |
 

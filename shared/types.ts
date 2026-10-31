@@ -118,9 +118,8 @@ export interface Service {
 export interface Shard {
   hostId: string;
   port: number;
-  tailscaleServe?: boolean;  // Register with Tailscale Serve on start; does not affect the scheme
-  scheme?: "http" | "https"; // Endpoint protocol, default http
-  endpoint: string;          // Derived at load time, never stored in JSON
+  scheme?: "http" | "https"; // Protocol for the derived endpoint. Defaults to http.
+  endpoint: string;          // Derived at load time from scheme + host hostname + port, never stored in JSON
 }
 
 export type RegistryType = "control" | "shard";
