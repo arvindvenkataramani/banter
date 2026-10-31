@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Browser audio probe</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0; padding: 1rem calc(1rem + env(safe-area-inset-left)) 3rem; max-width: 40rem; }
+  h1 { font-size: 1.1rem; }
+  p { line-height: 1.5; }
+  fieldset { border: 1px solid currentColor; border-radius: .5rem; margin: 0 0 1rem; padding: .75rem; }
+  legend { font-weight: 600; padding: 0 .35rem; }
+  button { font: inherit; padding: .6rem .9rem; margin: .2rem .2rem .2rem 0; border-radius: .4rem; min-height: 2.75rem; }
+  button[data-on="true"] { font-weight: 700; outline: 2px solid currentColor; }
+  #log { font-family: ui-monospace, monospace; font-size: .72rem; line-height: 1.35;
+         white-space: pre-wrap; user-select: text; border: 1px solid currentColor;
+         border-radius: .4rem; padding: .5rem; min-height: 8rem; max-height: 40vh; overflow: auto; }
+  .hint { opacity: .75; font-size: .8rem; }
+</style>
+</head>
+<body>
+
+<h1>Browser audio probe</h1>
+<p class="hint">
+  Does playback crackle through the built-in speaker while a microphone capture
+  is open, and does it depend on <em>how</em> the audio is played? Use the
+  speaker, not headphones. Open the microphone, then play the same clip each
+  way and listen.
+</p>
+
+<fieldset>
+  <legend>Microphone</legend>
+  <button id="mic-open">open</button>
+  <button id="mic-close">close</button>
+  <button id="mic-worklet" data-on="false">+ worklet capture</button>
+  <p class="hint">
+    “open” calls getUserMedia and holds the stream, nothing more. “+ worklet”
+    also builds an AudioContext and captures frames, as the real pipeline does.
+  </p>
+</fieldset>
+
+<fieldset>
+  <legend>Play the same clip</legend>
+  <button id="play-element">&lt;audio&gt; element</button>
+  <button id="play-mse">element + MediaSource</button>
+  <button id="play-webaudio">Web Audio</button>
+  <button id="stop-all">stop</button>
+  <p class="hint">
+    The first two go through a media element, which is what the dashboard does.
+    The third decodes to samples and plays them through an AudioContext, which
+    is the path that has never been tested here.
+  </p>
+</fieldset>
+
+<fieldset>
+  <legend>Trace</legend>
+  <button id="copy">copy</button>
+  <button id="clear">clear</button>
+  <div id="log"></div>
+</fieldset>
+
+<script>
+const CLIP = 'clip.mp3'
+const logEl = document.getElementById('log')
+const t0 = performance.now()
+let bytes = null
+
+function log(msg) {
+  const t = (performance.now() - t0).toFixed(0).padStart(6)
+  logEl.textContent += `${t}ms  ${msg}\n`
+  logEl.scrollTop = logEl.scrollHeight
+}
+
+async function clipBytes() {
+  if (!bytes) bytes = await (await fetch(CLIP)).arrayBuffer()
+  return bytes.slice(0)
+}
+
+// ── Microphone ──────────────────────────────────────────────────────────
+let stream = null, micCtx = null, micNode = null, wantWorklet = false
+
+const WORKLET = URL.createObjectURL(new Blob([`
+  class P extends AudioWorkletProcessor {
+    constructor() { super(); this.n = 0 }
+    process(inputs) {
+      const ch = inputs[0] && inputs[0][0]
+      if (ch) { this.n += ch.length; if (this.n >= 16000) { this.port.postMessage(this.n); this.n = 0 } }
+      return true
+    }
+  }
+  registerProcessor('probe-capture', P)
+`], { type: 'text/javascript' }))
+
+document.getElementById('mic-worklet').onclick = (e) => {
+  wantWorklet = !wantWorklet
+  e.target.dataset.on = String(wantWorklet)
+  log(`worklet capture ${wantWorklet ? 'on' : 'off'} (reopen the mic to apply)`)
+}
+
+document.getElementById('mic-open').onclick = async () => {
+  if (stream) { log('mic already open'); return }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    })
+    const s = stream.getAudioTracks()[0].getSettings()
+    log(`mic open — ec=${s.echoCancellation} ns=${s.noiseSuppression} rate=${s.sampleRate}`)
+    if (!wantWorklet) return
+    micCtx = new AudioContext()
+    await micCtx.audioWorklet.addModule(WORKLET)
+    const src = micCtx.createMediaStreamSource(stream)
+    micNode = new AudioWorkletNode(micCtx, 'probe-capture', { numberOfInputs: 1, numberOfOutputs: 0 })
+    let frames = 0
+    micNode.port.onmessage = () => { if (++frames % 5 === 0) log(`capture alive (${frames}s)`) }
+    src.connect(micNode)
+    log(`capture graph built — ctx rate=${micCtx.sampleRate} state=${micCtx.state}`)
+    micCtx.onstatechange = () => log(`mic ctx → ${micCtx.state}`)
+  } catch (err) {
+    log(`mic FAILED: ${err}`)
+  }
+}
+
+document.getElementById('mic-close').onclick = () => {
+  micNode?.disconnect(); micCtx?.close()
+  stream?.getTracks().forEach((t) => t.stop())
+  micNode = micCtx = stream = null
+  log('mic closed')
+}
+
+// ── Playback ────────────────────────────────────────────────────────────
+let el = null, playCtx = null, srcNode = null
+
+function element() {
+  if (el) return el
+  el = new Audio()
+  for (const ev of ['play', 'playing', 'pause', 'waiting', 'stalled', 'ended']) {
+    el.addEventListener(ev, () => {
+      const b = el.buffered
+      log(`element ${ev} t=${el.currentTime.toFixed(2)} buf=${b.length ? b.end(b.length - 1).toFixed(2) : '-'}`)
+    })
+  }
+  return el
+}
+
+document.getElementById('play-element').onclick = async () => {
+  const a = element()
+  a.src = CLIP
+  await a.play().catch((e) => log(`element play rejected: ${e}`))
+  log('playing: <audio> element, plain src')
+}
+
+document.getElementById('play-mse').onclick = async () => {
+  const a = element()
+  const MS = window.ManagedMediaSource || window.MediaSource
+  log(`playing: element + ${window.ManagedMediaSource ? 'ManagedMediaSource' : 'MediaSource'}`)
+  const ms = new MS()
+  a.src = URL.createObjectURL(ms)
+  if (window.ManagedMediaSource) a.disableRemotePlayback = true
+  ms.addEventListener('sourceopen', async () => {
+    const sb = ms.addSourceBuffer('audio/mpeg')
+    const data = await clipBytes()
+    sb.addEventListener('updateend', () => { if (ms.readyState === 'open') ms.endOfStream() }, { once: true })
+    sb.appendBuffer(data)
+    log(`appended ${data.byteLength}B to source buffer`)
+  }, { once: true })
+  await a.play().catch((e) => log(`mse play rejected: ${e}`))
+}
+
+document.getElementById('play-webaudio').onclick = async () => {
+  playCtx = playCtx || new AudioContext()
+  await playCtx.resume()
+  const buf = await playCtx.decodeAudioData(await clipBytes())
+  srcNode = playCtx.createBufferSource()
+  srcNode.buffer = buf
+  srcNode.connect(playCtx.destination)
+  srcNode.start()
+  log(`playing: Web Audio — ctx rate=${playCtx.sampleRate} clip ${buf.duration.toFixed(2)}s`)
+  srcNode.onended = () => log('webaudio ended')
+}
+
+document.getElementById('stop-all').onclick = () => {
+  el?.pause()
+  try { srcNode?.stop() } catch {}
+  log('stopped')
+}
+
+// ── Trace ───────────────────────────────────────────────────────────────
+document.getElementById('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(logEl.textContent); log('(copied)') }
+  catch { log('(copy failed — select the text by hand)') }
+}
+document.getElementById('clear').onclick = () => { logEl.textContent = '' }
+
+log(`ready — ManagedMediaSource ${window.ManagedMediaSource ? 'available' : 'absent'}`)
+</script>
+</body>
+</html>
