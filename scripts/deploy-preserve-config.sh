@@ -20,7 +20,7 @@
 # Given it, save refuses a deploy whose shipped config.example.json declares a
 # higher version than the live one. Omitted, that check is skipped.
 #
-# Keys the running system writes for itself (RUNTIME_KEYS) are state, not
+# Keys the running system writes for itself (runtime_keys) are state, not
 # configuration: they are ignored when comparing a live file with its shipped
 # example, and an overwrite carries them across from the live file.
 #
@@ -30,20 +30,31 @@
 #
 # Nothing here is an error worth failing a deploy over: a missing destination, a
 # missing file, and an empty stash all mean "first deploy" and exit 0.
+# Runs on the Mac as well as Linux, so it keeps to bash 3.2 (no associative
+# arrays) and to stat invocations BSD and GNU both understand.
 set -uo pipefail
 
 DATA_REL="control/control-plane/data"
 FILES=("config.json" "registry.json")
 
-# Per file, space-separated jq paths the running system writes.
-declare -A RUNTIME_KEYS=(
-  ["config.json"]=".integrations.openclaw.lastSessionByAgent"
-)
+# Space-separated jq paths the running system writes into a file.
+runtime_keys() {
+  case "$1" in
+    config.json)
+      echo ".integrations.openclaw.lastSessionByAgent .voice.tts.selection .voice.stt.serviceId .voice.stt.model" ;;
+  esac
+}
+
+# A file's modification time, to the second. GNU stat first, then BSD.
+mtime_of() {
+  stat -c %y "$1" 2>/dev/null | cut -d. -f1 && return 0
+  stat -f %Sm -t '%Y-%m-%d %H:%M:%S' "$1" 2>/dev/null
+}
 
 # A file with its runtime keys removed, keys sorted.
 strip_runtime() {
   local f="$1" file="$2" expr="." k
-  for k in ${RUNTIME_KEYS[$f]:-}; do expr+=" | del($k)"; done
+  for k in $(runtime_keys "$f"); do expr+=" | del($k)"; done
   jq -S "$expr" "$file" 2>/dev/null
 }
 
@@ -51,7 +62,7 @@ strip_runtime() {
 same_content() {
   local f="$1" a="$2" b="$3"
   cmp -s "$a" "$b" && return 0
-  [[ -n "${RUNTIME_KEYS[$f]:-}" ]] || return 1
+  [[ -n "$(runtime_keys "$f")" ]] || return 1
   diff -q <(strip_runtime "$f" "$a") <(strip_runtime "$f" "$b") >/dev/null
 }
 
@@ -129,12 +140,12 @@ case "$ACTION" in
       local tpl_f="$SRC_DATA/${f%.json}.example.json"
       local live_at tpl_at verdict keydiff total
 
-      live_at="$(stat -c %y "$live_f" 2>/dev/null | cut -d. -f1)"
+      live_at="$(mtime_of "$live_f")"
 
       # Content is the signal, the timestamps are context: a pull rewrites the
       # repo copy's mtime whether or not its bytes changed.
       if [[ -n "$SRC_DATA" && -f "$tpl_f" ]]; then
-        tpl_at="$(stat -c %y "$tpl_f" 2>/dev/null | cut -d. -f1)"
+        tpl_at="$(mtime_of "$tpl_f")"
         if [[ "$live_f" -nt "$tpl_f" ]]; then
           verdict="live is newer"
         else
@@ -250,16 +261,19 @@ case "$ACTION" in
         # One keypress decides it: keep everything, replace everything, or
         # replace exactly one file. Listing each file as its own option beats
         # asking per file, which makes an operator answer twice to change once.
+        # With one file differing, "all" already is that file.
         echo ""
         echo "  1) keep all (recommended)"
         echo "  2) overwrite all with the shipped examples"
         n=2
-        declare -A overwrite_choice=()
-        for f in "${differing[@]}"; do
-          n=$(( n + 1 ))
-          overwrite_choice[$n]="$f"
-          echo "  $n) overwrite $f only"
-        done
+        overwrite_choice=()
+        if [[ ${#differing[@]} -gt 1 ]]; then
+          for f in "${differing[@]}"; do
+            n=$(( n + 1 ))
+            overwrite_choice[$n]="$f"
+            echo "  $n) overwrite $f only"
+          done
+        fi
         read -rp "Choice [1-$n]: " choice
 
         # Anything that is not a listed number means keep, so the subscript is
@@ -287,8 +301,8 @@ case "$ACTION" in
         echo "[preserve-config] $f on the deployment is newer than the copy this deploy carries," >&2
         echo "[preserve-config] and the two differ. Overwriting it would discard the newer file." >&2
         echo "" >&2
-        echo "[preserve-config]   deployment: $(stat -c %y "$live_f" 2>/dev/null | cut -d. -f1)" >&2
-        echo "[preserve-config]   this deploy: $(stat -c %y "$tpl_f" 2>/dev/null | cut -d. -f1)" >&2
+        echo "[preserve-config]   deployment: $(mtime_of "$live_f")" >&2
+        echo "[preserve-config]   this deploy: $(mtime_of "$tpl_f")" >&2
         echo "" >&2
         echo "[preserve-config] Reconcile them by hand, or drop $f from --reset-config to keep it." >&2
         echo "" >&2
@@ -316,14 +330,15 @@ case "$ACTION" in
       for f in "${overwrite[@]}"; do
         live_f="$DEST/$DATA_REL/$f"
         tpl_f="$SRC_DATA/${f%.json}.example.json"
-        [[ -n "${RUNTIME_KEYS[$f]:-}" && -f "$live_f" && -f "$tpl_f" ]] || continue
+        keys="$(runtime_keys "$f")"
+        [[ -n "$keys" && -f "$live_f" && -f "$tpl_f" ]] || continue
         expr="."
-        for k in ${RUNTIME_KEYS[$f]}; do
+        for k in $keys; do
           expr+=" | if (\$l[0] | $k) != null then $k = (\$l[0] | $k) else . end"
         done
         mkdir -p "$STASH"
         jq --slurpfile l "$live_f" "$expr" "$tpl_f" > "$STASH/$f"
-        echo "[preserve-config] $f keeps its runtime keys: ${RUNTIME_KEYS[$f]}"
+        echo "[preserve-config] $f keeps its runtime keys: $keys"
       done
     fi
 
