@@ -11,7 +11,7 @@ import type { Session } from '../../session'
 // applyEvent would, rather than calling any SpeechChunker method directly
 // for event delivery.
 
-const SESSION_KEY = 'agent:undersoot:probe'
+const SESSION_KEY = 'agent:example:probe'
 const RUN_ID = 'run-1'
 
 // endRun fires at the end of a chain (enqueueChat -> .catch -> Promise.all ->

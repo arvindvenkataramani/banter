@@ -16,7 +16,7 @@ import { extractMessageText } from './gateway-utils'
 // assembles it: the design draws a seam at the block model, and the rendering
 // behaviour is specified against that model rather than against wire events.
 
-const SESSION_KEY = 'agent:undersoot:probe'
+const SESSION_KEY = 'agent:example:probe'
 const RUN = 'probe-1788230673029-9ne9sdeyd1'
 
 function thinking(text: string, seq: number, delta = '') {
