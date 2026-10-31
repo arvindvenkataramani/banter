@@ -132,6 +132,47 @@ describe("voiceModeProviders: builds voice mode's choices from the assembled ros
     expect(pocket.voices[0].ref_audio).toBeUndefined();
   });
 
+  it("sends the reference's transcript with it when the model requires text", () => {
+    const assembly: AssembledRoster = {
+      ...ASSEMBLY,
+      providers: ASSEMBLY.providers.map(p =>
+        p.serviceId === "fluid-tts"
+          ? { ...p, ttsModels: [{ ...p.ttsModels![0], cloning: { available: true, requiresText: true } }] }
+          : p
+      ),
+      voices: ASSEMBLY.voices.map(v => ({
+        ...v,
+        models: v.models.map(m =>
+          m.key === "clone"
+            ? { ...m, references: [{ audio: "/refs/priya.wav", text: "/refs/priya.txt", durationS: 9, sampleRate: 24000 }] }
+            : m
+        ),
+      })),
+    };
+    const providers = voiceModeProviders(assembly);
+    const clone = providers.find(p => p.serviceId === "fluid-tts")!.models[0];
+    expect(clone.voices).toEqual([
+      { id: "priya", name: "Priya", key: "priya", ref_audio: "/refs/priya.wav", ref_text: "/refs/priya.txt" },
+    ]);
+  });
+
+  it("sends no transcript to a model that does not require text, even when the reference has one", () => {
+    const assembly: AssembledRoster = {
+      ...ASSEMBLY,
+      voices: ASSEMBLY.voices.map(v => ({
+        ...v,
+        models: v.models.map(m =>
+          m.key === "clone"
+            ? { ...m, references: [{ audio: "/refs/priya.wav", text: "/refs/priya.txt", durationS: 9, sampleRate: 24000 }] }
+            : m
+        ),
+      })),
+    };
+    const providers = voiceModeProviders(assembly);
+    const pocket = providers.find(p => p.serviceId === "fluid-tts")!.models[0];
+    expect(pocket.voices[0].ref_text).toBeUndefined();
+  });
+
   it("offers nothing when the assembly has no providers", () => {
     const providers = voiceModeProviders({ providers: [], voices: [], collisions: [] });
     expect(providers).toEqual([]);

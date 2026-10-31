@@ -12,6 +12,9 @@ export interface VoiceModeVoice {
   key: string;
   /** Sent in place of a preset name when the model clones her. */
   ref_audio?: string;
+  /** Path to the reference's transcript, sent only to a model that requires
+   *  text: fluid-tts reads a path, while mlx-audio would speak it verbatim. */
+  ref_text?: string;
 }
 
 export interface VoiceModeModel {
@@ -62,6 +65,7 @@ function voicesFor(
         name: voice.name,
         key: voice.id,
         ...(reference !== undefined && { ref_audio: reference.audio }),
+        ...(reference?.text !== undefined && cloning?.requiresText === true && { ref_text: reference.text }),
       });
     } else {
       result.push({ id: voice.id, name: voice.name, key: link.key });
