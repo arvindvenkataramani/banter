@@ -26,6 +26,8 @@ export interface RuntimeSettings {
 const CONTROL_SERVICE_ID = "control"
 
 const DEFAULT_HOST = "localhost"
+/** The repository or deployed tree this module runs from. */
+export const DEFAULT_DEPLOYMENT_ROOT = join(import.meta.dir, "../../..")
 const DEFAULT_HEALTH_INTERVAL_MS = 900_000
 const DEFAULT_SHARD_POLL_INTERVAL_MS = 900_000
 
@@ -94,6 +96,10 @@ function resolveInterval(
  * intervals come from the registry; the bind address and event log from the
  * config.
  *
+ * `deploymentRoot` is the tree this deployment runs from. A relative event-log
+ * path resolves against it, so the answer doesn't depend on the directory the
+ * process was started in.
+ *
  * Pure by design: it reads no files and consults no globals, so tests can hand
  * it an empty environment and assert the files alone are sufficient.
  */
@@ -101,6 +107,7 @@ export function resolveRuntimeSettings(
   registry: Registry,
   config: PlatformConfig | undefined,
   env: Env,
+  deploymentRoot: string = DEFAULT_DEPLOYMENT_ROOT,
 ): RuntimeSettings {
   const runtime = config?.runtime
 
@@ -114,14 +121,14 @@ export function resolveRuntimeSettings(
   const rawEventsPath =
     env.BANTER_EVENTS_PATH ||
     runtime?.eventsPath ||
-    join(import.meta.dir, "../../../logs/events.jsonl")
+    join(deploymentRoot, "logs/events.jsonl")
 
   const eventsPath = expandHome(rawEventsPath)
 
   return {
     port,
     host,
-    eventsPath: isAbsolute(eventsPath) ? eventsPath : join(process.cwd(), eventsPath),
+    eventsPath: isAbsolute(eventsPath) ? eventsPath : join(deploymentRoot, eventsPath),
     healthIntervalMs: resolveInterval(
       env.BANTER_HEALTH_INTERVAL_MS, registry.intervals?.healthMs, DEFAULT_HEALTH_INTERVAL_MS, "BANTER_HEALTH_INTERVAL_MS",
     ),

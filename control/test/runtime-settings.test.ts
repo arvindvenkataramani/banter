@@ -125,6 +125,16 @@ describe("event log path resolution", () => {
     expect(s.eventsPath.endsWith(".jsonl")).toBe(true)
   })
 
+  it("resolves a relative events path against the deployment, not the working directory", () => {
+    const s = resolveRuntimeSettings(makeRegistry(), makeConfig({ eventsPath: "logs/custom.jsonl" }), {}, "/srv/banter")
+    expect(s.eventsPath).toBe("/srv/banter/logs/custom.jsonl")
+  })
+
+  it("defaults the event log to logs/ inside the deployment it is given", () => {
+    const s = resolveRuntimeSettings(makeRegistry(), makeConfig(), {}, "/srv/banter")
+    expect(s.eventsPath).toBe("/srv/banter/logs/events.jsonl")
+  })
+
   it("expands a leading ~ in a configured event log path to the home directory", () => {
     const s = resolveRuntimeSettings(makeRegistry(), makeConfig({ eventsPath: "~/banter/events.jsonl" }), {})
     expect(s.eventsPath.startsWith("~")).toBe(false)

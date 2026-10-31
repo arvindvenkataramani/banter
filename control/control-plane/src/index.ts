@@ -4,15 +4,19 @@ import { createControlPlaneApp } from "./app";
 import { checkService, startHealthLoop } from "../../shared/src/health";
 import { serveStatic } from "../../shared/src/static";
 import { loadConfig } from "./gateway-config";
-import { resolveRuntimeSettings } from "./runtime-settings";
+import { resolveRuntimeSettings, DEFAULT_DEPLOYMENT_ROOT } from "./runtime-settings";
 import { createRunFn, createSpawnFn, createPollHealthFn } from "../../shared/src/exec";
+
+// The tree this deployment runs from. Relative paths resolve against it, never
+// against the directory the process happened to start in.
+const DEPLOYMENT_ROOT = DEFAULT_DEPLOYMENT_ROOT;
 
 // Bootstrap pointers: where to find the files. These stay in the environment
 // because a file cannot carry its own location. Both default to the deployed
 // tree, so a normal run needs neither.
 const REGISTRY_PATH = process.env.BANTER_REGISTRY_PATH ?? join(import.meta.dir, "../data/registry.json");
 const CONFIG_PATH = process.env.BANTER_CONFIG_PATH ?? join(import.meta.dir, "../data/config.json");
-const DIST = process.env.DASHBOARD_DIST ?? join(import.meta.dir, "../../../dashboard/dist");
+const DIST = process.env.DASHBOARD_DIST ?? join(DEPLOYMENT_ROOT, "dashboard/dist");
 
 const registry = await loadRegistry(REGISTRY_PATH);
 const config = await loadConfig(CONFIG_PATH).catch(() => undefined);
@@ -21,7 +25,7 @@ const config = await loadConfig(CONFIG_PATH).catch(() => undefined);
 // the registry and config, with the environment kept only as an override.
 const { port: PORT, host: HOST, eventsPath: EVENTS_PATH, healthIntervalMs: HEALTH_INTERVAL_MS,
         shardPollIntervalMs: SHARD_POLL_INTERVAL_MS, portSource } =
-  resolveRuntimeSettings(registry, config, process.env);
+  resolveRuntimeSettings(registry, config, process.env, DEPLOYMENT_ROOT);
 
 console.log(`Loaded registry: ${registry.services.length} services, ${registry.hosts.length} hosts`);
 
