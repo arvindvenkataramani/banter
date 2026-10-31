@@ -74,7 +74,7 @@ export function App() {
           {path === '/services' && <ServicesPage filter={filter} navigate={navigate} />}
         </main>
       )}
-      <Toaster />
+      <Toaster closeButton />
     </div>
     </TooltipProvider>
     </GatewayProvider>
