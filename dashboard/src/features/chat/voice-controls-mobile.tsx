@@ -177,13 +177,11 @@ export function VoiceControlsMobile({
           type="button"
           variant="ghost"
           size="icon"
-          className={speechShowsMuted ? `${round48} border-transparent` : `${round48} hover:bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)]`}
+          className={speechShowsMuted
+            ? `${round48} border-transparent bg-[var(--sec-pressed-bg)] text-[var(--sec-pressed-fg)] hover:bg-[color-mix(in_oklch,var(--sec-pressed-bg),black_10%)] hover:text-[var(--sec-pressed-fg)] dark:hover:bg-[color-mix(in_oklch,var(--sec-pressed-bg),black_10%)]`
+            : `${round48} hover:bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)]`}
           onClick={toggleSpeechMuted}
           title={speechTitle}
-          style={speechShowsMuted ? {
-            background: 'var(--sec-pressed-bg)',
-            color: 'var(--sec-pressed-fg)',
-          } : undefined}
         >
           {speechShowsMuted ? <VolumeX className="size-[18px]" strokeWidth={1.8} /> : <Volume2 className="size-[18px]" strokeWidth={1.8} />}
         </Button>
@@ -191,13 +189,11 @@ export function VoiceControlsMobile({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-[68px] shrink-0 rounded-full border border-transparent transition-all duration-150 font-sans font-[480]"
+          className={`size-[68px] shrink-0 rounded-full border border-transparent transition-all duration-150 font-sans font-[480] ${muted
+            ? 'bg-[var(--warning)] text-[var(--warning-fg)] hover:bg-[color-mix(in_oklch,var(--warning),black_10%)] hover:text-[var(--warning-fg)] dark:hover:bg-[color-mix(in_oklch,var(--warning),black_10%)]'
+            : 'bg-[var(--mic-fill)] text-foreground hover:bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)]'}`}
           onClick={toggleMuteAll}
           title={muteTitle}
-          style={{
-            background: muted ? 'var(--warning)' : 'var(--mic-fill)',
-            color: muted ? 'var(--warning-fg)' : 'var(--foreground)',
-          }}
         >
           {muted ? <MicOff className="size-[27px]" strokeWidth={1.45} /> : <Mic className="size-[27px]" strokeWidth={1.45} />}
         </Button>
@@ -269,10 +265,11 @@ export function VoiceControlsMobile({
             />
             <Button
               type="button"
-              variant="ghost"
+              variant="default"
               size="icon"
-              className="size-10 shrink-0 rounded-full border border-transparent disabled:opacity-45"
-              style={canSend ? { background: 'var(--primary)', color: 'var(--primary-foreground)' } : { background: 'color-mix(in oklch, var(--foreground) 8%, transparent)', color: 'var(--muted-foreground)' }}
+              className={`size-10 shrink-0 rounded-full border border-transparent disabled:opacity-45 ${canSend
+                ? ''
+                : 'bg-[color-mix(in_oklch,var(--foreground)_8%,transparent)] text-muted-foreground'}`}
               onClick={submitField}
               disabled={!canSend}
               title={canSend ? 'Send' : 'Nothing to send'}
