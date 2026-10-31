@@ -82,7 +82,9 @@ if [[ -z "${BANTER_SKIP_UNIT_CHECK:-}" ]]; then
     # A unit under our name that runs something outside the destination is a
     # different deployment wearing the same name. Restarting it would act on a
     # system this deploy does not own.
-    if [[ -n "$EXEC_START" && "$EXEC_START" != "$DEST"* ]]; then
+    # The trailing slash matters: "$DEST"* would also accept a sibling such as
+    # banter-old, which is a different deployment.
+    if [[ -n "$EXEC_START" && "$EXEC_START" != "${DEST%/}"/* ]]; then
       refuse "systemd unit '$BANTER_UNIT' already exists and runs $EXEC_START, which is outside $DEST."
     fi
     echo "[preflight] systemd unit '$BANTER_UNIT' exists and points inside $DEST — safe to restart."
