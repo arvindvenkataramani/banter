@@ -1,5 +1,6 @@
 import type { CompactionPhase } from '@/lib/session'
-import { Loader2, CheckCircle2 } from 'lucide-react'
+import { CircleNotchIcon } from '@phosphor-icons/react/dist/csr/CircleNotch'
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
 
 interface Props {
   phase: CompactionPhase
@@ -21,9 +22,9 @@ export function CompactionIndicator({ phase }: Props) {
       className="flex items-center gap-2 py-1 text-xs text-muted-foreground"
     >
       {isSpinning ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
+        <CircleNotchIcon weight="bold" className="h-3 w-3 animate-spin" />
       ) : (
-        <CheckCircle2 className="h-3 w-3 text-green-500" />
+        <CheckCircleIcon weight="bold" className="h-3 w-3 text-green-500" />
       )}
       <span>{label}</span>
     </div>

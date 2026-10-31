@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react'
-import { X } from 'lucide-react'
+import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 // The per-icon subpath, not the '@phosphor-icons/react' barrel: the barrel
 // re-exports the whole icon set (hundreds of components) from one module,
 // which every test file importing anything from this file pays to
@@ -125,7 +125,7 @@ export function CloseButton({ onClose, size = 'md' }: { onClose: () => void; siz
         size === 'md' ? 'size-9' : 'size-6',
       )}
     >
-      <X className={size === 'md' ? 'size-3.5' : 'size-3'} />
+      <XIcon weight="bold" className={size === 'md' ? 'size-3.5' : 'size-3'} />
     </button>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { CaretRightIcon } from '@phosphor-icons/react/dist/csr/CaretRight'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 
@@ -56,7 +56,7 @@ export function ReasoningRow({ text, running }: Props) {
     <Collapsible open={expanded} onOpenChange={setExpanded} className="self-start w-full min-w-0 pr-6">
       <CollapsibleTrigger className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-left text-xs text-muted-foreground">
         <span className="shrink-0">Explore</span>
-        <ChevronRight className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')} />
+        <CaretRightIcon weight="bold" className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-90')} />
         {!expanded && (
           <span ref={lineRef} className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-muted-foreground/70">
             {line}

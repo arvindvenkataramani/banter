@@ -1,4 +1,11 @@
-import { Monitor, Moon, Sun, ChevronDown, Server, Settings, RefreshCw, SlidersHorizontal } from 'lucide-react'
+import { MonitorIcon } from '@phosphor-icons/react/dist/csr/Monitor'
+import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon'
+import { SunIcon } from '@phosphor-icons/react/dist/csr/Sun'
+import { CaretDownIcon } from '@phosphor-icons/react/dist/csr/CaretDown'
+import { HardDrivesIcon } from '@phosphor-icons/react/dist/csr/HardDrives'
+import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
+import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
+import { SlidersHorizontalIcon } from '@phosphor-icons/react/dist/csr/SlidersHorizontal'
 import { toast } from 'sonner'
 import { BanterIcon } from '@/components/icons'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,25 +23,25 @@ import { SettingsDialog } from '@/features/settings/settings-dialog'
 type NavOption = {
   path: string
   label: string
-  icon: React.ComponentType<{ className?: string }>
+  icon: React.ComponentType<{ className?: string; weight?: "bold" }>
   href?: string
 }
 
 const NAV_OPTIONS: NavOption[] = [
   { path: '/', label: 'Chat', icon: BanterIcon },
-  { path: '/services', label: 'Services', icon: Server },
+  { path: '/services', label: 'Services', icon: HardDrivesIcon },
 ]
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: React.ReactNode }[] = [
-  { value: 'light', label: 'Light', icon: <Sun className="size-4" /> },
-  { value: 'dark', label: 'Dark', icon: <Moon className="size-4" /> },
-  { value: 'system', label: 'System', icon: <Monitor className="size-4" /> },
+  { value: 'light', label: 'Light', icon: <SunIcon weight="bold" className="size-4" /> },
+  { value: 'dark', label: 'Dark', icon: <MoonIcon weight="bold" className="size-4" /> },
+  { value: 'system', label: 'System', icon: <MonitorIcon weight="bold" className="size-4" /> },
 ]
 
 function themeIcon(t: Theme) {
-  if (t === 'light') return <Sun className="size-4" />
-  if (t === 'dark') return <Moon className="size-4" />
-  return <Monitor className="size-4" />
+  if (t === 'light') return <SunIcon weight="bold" className="size-4" />
+  if (t === 'dark') return <MoonIcon weight="bold" className="size-4" />
+  return <MonitorIcon weight="bold" className="size-4" />
 }
 
 interface NavBarProps {
@@ -95,7 +102,7 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
             <TabsList>
               {NAV_OPTIONS.map(({ path, label, icon: Icon }) => (
                 <TabsTrigger key={path} value={path} className="gap-1.5">
-                  <Icon className="size-3.5" />
+                  <Icon weight="bold" className="size-3.5" />
                   {label}
                 </TabsTrigger>
               ))}
@@ -108,9 +115,9 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-1.5">
-                <CurrentIcon className="size-3.5" />
+                <CurrentIcon weight="bold" className="size-3.5" />
                 {currentLabel}
-                <ChevronDown className="size-3" />
+                <CaretDownIcon weight="bold" className="size-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -120,7 +127,7 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
                   onClick={() => onNavigate(path)}
                   className="gap-2"
                 >
-                  <Icon className="size-4" />
+                  <Icon weight="bold" className="size-4" />
                   {label}
                 </DropdownMenuItem>
               ))}
@@ -140,7 +147,7 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
               <Button variant="ghost" size="sm" className="gap-1.5 pr-1.5 text-muted-foreground hover:text-foreground">
                 {themeIcon(theme)}
                 <span className="text-xs capitalize hidden sm:inline">{theme}</span>
-                <ChevronDown className="size-3" />
+                <CaretDownIcon weight="bold" className="size-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -160,16 +167,16 @@ export function NavBar({ currentPath, onNavigate }: NavBarProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" aria-label="Settings" className="text-muted-foreground hover:text-foreground">
-                <Settings className="size-4" />
+                <GearSixIcon weight="bold" className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setSettingsOpen(true)} className="gap-2">
-                <SlidersHorizontal className="size-4" />
+                <SlidersHorizontalIcon weight="bold" className="size-4" />
                 Settings
               </DropdownMenuItem>
               <DropdownMenuItem onClick={reloadConfig} disabled={reloading} className="gap-2">
-                <RefreshCw className={`size-4${reloading ? ' animate-spin' : ''}`} />
+                <ArrowClockwiseIcon weight="bold" className={`size-4${reloading ? ' animate-spin' : ''}`} />
                 Reload config
               </DropdownMenuItem>
             </DropdownMenuContent>

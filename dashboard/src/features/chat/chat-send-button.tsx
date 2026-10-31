@@ -1,4 +1,5 @@
-import { ArrowUp, Square } from 'lucide-react'
+import { ArrowUpIcon } from '@phosphor-icons/react/dist/csr/ArrowUp'
+import { StopIcon } from '@phosphor-icons/react/dist/csr/Stop'
 import { Button } from '@/components/ui/button'
 
 interface Props {
@@ -26,7 +27,7 @@ export function ChatSendButton({ isStreaming, disabled, onSend, onStop, size = '
   if (isStreaming) {
     return (
       <Button variant="destructive" size="icon" className={`${s.btn} rounded-full`} onClick={onStop} aria-label="Stop">
-        <Square className={s.icon} />
+        <StopIcon weight="bold" className={s.icon} />
       </Button>
     )
   }
@@ -40,7 +41,7 @@ export function ChatSendButton({ isStreaming, disabled, onSend, onStop, size = '
       disabled={disabled}
       aria-label="Send"
     >
-      <ArrowUp className={s.icon} />
+      <ArrowUpIcon weight="bold" className={s.icon} />
     </Button>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Sliders } from 'lucide-react'
+import { SlidersIcon } from '@phosphor-icons/react/dist/csr/Sliders'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -182,7 +182,7 @@ function SessionConfigSheet({
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8">
-          <Sliders className="h-4 w-4" />
+          <SlidersIcon weight="bold" className="h-4 w-4" />
         </Button>
       </SheetTrigger>
       {/* data-[side=bottom]:h-[85vh] — SheetContent sets h-auto through a

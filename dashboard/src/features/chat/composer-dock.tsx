@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from 'zustand'
-import { AudioLines, X } from 'lucide-react'
+import { WaveformIcon } from '@phosphor-icons/react/dist/csr/Waveform'
+import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import { cn } from '@/lib/utils'
 import { useMediaEngine, toggle as toggleMedia, close as closeMedia } from '@/lib/media-engine'
 import { useMediaVoiceState, useArmed, cancelArm } from '@/lib/media-voice-mode'
@@ -159,7 +160,7 @@ function CollapsedPlayer({
         onClick={onClose}
         className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        <X className="size-3" />
+        <XIcon weight="bold" className="size-3" />
       </button>
       {/* 1px x 22px divider — README §3: "so the transport's dismiss does
           not read as part of the voice cluster beside it." */}
@@ -207,7 +208,7 @@ function PlayerRow({
           onClick={onCommit}
           className="flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-[color-mix(in_oklch,var(--warning)_50%,transparent)] bg-[var(--warning-subtle)] px-3.5 text-[13px] font-medium text-[var(--warning-subtle-fg)]"
         >
-          <AudioLines className="size-4" />
+          <WaveformIcon weight="bold" className="size-4" />
           Start voice
         </button>
         <button

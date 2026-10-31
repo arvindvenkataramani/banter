@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from 'zustand'
-import { AudioLines, Link2Off, Loader2, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react'
+import { WaveformIcon } from '@phosphor-icons/react/dist/csr/Waveform'
+import { LinkBreakIcon } from '@phosphor-icons/react/dist/csr/LinkBreak'
+import { CircleNotchIcon } from '@phosphor-icons/react/dist/csr/CircleNotch'
+import { MicrophoneIcon } from '@phosphor-icons/react/dist/csr/Microphone'
+import { MicrophoneSlashIcon } from '@phosphor-icons/react/dist/csr/MicrophoneSlash'
+import { SpeakerHighIcon } from '@phosphor-icons/react/dist/csr/SpeakerHigh'
+import { SpeakerSlashIcon } from '@phosphor-icons/react/dist/csr/SpeakerSlash'
+import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ChatSendButton } from './chat-send-button'
@@ -209,7 +216,7 @@ export function ChatComposer({
                   onClick={relinkMutes}
                   title="Mic and speech are set separately — link them"
                 >
-                  <Link2Off className="size-[17px]" strokeWidth={1.8} />
+                  <LinkBreakIcon className="size-[17px]" weight="bold" />
                 </Button>
               )}
             </>
@@ -231,7 +238,7 @@ export function ChatComposer({
                 onClick={() => onVoiceToggle(false)}
                 title="Starting voice — press to cancel"
               >
-                <Loader2 size={18} strokeWidth={1.8} className="shrink-0 animate-spin" />
+                <CircleNotchIcon size={18} weight="bold" className="shrink-0 animate-spin" />
                 <span className="truncate">Starting</span>
               </Button>
             )}
@@ -245,7 +252,7 @@ export function ChatComposer({
                   onClick={gate.onCommit}
                   className="flex h-11 shrink-0 items-center gap-1.5 rounded-full border border-[color-mix(in_oklch,var(--warning)_50%,transparent)] bg-[var(--warning-subtle)] px-3.5 text-[13.5px] font-medium text-[var(--warning-subtle-fg)]"
                 >
-                  <AudioLines className="size-4" />
+                  <WaveformIcon weight="bold" className="size-4" />
                   Close player, start voice
                 </button>
                 <button
@@ -266,7 +273,7 @@ export function ChatComposer({
                 onClick={() => onVoiceToggle(true)}
                 title="Turn voice on"
               >
-                <AudioLines size={18} strokeWidth={1.8} />
+                <WaveformIcon size={18} weight="bold" />
               </Button>
             )}
             {!voiceStarting && voiceOn && (
@@ -279,7 +286,7 @@ export function ChatComposer({
                   onClick={toggleSpeechMuted}
                   title={speechMuted ? 'Unmute speech' : 'Mute speech only'}
                 >
-                  {speechMuted ? <VolumeX size={18} strokeWidth={1.8} /> : <Volume2 size={18} strokeWidth={1.8} />}
+                  {speechMuted ? <SpeakerSlashIcon size={18} weight="bold" /> : <SpeakerHighIcon size={18} weight="bold" />}
                 </Button>
                 <Button
                   type="button"
@@ -290,7 +297,7 @@ export function ChatComposer({
                   onClick={toggleMuteAll}
                   title={`${micMuted ? 'Unmute' : 'Mute'} ${muteLinked ? 'everything' : 'the mic'} (spacebar)`}
                 >
-                  {muted ? <MicOff size={18} strokeWidth={1.8} className="shrink-0" /> : <Mic size={18} strokeWidth={1.8} className="shrink-0" />}
+                  {muted ? <MicrophoneSlashIcon size={18} weight="bold" className="shrink-0" /> : <MicrophoneIcon size={18} weight="bold" className="shrink-0" />}
                   <span className="truncate">{pillLabel}</span>
                 </Button>
                 <Button
@@ -301,7 +308,7 @@ export function ChatComposer({
                   onClick={() => onVoiceToggle(false)}
                   title="Turn voice off"
                 >
-                  <X size={17} strokeWidth={1.8} />
+                  <XIcon size={17} weight="bold" />
                 </Button>
               </>
             )}

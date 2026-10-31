@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from 'zustand'
-import { ArrowUp, ChevronDown, Keyboard, Link2Off, Lock, LockOpen, Mic, MicOff, Square, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUpIcon } from '@phosphor-icons/react/dist/csr/ArrowUp'
+import { CaretDownIcon } from '@phosphor-icons/react/dist/csr/CaretDown'
+import { KeyboardIcon } from '@phosphor-icons/react/dist/csr/Keyboard'
+import { LinkBreakIcon } from '@phosphor-icons/react/dist/csr/LinkBreak'
+import { LockIcon } from '@phosphor-icons/react/dist/csr/Lock'
+import { LockOpenIcon } from '@phosphor-icons/react/dist/csr/LockOpen'
+import { MicrophoneIcon } from '@phosphor-icons/react/dist/csr/Microphone'
+import { MicrophoneSlashIcon } from '@phosphor-icons/react/dist/csr/MicrophoneSlash'
+import { StopIcon } from '@phosphor-icons/react/dist/csr/Stop'
+import { SpeakerHighIcon } from '@phosphor-icons/react/dist/csr/SpeakerHigh'
+import { SpeakerSlashIcon } from '@phosphor-icons/react/dist/csr/SpeakerSlash'
+import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import { Button } from '@/components/ui/button'
 import { ModelPill } from './model-pill'
 import { tailWords } from '@/lib/voice/human/transcript-view'
@@ -183,7 +194,7 @@ export function VoiceControlsMobile({
           onClick={toggleSpeechMuted}
           title={speechTitle}
         >
-          {speechShowsMuted ? <VolumeX className="size-[18px]" strokeWidth={1.8} /> : <Volume2 className="size-[18px]" strokeWidth={1.8} />}
+          {speechShowsMuted ? <SpeakerSlashIcon className="size-[18px]" weight="bold" /> : <SpeakerHighIcon className="size-[18px]" weight="bold" />}
         </Button>
         <Button
           type="button"
@@ -195,7 +206,7 @@ export function VoiceControlsMobile({
           onClick={toggleMuteAll}
           title={muteTitle}
         >
-          {muted ? <MicOff className="size-[27px]" strokeWidth={1.45} /> : <Mic className="size-[27px]" strokeWidth={1.45} />}
+          {muted ? <MicrophoneSlashIcon className="size-[27px]" weight="regular" /> : <MicrophoneIcon className="size-[27px]" weight="regular" />}
         </Button>
         <Button
           type="button"
@@ -208,7 +219,7 @@ export function VoiceControlsMobile({
           disabled={!isStreaming}
           title={abortTitle}
         >
-          <Square className="size-[15px]" strokeWidth={2} fill="currentColor" />
+          <StopIcon className="size-[15px]" weight="fill" />
         </Button>
         {!muteLinked && relinkMutes && (
           <Button
@@ -219,7 +230,7 @@ export function VoiceControlsMobile({
             onClick={relinkMutes}
             title="Mic and speech are set separately — link them"
           >
-            <Link2Off className="size-[17px]" strokeWidth={1.8} />
+            <LinkBreakIcon className="size-[17px]" weight="bold" />
           </Button>
         )}
         {onPreventScreenLock && (
@@ -239,8 +250,8 @@ export function VoiceControlsMobile({
             {/* Two silhouettes that differ at a glance, rather than two
                 states of one icon. Locked is the screen being held awake. */}
             {unattended
-              ? <Lock className="size-[17px]" strokeWidth={1.8} />
-              : <LockOpen className="size-[17px]" strokeWidth={1.8} />}
+              ? <LockIcon className="size-[17px]" weight="bold" />
+              : <LockOpenIcon className="size-[17px]" weight="bold" />}
           </Button>
         )}
       </div>
@@ -274,7 +285,7 @@ export function VoiceControlsMobile({
               disabled={!canSend}
               title={canSend ? 'Send' : 'Nothing to send'}
             >
-              <ArrowUp className="size-[14px]" strokeWidth={2} />
+              <ArrowUpIcon className="size-[14px]" weight="bold" />
             </Button>
           </div>
           <Button
@@ -285,7 +296,7 @@ export function VoiceControlsMobile({
             onClick={dismissField}
             title="Dismiss the field"
           >
-            <ChevronDown className="size-[18px]" strokeWidth={1.8} />
+            <CaretDownIcon className="size-[18px]" weight="bold" />
           </Button>
         </div>
       ) : (
@@ -298,7 +309,7 @@ export function VoiceControlsMobile({
             onClick={openField}
             title="Type instead"
           >
-            <Keyboard className="size-[18px]" strokeWidth={1.7} />
+            <KeyboardIcon className="size-[18px]" weight="bold" />
           </Button>
           <ModelPill models={models} currentModel={currentModel} onModelChange={onModelChange} />
           <Button
@@ -309,7 +320,7 @@ export function VoiceControlsMobile({
             onClick={() => onVoiceToggle(false)}
             title="Turn voice off"
           >
-            <X className="size-[18px]" strokeWidth={1.8} />
+            <XIcon className="size-[18px]" weight="bold" />
           </Button>
         </div>
       )}

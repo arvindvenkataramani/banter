@@ -2,7 +2,7 @@ import { memo } from 'react'
 import type { Components } from 'react-markdown'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { RotateCcw } from 'lucide-react'
+import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { Button } from '@/components/ui/button'
 import type { DeliveryStatus } from '@/lib/conversation-store'
 
@@ -61,7 +61,7 @@ export function MessageBubble({ role, text, isStreaming, senderAgentId, delivery
             <span>Failed to send</span>
             {onResend && (
               <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs text-destructive hover:text-destructive" onClick={onResend}>
-                <RotateCcw className="size-3" />
+                <ArrowCounterClockwiseIcon weight="bold" className="size-3" />
                 Resend
               </Button>
             )}

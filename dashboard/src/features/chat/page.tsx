@@ -1,7 +1,7 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
 import { useStore } from 'zustand'
 import { toast } from 'sonner'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDownIcon } from '@phosphor-icons/react/dist/csr/ArrowDown'
 import { useSessionManager } from '@/lib/use-session-manager'
 import { consumePendingChatLaunch } from '@/lib/chat-launch'
 import { fetchVoiceConfig, loadVoiceSelection, setSaveMicSamples } from '@/lib/voice'
@@ -471,7 +471,7 @@ export function ChatPage(_props: Props) {
               aria-label="Scroll to bottom"
               title="Scroll to bottom"
             >
-              <ArrowDown className="size-4" />
+              <ArrowDownIcon weight="bold" className="size-4" />
             </Button>
           )}
           <VoiceControlsMobile
@@ -513,7 +513,7 @@ export function ChatPage(_props: Props) {
             aria-label="Scroll to bottom"
             title="Scroll to bottom"
           >
-            <ArrowDown className="size-4" />
+            <ArrowDownIcon weight="bold" className="size-4" />
           </Button>
         )}
         <div className={voiceLoopEnabled ? 'md:block hidden' : ''}>

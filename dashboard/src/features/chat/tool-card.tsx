@@ -1,4 +1,8 @@
-import { Loader2, CheckCircle2, MinusCircle, XCircle, Circle } from 'lucide-react'
+import { CircleNotchIcon } from '@phosphor-icons/react/dist/csr/CircleNotch'
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
+import { MinusCircleIcon } from '@phosphor-icons/react/dist/csr/MinusCircle'
+import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle'
+import { CircleIcon } from '@phosphor-icons/react/dist/csr/Circle'
 import { badgeVariants } from '@/components/ui/badge'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
@@ -78,11 +82,11 @@ export function ToolCard({ title, status }: Props) {
   const mobileTitle = truncateMiddle(title, LINE_BUDGET_MOBILE)
   const canExpand = desktopTitle !== title || mobileTitle !== title
 
-  const icon = status === 'running' ? <Loader2 className="shrink-0 animate-spin" />
-    : status === 'done' ? <CheckCircle2 className="shrink-0" />
-    : status === 'interrupted' ? <MinusCircle className="shrink-0" />
-    : status === 'error' ? <XCircle className="shrink-0" />
-    : <Circle className="shrink-0" />
+  const icon = status === 'running' ? <CircleNotchIcon weight="bold" className="shrink-0 animate-spin" />
+    : status === 'done' ? <CheckCircleIcon weight="bold" className="shrink-0" />
+    : status === 'interrupted' ? <MinusCircleIcon weight="bold" className="shrink-0" />
+    : status === 'error' ? <XCircleIcon weight="bold" className="shrink-0" />
+    : <CircleIcon weight="bold" className="shrink-0" />
 
   // justify-start overrides badgeVariants' centered layout — with an icon and
   // long text as flex siblings, center justification clips both edges on
