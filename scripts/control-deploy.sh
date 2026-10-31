@@ -69,7 +69,7 @@ done
 
 if [[ -n "$FORCE_REF" ]]; then
   if [[ "$FORCE_REF" == "main" ]]; then
-    SRC=$(mktemp -d); CLEANUP_DIRS+=("$SRC")
+    SRC=$(platform_stage_dir); CLEANUP_DIRS+=("$SRC")
     echo "[control-deploy] Extracting main from git archive..."
     git -C "$REPO" archive main | tar -x -C "$SRC"
   elif [[ "$FORCE_REF" != "dev" ]]; then
@@ -94,14 +94,14 @@ else
       case "$choice" in
         2) ;;
         3) echo "[control-deploy] Aborted."; exit 0 ;;
-        *) SRC=$(mktemp -d); CLEANUP_DIRS+=("$SRC")
+        *) SRC=$(platform_stage_dir); CLEANUP_DIRS+=("$SRC")
            echo "[control-deploy] Extracting main from git archive..."
            git -C "$REPO" archive main | tar -x -C "$SRC"
            ;;
       esac
     else
       echo "[control-deploy] Non-interactive session: defaulting to main."
-      SRC=$(mktemp -d); CLEANUP_DIRS+=("$SRC")
+      SRC=$(platform_stage_dir); CLEANUP_DIRS+=("$SRC")
       echo "[control-deploy] Extracting main from git archive..."
       git -C "$REPO" archive main | tar -x -C "$SRC"
     fi

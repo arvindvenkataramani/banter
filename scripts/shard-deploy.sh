@@ -22,7 +22,7 @@ FORCE_REF="${1:-}"
 
 if [[ -n "$FORCE_REF" ]]; then
   if [[ "$FORCE_REF" == "main" ]]; then
-    SRC=$(mktemp -d)
+    SRC=$(platform_stage_dir "$BANTER_UNIT-shard")
     trap "rm -rf '$SRC'" EXIT
     echo "[shard-deploy] Extracting main from git archive..."
     git -C "$REPO" archive main | tar -x -C "$SRC"
@@ -46,14 +46,14 @@ else
       case "$choice" in
         2) ;;
         3) echo "[shard-deploy] Aborted."; exit 0 ;;
-        *) SRC=$(mktemp -d); trap "rm -rf '$SRC'" EXIT
+        *) SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); trap "rm -rf '$SRC'" EXIT
            echo "[shard-deploy] Extracting main from git archive..."
            git -C "$REPO" archive main | tar -x -C "$SRC"
            ;;
       esac
     else
       echo "[shard-deploy] Non-interactive session: defaulting to main."
-      SRC=$(mktemp -d); trap "rm -rf '$SRC'" EXIT
+      SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); trap "rm -rf '$SRC'" EXIT
       echo "[shard-deploy] Extracting main from git archive..."
       git -C "$REPO" archive main | tar -x -C "$SRC"
     fi

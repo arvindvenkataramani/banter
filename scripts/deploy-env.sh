@@ -47,6 +47,29 @@ BANTER_SHARD_SERVICES_DEST="${BANTER_SHARD_SERVICES_DEST:-$HOME/services}"
 # Same variable the shard itself reads.
 BANTER_SHARD_EVENTS_PATH="${BANTER_SHARD_EVENTS_PATH:-$BANTER_SHARD_PROD/logs/events.jsonl}"
 
+# Where a deploy stages an extracted tree before copying it into place.
+#
+# Not /tmp: on many Linux machines that is tmpfs, small and shared with the
+# running system's memory, and staging extracts the whole repo there, then runs
+# bun install and a dashboard build against it. /var/tmp is disk and is swept at
+# 30 days, so an interrupted deploy that outlives its trap does not leave a repo
+# copy behind forever.
+BANTER_STAGE_DIR="${BANTER_STAGE_DIR:-/var/tmp/banter-deploy-$(id -u)}"
+
+# Stage a deploy source tree and echo its path. An optional name keeps two
+# deploys that share a unit name, the control plane and the shard on one
+# machine, out of each other's way; it defaults to the unit.
+#
+# One fixed path per name, cleared on entry rather than a fresh random directory
+# each run. A deploy killed before its trap fires would otherwise leave a full
+# tree behind that the next run never touches, accumulating a copy per failure.
+platform_stage_dir() {
+  local dir="$BANTER_STAGE_DIR/${1:-$BANTER_UNIT}"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  echo "$dir"
+}
+
 # A non-default directory under the default unit name is the one combination
 # that silently misbehaves: the deploy writes new files while every start, stop,
 # and restart keeps addressing the original install. Catch it here, where both
