@@ -59,6 +59,23 @@ function toSessionList(
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
 }
 
+const METADATA_RETRY_MS = 1000
+const METADATA_RETRY_LIMIT = 5
+
+function qualify(provider: string | null | undefined, model: string): string {
+  return provider ? `${provider}/${model}` : model
+}
+
+// The model the chat shows for a session row. A run that fell back reports the
+// model it used as activeModel; that wins, unless the row's last run ended
+// before the user's most recent switch (selectedAt, gateway clock), in which
+// case it describes a model the user has since moved away from.
+export function displayedModel(row: GatewaySessionRow, selectedAt: number | null): string | null {
+  const ranAfterSelection = selectedAt == null || (row.endedAt ?? 0) > selectedAt
+  if (row.activeModel && ranAfterSelection) return qualify(row.activeModelProvider, row.activeModel)
+  return row.model ? qualify(row.modelProvider, row.model) : null
+}
+
 function persistDefaultAgent(agentId: string): void {
   fetch('/api/gateway/defaultAgent', {
     method: 'PATCH',
@@ -92,6 +109,9 @@ export class SessionManager {
   private _sessionList: SessionListEntry[] = []
   private initialized = false
   private _modelPatchPending = false
+  // Gateway time of the last model switch in the active session; null when the
+  // user hasn't switched since opening it.
+  private _modelSelectedAt: number | null = null
 
   private listeners = new Set<() => void>()
   private snapshot: SessionManagerSnapshot = {
@@ -221,6 +241,7 @@ export class SessionManager {
     this.connection.call('sessions.messages.subscribe', { key }).catch(() => {})
 
     const agentChanged = this._currentAgent !== agentId
+    if (session !== this._activeSession) this._modelSelectedAt = null
     this._activeSession = session
     this._currentAgent = agentId
     this._currentSessionName = name
@@ -268,36 +289,34 @@ export class SessionManager {
     this.notify()
     try {
       await session.sendModelCommand(qualifiedModel)
-      this._modelPatchPending = false
-      const resolved = await this.fetchActiveModel()
+      // Stays pending through the verify fetch, so a refresh landing in
+      // between can't show the previous run's fallback.
+      const row = await this.fetchActiveRow()
+      const resolved = row?.model ? qualify(row.modelProvider, row.model) : null
       if (!resolved) {
         throw new Error('Model switch failed: gateway did not report a model')
       }
+      this._modelSelectedAt = row?.snapshotAt ?? row?.endedAt ?? 0
+      this._currentModel = resolved
+      this._modelPatchPending = false
+      this.notify()
       if (resolved !== qualifiedModel) {
-        this._currentModel = resolved
-        this.notify()
         throw new Error(`Model switch failed: gateway resolved to ${resolved}`)
       }
-      this._currentModel = resolved
-      this.notify()
     } catch (err) {
       this._modelPatchPending = false
       throw err
     }
   }
 
-  // Fetches the active session row and returns its qualified model, if any.
-  // Used to verify model-switch success without going through the refresh side effects.
-  private async fetchActiveModel(): Promise<string | null> {
+  // Fetches the active session's row, without the refresh side effects. Used to
+  // verify a model switch: it checks the selection (model), not activeModel.
+  private async fetchActiveRow(): Promise<GatewaySessionRow | null> {
     try {
       const payload = await this.connection.call('sessions.list', {})
       const res = payload as { sessions?: GatewaySessionRow[] }
       const activeKey = makeSessionKey(this._currentAgent, this._currentSessionName)
-      const activeRow = res?.sessions?.find((s) => s.key === activeKey)
-      if (!activeRow?.model) return null
-      return activeRow.modelProvider
-        ? `${activeRow.modelProvider}/${activeRow.model}`
-        : activeRow.model
+      return res?.sessions?.find((s) => s.key === activeKey) ?? null
     } catch {
       return null
     }
@@ -312,19 +331,23 @@ export class SessionManager {
     return this.snapshot
   }
 
-  private async refreshSessionMetadata(): Promise<void> {
+  // Called when a run ends. The run's terminal chat event can reach us before
+  // the gateway has closed the run on the session row and written its token
+  // totals, so a row still showing an active run is read again shortly after.
+  private async refreshSessionMetadata(attempt = 0): Promise<void> {
     try {
       const payload = await this.connection.call('sessions.list', {})
       const res = payload as { sessions?: GatewaySessionRow[] }
       if (res?.sessions) {
         const activeKey = makeSessionKey(this._currentAgent, this._currentSessionName)
         const activeRow = res.sessions.find((s) => s.key === activeKey)
+        if (activeRow?.hasActiveRun && attempt < METADATA_RETRY_LIMIT) {
+          setTimeout(() => { this.refreshSessionMetadata(attempt + 1).catch(() => {}) }, METADATA_RETRY_MS)
+        }
         if (activeRow) {
           this._contextTokens = activeRow.totalTokens ?? null
           this._contextWindow = activeRow.contextTokens ?? null
-          const qualified = activeRow.model
-            ? (activeRow.modelProvider ? `${activeRow.modelProvider}/${activeRow.model}` : activeRow.model)
-            : null
+          const qualified = displayedModel(activeRow, this._modelSelectedAt)
           if (qualified && !this._modelPatchPending) {
             this._currentModel = qualified
           }
@@ -385,9 +408,7 @@ export class SessionManager {
         // Read the effective model and context usage from the active session's row
         const activeKey = makeSessionKey(agentId, this._currentSessionName)
         const activeRow = res.sessions.find((s) => s.key === activeKey)
-        const qualified = activeRow?.model
-          ? (activeRow.modelProvider ? `${activeRow.modelProvider}/${activeRow.model}` : activeRow.model)
-          : null
+        const qualified = activeRow ? displayedModel(activeRow, this._modelSelectedAt) : null
         if (qualified && !this._modelPatchPending) {
           this._currentModel = qualified
         }

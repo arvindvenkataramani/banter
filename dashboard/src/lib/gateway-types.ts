@@ -176,8 +176,17 @@ export interface GatewaySessionRow {
   derivedTitle?: string
   lastMessagePreview?: string
   updatedAt: number | null
+  // The session's selected model.
   model?: string
   modelProvider?: string
+  // The model the last run actually used. Set only when it differs from the
+  // selection, i.e. when the run fell back.
+  activeModel?: string | null
+  activeModelProvider?: string | null
+  // Gateway-clock milliseconds: when the last run ended, and when this row was read.
+  endedAt?: number | null
+  snapshotAt?: number
+  hasActiveRun?: boolean
   contextTokens?: number
   totalTokens?: number
 }

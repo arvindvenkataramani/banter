@@ -1,5 +1,5 @@
 import type { ConnectionState, ChatEventPayload } from './gateway-types'
-import { normalizeChatPayload } from './gateway-utils'
+import { ChatTextAssembler } from './gateway-utils'
 import { signChallenge, getDeviceIdPrefix } from './device-identity'
 
 export type { ConnectionState, ChatEventPayload }
@@ -100,6 +100,7 @@ export class GatewayConnection {
 
   // Per-sessionKey event listeners
   private eventListeners = new Map<string, Set<(event: ChatEventPayload) => void>>()
+  private chatText = new ChatTextAssembler()
   private agentEventListeners = new Map<string, Set<(payload: unknown) => void>>()
   private sessionToolListeners = new Map<string, Set<(payload: unknown) => void>>()
 
@@ -275,7 +276,8 @@ export class GatewayConnection {
       this.challengeNonce = challenge?.nonce ?? null
       this.sendConnectRequest()
     } else if (event === 'chat') {
-      const normalized = normalizeChatPayload(payload)
+      const normalized = this.chatText.accept(payload)
+      if (!normalized) return
       const listeners = this.eventListeners.get(normalized.sessionKey)
       if (listeners) {
         for (const cb of listeners) cb(normalized)

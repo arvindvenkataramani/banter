@@ -496,6 +496,22 @@ These exist but are less likely to be needed by typical integrations:
 - `sessions.messages.subscribe` / `sessions.messages.unsubscribe` — toggle transcript event subscriptions
 - `sessions.usage`, `sessions.usage.timeseries`, `sessions.usage.logs` — usage reporting
 
+### sessions.list row: model and usage fields
+
+*Observed on 2026.9.8 (`fc23bc8`) by polling `sessions.list` through one run on 2026-10-31. Not checked against source.*
+
+- **`model` / `modelProvider`** — the session's selected model. A `/model` command changes it.
+- **`activeModel` / `activeModelProvider`** — the model the run actually used. Set while a run is in flight. After the run it stays set only if the run fell back to a model other than the selection, and goes back to `null` when the selection ran. It changes only when a run happens, so after a `/model` switch it still names the previous run's model until the next run.
+- **`totalTokens`** — context in use. **`contextTokens`** is the context window, despite the name.
+- **`hasActiveRun`, `status`, `endedAt`** — `status` goes `running` → `done`. The new `totalTokens` appeared in the same poll that first showed `done`, about 2 s after `endedAt`. A read made while `hasActiveRun` is still true returns the previous run's totals.
+- **`snapshotAt`** — gateway time of the read. `endedAt` and `snapshotAt` use the gateway's clock, so they can be compared with each other but not with a client's clock.
+
+### Chat deltas carry increments
+
+*Observed on 2026.9.8 (`fc23bc8`) in a listen-only probe capture on 2026-11-01.*
+
+A `chat` delta carries the new text in `deltaText`. Only a run's first delta also has `message` set. Later deltas have `message: null`. The `final` event still carries the whole message. The `assistant` agent stream works the same way: `data.text` appears on the first event only, and every event has `data.delta`. The `thinking` stream is still cumulative: `data.text` holds all the reasoning so far, alongside `data.delta`. A client that reads `message` as the text so far sees it blank after the first delta. The dashboard rebuilds the text so far in `ChatTextAssembler` (`dashboard/src/lib/gateway-utils.ts`).
+
 ---
 
 ## Inter-agent messaging

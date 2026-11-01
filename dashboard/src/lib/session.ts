@@ -94,7 +94,7 @@ export class Session {
       message: text,
       deliver: false,
       idempotencyKey: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    }).then(() => { this.onRunComplete?.() }) as Promise<void>).catch((err: unknown) => {
+    }).then(() => {}) as Promise<void>).catch((err: unknown) => {
       // Roll back the optimistic user message on send failure
       this._messages = this._messages.filter((m) => m.id !== id)
       this._isTyping = false

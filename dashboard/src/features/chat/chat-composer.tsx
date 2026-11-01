@@ -178,6 +178,9 @@ export function ChatComposer({
           collapsedPlayer ? '!min-h-[104px]' : '!min-h-0'
         }`}
         placeholder="Type a message…"
+        name="message"
+        aria-label="Message"
+        autoComplete="off"
         disabled={isStreaming || disabled}
         enterKeyHint="send"
         rows={1}

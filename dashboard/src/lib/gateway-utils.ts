@@ -31,6 +31,46 @@ export function normalizeChatPayload(raw: unknown): ChatEventPayload {
   }
 }
 
+const FINISHED_RUNS_KEPT = 50
+
+// Gives every chat event the run's text so far in `message`, which is what
+// every consumer reads. The gateway sends a delta's increment in `deltaText`
+// and leaves `message` null after the first one; a final still carries the
+// whole message. Deltas that trail their own run's terminal event are dropped
+// (returns null): they carry only an increment and would otherwise replace
+// the finished text.
+export class ChatTextAssembler {
+  private text = new Map<string, string>()
+  private finished: string[] = []
+
+  accept(raw: unknown): ChatEventPayload | null {
+    const event = normalizeChatPayload(raw)
+    const deltaText = (raw as Record<string, unknown> | null)?.deltaText
+    const { runId } = event
+
+    if (event.state === 'delta') {
+      if (this.finished.includes(runId)) return null
+      const sofar = typeof deltaText === 'string'
+        ? (this.text.get(runId) ?? '') + deltaText
+        : event.message || (this.text.get(runId) ?? '')
+      this.text.set(runId, sofar)
+      return { ...event, message: sofar }
+    }
+
+    if (event.state === 'final' || event.state === 'aborted' || event.state === 'error') {
+      const message = event.message || (this.text.get(runId) ?? '')
+      this.text.delete(runId)
+      if (!this.finished.includes(runId)) {
+        this.finished.push(runId)
+        if (this.finished.length > FINISHED_RUNS_KEPT) this.finished.shift()
+      }
+      return { ...event, message }
+    }
+
+    return event
+  }
+}
+
 export function makeSessionKey(agent: string, session: string): string {
   return `agent:${agent}:${session}`
 }

@@ -201,3 +201,13 @@ test('compaction leaves run state alone', () => {
   const s = fold([ev(lifecycleStart), ev(toolStart)])
   expect(fold([ev(compactionEnd)], s)).toEqual(s)
 })
+
+describe('reduceRunEvent: empty chat delta', () => {
+  test('a delta with no text keeps the text assembled so far', () => {
+    const state = fold([
+      { kind: 'chat', runId: 'r1', state: 'delta', text: 'Done. Both', at: 1 },
+      { kind: 'chat', runId: 'r1', state: 'delta', text: '', at: 2 },
+    ])
+    expect(state.text).toBe('Done. Both')
+  })
+})

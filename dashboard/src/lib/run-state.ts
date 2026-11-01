@@ -266,7 +266,9 @@ export function reduceRunEvent(state: RunState, event: RunEvent): RunState {
     }
     case 'chat': {
       if (event.state === 'delta') {
-        const next = { ...working, text: event.text }
+        // A delta's text is the run's text so far, so an empty one has
+        // nothing to say and must not blank what has been assembled.
+        const next = { ...working, text: event.text || working.text }
         return { ...next, activity: computeActivity(next, event) }
       }
       // Progress, not an outcome: it carries no text, so it must neither end
