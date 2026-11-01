@@ -51,9 +51,11 @@ Get a single service by ID
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Service with health state
+- **200** — Service with health state, read live from the owning node
   → [ServiceWithHealth](#servicewithhealth)
 - **404** — Service not found
+  → [Error](#error)
+- **503** — The shard owning this service could not be reached. The route answers only from a live read, so a caller wanting last-known state reads GET /api/services instead.
   → [Error](#error)
 
 ---
@@ -363,6 +365,16 @@ Save a raw mic sample for debugging (only registered when DEBUG is set)
 
 ## Shard
 
+### `GET` /api/roster
+
+The shard's declared roster, as loaded from its registry
+
+**Responses:**
+- **200** — The roster section as loaded — empty when the registry has none
+  → [RosterResponse](#rosterresponse)
+
+---
+
 ### `GET` /status
 
 Shard memory and per-service health/ping status
@@ -398,8 +410,9 @@ Extends: [Service](#service)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `health` | `healthy` \| `degraded` \| `timed_out` \| `down` \| `disabled` \| `unknown` | yes |  |
+| `health` | `healthy` \| `degraded` \| `timed_out` \| `down` \| `off` \| `disabled` \| `unknown` | yes |  |
 | `lastEvent` | → Event \| null | yes |  |
+| `pending` | boolean | yes | A lifecycle operation is outstanding for this service. Clients waiting on a start continue only while this is true, so it is always present on a live response — an absent value ends the wait. |
 
 ### ServiceRunner
 
@@ -422,6 +435,7 @@ Extends: [Service](#service)
 |-------|------|----------|-------------|
 | `id` | string | yes |  |
 | `name` | string | no |  |
+| `notes` | string | no |  |
 | `capabilityId` | string | yes |  |
 | `hostId` | string | yes |  |
 | `permissions` | object | yes |  |
@@ -495,6 +509,13 @@ Extends: [Service](#service)
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `success` | boolean | yes |  |
+
+### RosterResponse
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `providers` | object | yes |  |
+| `voices` | any[] | yes |  |
 
 ### ShardStatusResponse
 
