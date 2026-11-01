@@ -2,7 +2,7 @@
 
 Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why, and what should happen to each difference. Read this before porting anything from platform. Update it when a port lands or a decision below is made.
 
-Last audited: 2026-10-31, against platform `6703915` and Banter `0c71d6b`. Of 371 files present in both repos, 143 differed; 123 in-scope files exist only in platform and 37 only in Banter.
+Last audited: 2026-10-31, against platform `6703915` and Banter `0c71d6b`; the ports it found landed the same day (see the table below). Of 371 files present in both repos, 143 differed; 123 in-scope files exist only in platform and 37 only in Banter.
 
 ## The rule
 
@@ -54,59 +54,55 @@ Banter changes that platform lacks. They stay, and are offered back in [banter-a
 
 - `control-plane/src/shard-client.ts`: shard errors carry a bounded, sanitised snippet of the response, with a hint when an https endpoint is spoken to as http. Test: `shard-client-errors.test.ts`.
 - `control-shard/src/paths.ts`: testable path resolution, preferring lowercase `~/services`.
-- `shared/src/registry.ts`: error messages include the bad value. (Endpoint re-derivation on patch is obsolete: platform's `2b5b76b` validates the whole file on every patch. The `--port` check is equivalent in both, since only process runners have `main`.)
-- Scripts: `deploy.conf`; `service-control.sh` finding the node from its registry; `fluid-build.sh` preflight checks; `fluid-smoke.sh` and `fluid-smoke-listen.ts`; `control-dev.sh` using the live registry and overridable ports; macOS fallbacks where `lsof` or `systemctl` are missing; the systemd unit rendered from a template; `.build` pruned from the logs scan.
+- `shared/src/registry.ts`: error messages include the bad value.
+- `control-plane/src/routes.ts`: OpenAPI definitions for `/api/gateway/defaultAgent`, `/api/gateway/lastSession`, `/api/voice/selection`, `/api/config/reload` and `/api/debug/mic-sample`. They register nowhere at runtime but feed `scripts/generate-api-docs.ts`, so the API reference documents those endpoints; platform's doesn't.
+- `shared/types.ts`: `Shard.endpoint` is required; platform's optional field adds four type errors.
+- Scripts: `deploy.conf`; `service-control.sh` finding the node from its registry; `fluid-build.sh` preflight checks; `fluid-smoke.sh` and `fluid-smoke-listen.ts`; `control-dev.sh` using the live registry and overridable ports; `shard-registry.sh`, which resolves the shard registry the way the shard does; per-name staging directories, so a control plane and shard on one Mac don't share one; `shard-dev.sh` restoring the production agent on any exit; macOS fallbacks where `lsof` or `systemctl` are missing; the systemd unit rendered from a template; `.build` pruned from the logs scan.
 - Dashboard: `eslint.config.js` rules; `gateway-context.tsx` deriving the connection with `useMemo`; `use-session-manager.ts` effect dependencies; `use-wake-lock.ts`'s targeted lint exemption; `services/page.tsx` depending on `[load]`; `src/test-setup.ts` for Node 26's `localStorage`.
 - `CONTRIBUTING.md`: the testing table and the human-review list.
 - Open-source files with no platform counterpart: `LICENSE`, `NOTICE`, `SECURITY.md`, `.github/`, `.nvmrc`, `install.sh`, `render-plist.sh`, `dashboard/scripts/fetch-models.ts` and the `setup` script, the example registries and config, `services/README.md`, `services/fluid/README.md` and `DEVELOPING.md`.
 
 ## Banter is behind: port from platform
 
-Platform changes Banter has not taken, most important first. **Review** marks items CONTRIBUTING says need a person before commit.
+Nothing from the 2026-10-31 audit is outstanding except:
 
-1. **Tests.** Platform rewrote its control and dashboard suites from its docs and deleted many tests (`210393d`, `f8995ef`, `8b11f21`, `76a2b87`, `3a6558a`, `2e77149`, `8003a74`). Take platform's files, rename hosts, and delete the Banter files they replace:
+- **FluidAudio pin** `568fef9f` (`2f7ef71`), the LuxTTS mid-phrase pause fix, and the Pocket-TTS tokenizer path (`d880707`): committed once `scripts/fluid-smoke.sh` passes.
+- **Docs were not audited.** The audit compared code, scripts and config, not `docs/`. Platform's tests cite `docs/components/voice-turn-taking.md` and `docs/pages/voice-interface.md`, which Banter lacks; the next audit should compare `docs/` too.
+- **Lint:** `dashboard/src/lib/voice/turn-manager.ts` has two `prefer-const` errors and `lib/media-engine.ts` an unused lint exemption; check whether platform has fixed them.
 
-   | Banter file | Platform now |
-   |---|---|
-   | `shared/test/lifecycle`, `serve-outcome`, `serve-retry` | `shared/test/lifecycle`, `tailscale` |
-   | `control-shard/test/lifecycle`, `idle`, `memory` | same names, rewritten |
-   | `control-shard/test/integration`, `shard-api`, `test/shard-reload` | `control-shard/test/shard-api` |
-   | `test/shard-app`, `shard-client`, `shard-poller`, `registry-sharing` | `test/shard-link` and `test/fixtures/fake-shard.ts` |
-   | `test/registry-patch` | `shared/test/registry` |
-   | `shared/test/registry`, `atomic-write`, `test/registry-reload` | same names, rewritten |
-   | `shared/test/health`, `events`, `api`, `executor`, `exec` | same names, rewritten |
-   | dashboard `run-state`, `conversation`, `conversation-store`, `voice/floor`, `voice/human/mute-store` tests | same names, rewritten |
+### Ported on 2026-10-31
 
-   The lifecycle, idle, memory, executor, exec, tailscale, atomic-write and health suites pass against Banter's code as they are. The rest need the source ports below. The dashboard tests cite a "Run state" section platform added to `docs/components/chat.md`; port that too. Banter's own tests stay: `runtime-settings`, `config-reload` (media-free), `endpoint-derivation` (http default), `shard-client-errors`.
-2. **Services page.** Copy platform's `service-card.tsx`, `service-detail.tsx`, `service-history.tsx` and `page.tsx` (`09683de`, `0b0333e`, `47f0217`, `f9fc475`), keeping `[load]`. Brings the two-row card, tabbed detail with history inside, the `notes` field, and `null` for a cleared field. Banter sends `undefined`, so clearing a value never clears it. The server already accepts `null` and `notes`.
-3. **"Off" health state** (`c5137cc`): services not meant to run read as off, not down. Copy `events.ts`, `api.ts` and `health-badge.ts`; add `"off"` to `HealthState` in `shared/types.ts` and `schemas.ts`; `shard-api.ts` uses `deriveServiceHealth` in `/status`.
-4. **Registry write-back** (`2b5b76b`): an edit writes back only what it changed, so defaults stay defaults. Banter writes the whole loaded copy, which pins every default into the file on one dashboard edit. Copy `registry.ts`, then re-apply the http scheme default (see Decided).
-5. **Shard cleanup** (`3890c88`, `eb41eaf`): drop the memory budget check, which approved every load, from `memory.ts`, `shard-api.ts`, `routes.ts` and `index.ts`; drop the shard's own `/api/health`, `/api/services` and `/api/events`, which the shared app always answered.
-6. **`scripts/deploy-preserve-config.sh`** (`dadf3c8`, `b53213c`). **Review** (live config). Preserve `.voice.tts.selection`, `.voice.stt.serviceId` and `.voice.stt.model` across a deploy; Banter preserves only the OpenClaw session key, so a deploy reports the user's voice choices as drift and an overwrite drops them. Replace `declare -A`, which fails under macOS's bash 3.2, and GNU-only `stat -c` with platform's `mtime_of`. Skip the `<plane|shard>` argument and `mediaGeneration.voices`.
-7. **FluidAudio pin** `568fef9f` (`2f7ef71`), the LuxTTS mid-phrase pause fix, and the Pocket-TTS tokenizer path (`d880707`). Done in the working tree and `swift test` passes; `scripts/fluid-smoke.sh` is still to run before commit.
-8. **Phosphor icons** (`8c9a726`): chat, services and nav-bar icons move from lucide to `@phosphor-icons/react` (already installed), `strokeWidth` becoming `weight`. Copy exact weights from platform. `components/ui/*` stays on lucide in both.
-9. **Config reload** (`7377b62`): `postConfigReload` in `api.ts` and per-part results in the nav bar. Banter's server already returns that shape.
-10. **Deploy and install scripts.**
-    - `control-runner.sh` exports Homebrew's bin directories on `PATH` so managed services find brew tools (`8809009`). **Review.**
-    - Deploys stage under `/var/tmp`, not tmpfs `/tmp`, which fails on a Pi (`bf3a0c3`). **Review.**
-    - `control-deploy.sh` stops running `bun run docs`, which dirtied the checkout; platform keeps the API reference current with a pre-commit hook instead (`b98d076`). Banter would need the hook without the main-branch refusal, and a way to set `core.hooksPath`.
-    - Install scripts stop mirroring `services/` scripts and plists, installing only what the registry's `ops.install` declares (`1c3f19e`). **Review.**
-    - `shard-deploy.sh`: one shared cleanup trap, `xcrun -f swiftc`, and API-only with no dashboard build (`d033d09`); `shard-dev.sh` likewise.
-    - `deploy-preflight.sh`: the `%h` test matches `"$DEST"*`, which also matches sibling folders; use `"$PROD"/*`.
-11. **Smaller items.**
-    - A relative `eventsPath` resolves against the deployment root, not the working directory (`02dbb1d`), with its test.
-    - `MIC_SAMPLE_DIR` defaults to the OS temp directory (`4540ca1`).
-    - `<Toaster closeButton />`.
-    - `schemas/platform.schema.json`: Banter's `Roster.swift` cites it and it doesn't exist. Copy it, retitled.
-    - `control/probe/skill-test.ts`: copy, with generic agent names.
-    - The apple-touch-icon is an SVG, which iOS ignores, and the PNG favicons are missing. Use Banter's own art; `.gitignore` needs an exception for the PNGs.
-    - `Shard` in `shared/types.ts` has an unused `tailscaleServe` and a required `endpoint`; platform has neither.
-    - Five route definitions in `control-plane/src/routes.ts` (`patchGatewayDefaultAgent`, `patchGatewayLastSession`, `patchVoiceSelection`, `postConfigReload`, `postDebugMicSample`) are registered nowhere and platform doesn't have them.
+| Platform change | Banter commit |
+|---|---|
+| Off health state (`c5137cc`) | `4e1ddcb` |
+| Registry write-back and registry tests (`2b5b76b`, `f8995ef`) | `a5bbccf` |
+| Shard memory check and duplicate routes dropped; control test rewrites (`3890c88`, `eb41eaf`, `210393d`, `8b11f21`, `76a2b87`) | `ce5674a` |
+| Relative event-log path (`02dbb1d`) | `3e03a98` |
+| Mic samples in the temp directory (`4540ca1`) | `dde08d3` |
+| Roster schema and design record | `2724ed5` |
+| Probe skill test | `8f5ca6b` |
+| Unused `Shard.tailscaleServe` dropped | `cdaf8a2` |
+| Services page (`09683de`, `0b0333e`, `47f0217`, `f9fc475`) | `8eb9219` |
+| Phosphor icons (`8c9a726`) | `a0fefd8` |
+| Per-part config reload (`7377b62`) | `bf8a220` |
+| Toast close button | `7beef90` |
+| Dashboard test rewrites and chat.md sections (`3a6558a`, `2e77149`, `8003a74`) | `6ecf503` |
+| PNG app icons, Banter's own art | `55ee45e` |
+| Deploys keep voice choices; bash 3.2 (`dadf3c8`, `b53213c`) | `41f170b` |
+| Homebrew tools on managed services' PATH (`8809009`) | `e1a79c3` |
+| Staging under `/var/tmp` (`bf3a0c3`) | `4ee7bd4` |
+| API reference from a pre-commit hook, not the deploy (`b98d076`) | `33974d0` |
+| Installs take only what `ops.install` declares (`1c3f19e`) | `260eb99` |
+| Shard deploy and dev API-only, `xcrun swiftc` (`d033d09`) | `45de02f` |
+| Preflight sibling-directory fix | `ce45495` |
+| `probes/browser-audio` | `3c7e68a` |
 
 ## Banter bugs found in audit
 
-- **The shard install can silently skip.** `shard-install-services.sh` reads `$SRC/control/control-shard/data/registry.json`, which git ignores, so a deploy staged from git has none and the plist and artifact steps are skipped without an error. The shard itself reads `~/services/shard/registry.json`, and `service-control.sh` looks in a third place. Follows from open decision 3.
-- **`BANTER_SHARD_HOST`** lets the shard bind something other than loopback, against its own comment ("loopback, fronted by Tailscale Serve"). Platform hardcodes `localhost`. An unexplained exposure knob.
+Both fixed on 2026-10-31:
+
+- **The shard install could silently skip** (`11f01b7`). It read a registry a staged deploy doesn't have; `scripts/shard-registry.sh` now resolves the registry the way the shard does, and the install fails clearly when there is none.
+- **`BANTER_SHARD_HOST`** was not a stray knob: with Banter's http default, a shard on a second machine reached over a LAN without Tailscale must listen beyond loopback. Its comment and `docs/shard-setup.md` now say so (`cdaf8a2`).
 
 ## Open decisions
 
