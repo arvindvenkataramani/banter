@@ -72,32 +72,9 @@ Banter changes that platform lacks. They stay.
 
 In porting order. Platform commits are named so each port can be diffed.
 
-### 1. Small ports
+### 1. Dependency ranges
 
-None of these depend on live config.
-
-- **Idle loop stop waits for a pass in progress** (`a21c262`). Applies cleanly; skip `media-job.test.ts`.
-- **Chat rebuilds streamed replies from the gateway's increments** (`5109503`).
-  - **What it brings:** `ChatTextAssembler`, the model a fallback ran on, context usage refreshed after the run, and the composer's `name`/`aria-label`/`autocomplete`.
-  - **Merging:** applies with a three-way merge, except one hunk in `session-manager.ts` whose context names `persistLastAgent`.
-  - **Gateway versions:** the assembler handles both delta forms, increments in `deltaText` and the older cumulative `message`, so it holds for any gateway version.
-  - **Docs:** the protocol notes go into `docs/gateway/openclaw/openclaw-gateway-protocol.md`.
-- **Platform's form of shared script and error handling** (`fd9920e`, `ac32bcb`):
-  - `fetchShardRoster` (`shard-client.ts:313`) gets the error snippet, with platform's test.
-  - Registry messages use `JSON.stringify` at every site, including `defaults.network.scheme`.
-  - Platform's `/api/config/reload` and `/api/voice/selection` definitions, which match Banter's handlers where Banter's don't. Banter's reload definition documents `{ok, version}`, and its voice selection lacks `modelPrefs`, `vad`, `turnTaking`, `takeover` and `saveMicSamples`. Regenerate the API reference afterwards.
-  - Scripts:
-    - `SHARD_LABEL` defined once in `deploy-env.sh`.
-    - `platform_stage_dir` without an optional name.
-    - `fluid-build.sh`'s `sw_vers` fallback and Xcode hint.
-    - `fluid-smoke.sh`'s `remove_own`, platform-skip and `/var/tmp` safeguards.
-    - The control install failing loudly when the registry is missing.
-- **Ports written once, in `network.port`** (`f49f429`).
-  - The registry refuses a port in `runner.main` and a `PORT` in `ops.env.variables`, and gives any service with a port an endpoint.
-  - The example registries use `{port}`, and `service-control.sh` passes `PORT`.
-  - Check Banter-only `endpoint-derivation.test.ts` against platform's tests.
-- **Dependency ranges.** The `package.json` files take platform's caret ranges in place of exact pins. Run the full test suites, since the lockfile may resolve differently.
-- **NeuTTS-Air.** `server.py` passes `max_context=2048`, which upstream `neutts` accepts only with platform's `neutts-max-context.patch`. Port the patch and the README, plus `services/tts/kokoro/README.md`.
+The `package.json` files take platform's caret ranges in place of exact pins. Run the full test suites, since the lockfile may resolve differently.
 
 ### 2. Live config
 
@@ -114,6 +91,7 @@ Platform commits: `de44bd6`, `bdeef42`, `b4d13ea`. This is a pass of its own, ta
   - `live-config/{sync,merge,rules,deploy}.ts`, `deploy-config.ts`, `sync-templates.ts`, the pre-commit sync, and their tests.
   - `paths.ts`, `paths.test.ts` and `deploy-env.test.ts`.
   - `platform_detect_node`, `{port}` and `{registry}` in `runner.main`, and the probe's shared token loader (`2a893cf`).
+  - The control and shard installs fail loudly when the live registry is missing.
   - Whether `history.ts`'s git-backed history comes over is a separate choice.
 - **What it replaces in Banter:**
   - `deploy-preserve-config.sh`, its compare-and-prompt, and `--reset-config`.
