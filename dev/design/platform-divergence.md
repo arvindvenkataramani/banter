@@ -13,6 +13,8 @@ Banter matches platform except where a difference exists for one of two reasons:
 
 Everything else converges on platform, with as little adaptation as possible, even where that changes how Banter works. When a difference doesn't fit either reason cleanly, ask whether platform's form serves Banter's goals: an open-source install by other people, on Linux, over plain http on a LAN. Keep Banter's form only where platform's would break one of those goals, and name the goal. A machine runs one node, never both, so no difference is justified by a control plane and a shard sharing a machine.
 
+Banter always keeps its own styling. UI components, layout and behaviour converge, but how Banter looks does not. That covers the palette, type sizes, radii, the user bubble, `.chat-ambient-wash`, the glow overlay colours, and the logo and favicon. When a port brings platform styling with it, keep Banter's values.
+
 UI and features are tested in platform before they are ported, so a clean port of shared chat and voice code needs no human test here. Review is for the Banter-specific delta: code adapted rather than copied, Banter's own surroundings the code relies on (theme tokens, config), flows platform never runs, and the live-state and exposure items in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 Differences the rule doesn't settle are under [Open decisions](#open-decisions), with the position Banter holds until they are decided.
@@ -94,6 +96,7 @@ None of these depend on live config.
   - The registry refuses a port in `runner.main` and a `PORT` in `ops.env.variables`, and gives any service with a port an endpoint.
   - The example registries use `{port}`, and `service-control.sh` passes `PORT`.
   - Check Banter-only `endpoint-derivation.test.ts` against platform's tests.
+- **Dependency ranges.** The `package.json` files take platform's caret ranges in place of exact pins. Run the full test suites, since the lockfile may resolve differently.
 - **NeuTTS-Air.** `server.py` passes `max_context=2048`, which upstream `neutts` accepts only with platform's `neutts-max-context.patch`. Port the patch and the README, plus `services/tts/kokoro/README.md`.
 
 ### 2. Live config
@@ -162,8 +165,6 @@ Banter holds its current position on each until it is decided.
 1. **Naming.**
    - Banter's own names: `BANTER_` env prefixes, `com.banter` bundle and plist IDs, "Banter" in titles and device labels, and generic host and person names in tests, examples and comments (`gpu-machine`, `home-server`, `example`, `alex`).
    - Platform names still in Banter: `@platform/shared`, the `platform_find_jq` helpers, and `PLATFORM_DIR` in `shard-runner.swift`.
-2. **Styling.** Banter's neutral palette, `--radius` 0.75rem, 15px chat type, the neutral user bubble, `.chat-ambient-wash`, the glow overlay colours, and the Banter logo and favicon.
-3. **Exact dependency pins** in Banter's `package.json` files, against platform's caret ranges.
 
 ## Decided
 
@@ -178,4 +179,5 @@ Banter holds its current position on each until it is decided.
 - **The PyTorch Kokoro and NeuTTS-Air adapters stay**, as the Linux speech options. Platform has retired them.
 - **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
+- **Dependencies are pinned only where a specific version is required**, with the reason beside the pin. Everything else takes platform's ranges, and `bun.lock` keeps installs reproducible. The FluidAudio fork pin is required, since Banter's patches depend on it.
 - **OpenClaw tools stay** (see above).
