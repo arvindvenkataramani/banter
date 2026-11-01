@@ -119,7 +119,7 @@ The `control` entry's `unitFile` points at `banter.service.template`, not a plai
 
 The endpoint is derived at load time: `scheme://host:port`. The host comes from the service's `hostId`, or from `listenAddress` if set.
 
-The scheme defaults to `http`. Set `scheme: "https"` when something terminates TLS in front of the service — a reverse proxy, a self-signed cert, Tailscale Serve, any ingress. Nothing else infers it.
+The scheme defaults to `http`. Set `scheme: "https"` when something terminates TLS in front of the service — a reverse proxy, a self-signed cert, Tailscale Serve, any ingress. Nothing else infers it. `https` is the safer choice wherever you can have it, and a phone needs it to use the microphone; see [Why https](remote-access.md#why-https).
 
 If most of your services are https, set it once for the whole registry:
 

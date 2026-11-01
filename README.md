@@ -302,6 +302,7 @@ This ships with sane defaults for local/Tailscale use. A few things worth knowin
 
 - **Unauthenticated gateway on a bare deploy.** If `integrations.openclaw.gateway.token` is left as `"${OPENCLAW_GATEWAY_TOKEN}"` and the deployed service has no env file loading that variable, the placeholder resolves to nothing and the gateway connection goes unauthenticated (see [Install](#install) above). Paste the real token for any deployed run, or confirm your env file is actually loaded.
 - **CORS on STT/TTS services.** The browser calls your speech servers cross-origin from the dashboard's own origin, so each one needs its CORS origins set to match — see the "CORS" section in [docs/configuration.md](docs/configuration.md). Leaving these wide open lets any page in a user's browser call your speech servers.
+- **Plain http.** Banter defaults to `http`, which suits one machine or a trusted home network. Beyond that, use `https`: see [Why https](docs/remote-access.md#why-https).
 - **Remote dev access.** The dev server (`dashboard/vite.config.ts`) only accepts `localhost` by default — reaching it from another device (e.g. over Tailscale, for testing on a phone) needs a hostname added to Vite's `allowedHosts`. Add it locally, e.g.:
   ```ts
   server: {
