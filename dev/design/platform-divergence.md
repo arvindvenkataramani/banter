@@ -4,7 +4,7 @@ Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why
 
 Last audited: 2026-10-31, against platform `dev` at `ac32bcb` (merged to `main` as `cd91d71`) and Banter `c5b01dc`, then rechecked on 2026-11-01 against `0b16270`, which adds `b4d13ea`, `2bab179` and `0b16270`, this time including `docs/`. Of 392 files present in both repos (excluding `dev/`), 157 differ: 61 are files touched by platform's nine commits since `6703915`, and the other 96 all fall into a bucket below, apart from the gaps listed under [Banter is behind](#banter-is-behind-port-from-platform). An earlier audit the same day, against `6703915`, found the ports in the table below, and they have all landed.
 
-**Porting rubric (Arvind, 2026-10-31).** Keep adaptation to a minimum and do things the way platform does wherever possible, even when that changes how Banter works. When a difference doesn't fit a bucket cleanly, ask whether platform's form serves Banter's goals: an open-source install by other people, on Linux, over plain http on a LAN. Keep Banter's form only where platform's would break one of those goals, and name the goal. A machine runs one node, never both: no Banter difference is justified by a control plane and a shard sharing a machine.
+**Porting rubric (2026-10-31).** Keep adaptation to a minimum and do things the way platform does wherever possible, even when that changes how Banter works. When a difference doesn't fit a bucket cleanly, ask whether platform's form serves Banter's goals: an open-source install by other people, on Linux, over plain http on a LAN. Keep Banter's form only where platform's would break one of those goals, and name the goal. A machine runs one node, never both: no Banter difference is justified by a control plane and a shard sharing a machine.
 
 ## The rule
 
@@ -13,7 +13,7 @@ Banter matches platform except where a difference exists for one of two reasons:
 1. **Banter leaves out a platform feature.** Banter is platform's chat, voice and services system and nothing else. Home, media, workspace, prompts, the vault and Obsidian, journaling and rituals, the trace panel, and the chat controls that live on other pages stay out.
 2. **Banter is meant to become harness-agnostic.** Shared code should not assume one agent harness or gateway. Harness-specific tools, such as the OpenClaw plugin and probe, stay (see [OpenClaw support stays](#openclaw-support-stays)).
 
-Everything else converges on platform. Arvind tests UI and features in platform before they are ported, so a clean port of shared chat and voice code needs no human test here. Review is for the Banter-specific delta: code adapted rather than copied, Banter's own surroundings the code relies on (theme tokens, config), flows platform never runs, and the live-state and exposure items in [CONTRIBUTING.md](../../CONTRIBUTING.md).
+Everything else converges on platform. UI and features are tested in platform before they are ported, so a clean port of shared chat and voice code needs no human test here. Review is for the Banter-specific delta: code adapted rather than copied, Banter's own surroundings the code relies on (theme tokens, config), flows platform never runs, and the live-state and exposure items in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 This supersedes the migration plan's "Banter's UI stays as it is". The services page and other shared UI converge too.
 
@@ -180,7 +180,7 @@ Both fixed on 2026-10-31:
 
 ## Open decisions
 
-Each needs Arvind's call. Until then Banter keeps its current position.
+Each needs the maintainer's decision. Until then Banter keeps its current position.
 
 1. **Naming.** `BANTER_` env prefixes, `com.banter` bundle and plist IDs, "Banter" in titles and device labels, and generic host and person names in tests, examples and comments (`gpu-machine`, `home-server`, `example`, `alex`). Some platform names remain (`@platform/shared`, the `platform_find_jq` helpers, `PLATFORM_DIR` in `shard-runner.swift`).
 2. **Styling.** Banter's neutral palette, `--radius` 0.75rem, 15px chat type, the neutral user bubble, `.chat-ambient-wash`, the glow overlay colours, and the Banter logo and favicon. UI icons follow platform (item 8 above).

@@ -4,7 +4,7 @@ Changes in Banter (`~/Code/banter`) that platform (`~/Code/airavatha/sutradhara/
 
 Rechecked against platform `dev` at `ac32bcb` on 2026-10-31. The full register of differences is [dev/design/platform-divergence.md](../design/platform-divergence.md).
 
-Most of these exist because Banter has to run on setups platform doesn't: Linux, an install somewhere other than the default, and users who aren't Arvind.
+Most of these exist because Banter has to run on setups platform doesn't: Linux, an install somewhere other than the default, and other people's machines and habits.
 
 ## Already taken
 
