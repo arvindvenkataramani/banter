@@ -64,9 +64,8 @@ Banter changes that platform lacks. They stay, and are offered back in [banter-a
 
 ## Banter is behind: port from platform
 
-Nothing from the 2026-10-31 audit is outstanding except:
+Every code change the 2026-10-31 audit found has been ported (see the table). Still open:
 
-- **FluidAudio pin** `568fef9f` (`2f7ef71`), the LuxTTS mid-phrase pause fix, and the Pocket-TTS tokenizer path (`d880707`): committed once `scripts/fluid-smoke.sh` passes.
 - **Docs were not audited.** The audit compared code, scripts and config, not `docs/`. Platform's tests cite `docs/components/voice-turn-taking.md` and `docs/pages/voice-interface.md`, which Banter lacks; the next audit should compare `docs/` too.
 - **Lint:** `dashboard/src/lib/voice/turn-manager.ts` has two `prefer-const` errors and `lib/media-engine.ts` an unused lint exemption; check whether platform has fixed them.
 
@@ -96,6 +95,7 @@ Nothing from the 2026-10-31 audit is outstanding except:
 | Shard deploy and dev API-only, `xcrun swiftc` (`d033d09`) | `45de02f` |
 | Preflight sibling-directory fix | `ce45495` |
 | `probes/browser-audio` | `3c7e68a` |
+| FluidAudio pin and tokenizer path (`2f7ef71`, `d880707`) | c527af9 |
 
 ## Banter bugs found in audit
 
