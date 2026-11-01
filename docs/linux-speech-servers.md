@@ -40,7 +40,7 @@ Using any of these with Banter means writing (or finding) an adapter that puts t
 
 ### faster-whisper servers (STT)
 
-[faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, CPU or CUDA) has no server of its own; Speaches above is one wrapper. [models.md](models.md#speech-to-text-models-recommended) lists it and other wrappers.
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, CPU or CUDA) has no server of its own; Speaches above is one wrapper. [models.md](models.md#speech-to-text-models) lists it and other wrappers.
 
 ### whisper.cpp (STT)
 

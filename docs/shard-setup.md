@@ -6,7 +6,7 @@ A shard is a **full second instance of the control plane** running on another ma
 
 Nothing caps how many you add: the registry takes a list of hosts, and the primary polls each one independently. This page describes adding one; repeat it per machine.
 
-On top of that base, the shard adds idle eviction and its own Tailscale Serve management.
+On top of that base, the shard supports idle eviction, per service through the registry's `lifecycle` settings, and its own Tailscale Serve management.
 
 The point is to run services on whatever machine suits them — a GPU box, a Mac with a Neural Engine, a machine that is only sometimes on — while the control plane lives on something small and always-on. Speech models are the usual case here, but the registry has no notion of what a service does: anything with an HTTP endpoint and a health path works the same way.
 
@@ -22,22 +22,20 @@ A Linux shard needs a systemd counterpart to that script — a unit where it ins
 
 ## On the worker machine
 
-**1. Install the model servers** you intend to run there. See [`services/README.md`](../services/README.md).
+**1. Install the services** you intend to run there, such as speech servers. See [`services/README.md`](../services/README.md).
 
 **2. Create the shard's registry:**
 
 ```bash
-mkdir -p ~/services/shard
+mkdir -p ~/services/banter
 jq --arg home "$HOME" \
   '(.services[] | select((.ops.env.workingDirectory? // "") | startswith("~/")) | .ops.env.workingDirectory) |= ($home + .[1:])' \
-  control/control-shard/data/registry.example.json > ~/services/shard/registry.json
+  control/control-shard/data/registry.example.json > ~/services/banter/registry.json
 ```
 
-That destination is the shard's default `BANTER_SHARD_REGISTRY_PATH`, which is a different directory from where the example lives in the repo — a copy across directories, not a rename in place. The `jq` filter is the same one `scripts/install.sh` uses to expand a leading `~/` in each service's `ops.env.workingDirectory` to your home directory — a plain `cp` would leave the literal `~/` in place, which nothing downstream expands.
+That destination is the shard's live registry, at the top of its deployment folder (`$BANTER_SHARD_PROD`, `~/services/banter` by default; one node per machine, so the shard shares the plane's default). It is a copy across directories, not a rename in place. The `jq` filter is the same one `scripts/install.sh` uses to expand a leading `~/` in each service's `ops.env.workingDirectory` to your home directory — a plain `cp` would leave the literal `~/` in place, which nothing downstream expands.
 
-Edit the host ids, hostnames, and service entries to match what actually runs there. The registry's `type` must be `"shard"`.
-
-Older macOS installs used `~/Services` with a capital S. That still works — the shard falls back to it when no lowercase `~/services` exists — but lowercase is the default now, so both nodes use one spelling on any filesystem.
+Edit the host ids, hostnames, and service entries to match what runs there; the example's service entries and origins are placeholders to replace. The registry's `type` must be `"shard"`. Without a live registry, the deploy seeds one from the example.
 
 **3. Deploy:**
 
@@ -45,7 +43,7 @@ Older macOS installs used `~/Services` with a capital S. That still works — th
 scripts/shard-deploy.sh
 ```
 
-This copies files into place, compiles and code-signs the `shard-runner` Swift supervisor, and installs the launchd agent. It is short enough to read, and it is where the exact commands live — including the `swiftc` invocation, if you want to run the steps by hand.
+This merges the example registry into the live one (see [live-config](design/live-config.md#deploy)), copies files into place, compiles and code-signs the `shard-runner` Swift supervisor, and installs the launchd agent. It is short enough to read, and it is where the exact commands live — including the `swiftc` invocation, if you want to run the steps by hand.
 
 The launchd agent is generated, not hand-edited. launchd will not expand `~` or `$HOME` in a plist, so the installed file has to carry absolute paths — but the tracked one does not. `control/control-shard/ops/com.banter.control-shard.plist.template` carries a `__HOME__` placeholder, and the deploy substitutes your home directory into it before installing the result.
 
@@ -79,9 +77,10 @@ All optional; the shard runs without any of them.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BANTER_SHARD_ROOT` | `~/services` (falls back to `~/Services` if only that exists) | Data root for the two paths below |
-| `BANTER_SHARD_REGISTRY_PATH` | `$BANTER_SHARD_ROOT/shard/registry.json` | Registry file |
-| `BANTER_SHARD_EVENTS_PATH` | `$BANTER_SHARD_ROOT/banter/logs/events.jsonl` | Event log |
+| `BANTER_SHARD_PROD` | `~/services/banter` | Deployment folder |
+| `BANTER_SHARD_LIVE_DIR` | `$BANTER_SHARD_PROD` | Live directory: `registry.json`, `shipped/`, `state/` |
+| `BANTER_SHARD_REGISTRY_PATH` | `$BANTER_SHARD_LIVE_DIR/registry.json` | Registry file |
+| `BANTER_SHARD_EVENTS_PATH` | `$BANTER_SHARD_PROD/logs/events.jsonl` | Event log |
 | `BANTER_SHARD_PORT` | `4200` | HTTP server port |
 | `BANTER_SHARD_HOST` | `localhost` | Bind address. Set it (for example to `0.0.0.0`) only when the control plane reaches this shard over a LAN without Tailscale; see [Hardening](../README.md#hardening) |
 | `BANTER_HEALTH_INTERVAL_MS` | `intervals.healthMs` in `registry.json`, else `900000` | Health check interval |
@@ -93,14 +92,14 @@ The three numeric settings must be positive integers. An unusable value stops st
 
 ## Networking
 
-The primary reaches the shard by hostname, and the **browser** reaches the worker's model servers directly — so both must be routable from where you use the dashboard. A tailnet is the easy answer; a LAN works too.
+The primary reaches the shard by hostname, and the **browser** reaches the worker's model servers directly — so both must be routable from where you use the dashboard. A LAN works over plain http; a tailnet is the recommended way to get https, which voice on a phone needs (see [remote-access.md](remote-access.md)).
 
-The worker's model servers need the dashboard's origin in their CORS allowlists, or voice fails with an error the browser refuses to explain. See [configuration.md](./configuration.md#cors).
+The worker's model servers need the dashboard's origin in their CORS allowlists, or voice fails with an error the browser refuses to explain. The shard's example registry carries placeholder https tailnet origins in those lists; replace them with the origins you open the dashboard from, and add any other origin, such as `http://<lan-ip>:4200` for a LAN address. See [configuration.md](./configuration.md#cors).
 
 ---
 
 ## Known limits
 
-The primary polls the shard and the shard cannot push, so urgent events — memory pressure, load failures — surface at the next poll rather than immediately. Cold-start times for demand-loaded models have never been benchmarked, which makes the default idle timeouts estimates.
+The primary polls the shard and the shard cannot push, so urgent events — memory pressure, load failures — surface at the next poll rather than immediately. Cold-start times for demand-loaded models vary by model and machine, so idle timeouts are estimates to tune.
 
 For the design detail, see [control-shard.md](./control-shard.md).

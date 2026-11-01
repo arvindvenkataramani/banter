@@ -47,5 +47,5 @@ Disabled services get `health: "disabled"` and `lastEvent: null` without event l
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `BANTER_CONTROL_PORT` | `4200` (prod) / `4201` (dev) | HTTP port |
-| `BANTER_REGISTRY_PATH` | `control/control-plane/data/registry.json` | Registry file |
+| `BANTER_REGISTRY_PATH` | `$BANTER_LIVE_DIR/registry.json`, the top of the deployment folder (`$BANTER_PROD`, `~/services/banter` by default) | Registry file |
 | `BANTER_EVENTS_PATH` | `logs/events.jsonl` inside the deployment | Event log |

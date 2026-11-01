@@ -45,8 +45,9 @@ launchd deploy path, and the free-memory probe. See
 browser — the control plane never touches audio.
 
 **Model servers.** STT and TTS processes, each exposing an OpenAI-compatible
-HTTP API. Banter ships adapter code for several (see `services/`) but starts
-nothing itself; a registry entry points at whatever you have installed.
+HTTP API. The repo contains adapter code for several (see `services/`), but
+Banter starts only what a registry entry declares; an entry points at whatever
+you have installed.
 
 **OpenClaw gateway.** Not part of banter. The LLM lives behind it, and banter
 talks to it over an authenticated WebSocket. The only coupling is a URL and a
@@ -99,14 +100,17 @@ See [components/service-lifecycle.md](../components/service-lifecycle.md) and
 
 ## Network model
 
-The default and only configuration we run is a [Tailscale](https://tailscale.com/)
-tailnet, with services exposed via `tailscale serve`. The code does not require
-it.
+Banter defaults to plain `http` and needs no particular network: machines on a
+LAN or a single machine work as they are. `https` is optional, and voice on a
+phone needs it, since browsers grant the microphone only to a secure page
+(`https`, or `localhost`). [Tailscale](https://tailscale.com/) with
+`tailscale serve` is the recommended way to get `https` without managing
+certificates; see [../remote-access.md](../remote-access.md).
 
 A service's endpoint is derived at load time from its host, its port, and how it
 is exposed:
 
-- `tailscaleServe: true` — the platform registers the service with `tailscale
+- `tailscaleServe: true` — Banter registers the service with `tailscale
   serve` on start and tears it down on stop. Serve terminates TLS, so the
   endpoint is `https://`.
 - Otherwise — nothing is registered, `tailscale` is never invoked, and the
@@ -117,9 +121,9 @@ is exposed:
 
 The control plane reaches a shard by hostname and the browser reaches model
 servers directly, so both need to be routable from wherever you use the
-dashboard. A tailnet handles that; so does a LAN, at the cost of owning the
-transport security Serve would otherwise provide. Nothing here belongs on the
-public internet.
+dashboard. A LAN handles that over `http`; a tailnet handles it with `https`
+and encrypted transport, which on a LAN you would otherwise own yourself.
+Nothing here belongs on the public internet.
 
 Model servers keep CORS allowlists naming the dashboard's origin. Change the
 port the dashboard runs on and voice breaks with an error the browser refuses to
@@ -129,7 +133,9 @@ explain.
 
 ## Configuration
 
-Two files, both per-deployment and both gitignored:
+Two files per node, both live at the top of its deployment folder
+(`~/services/banter` by default) and neither tracked by the repo; deploys merge
+the repo's examples into them (see [../design/live-config.md](../design/live-config.md)):
 
 - **`registry.json`** — hosts, capabilities, services. Includes the control
   plane's own entry, from which it reads its listening port.
@@ -150,10 +156,11 @@ readable and editable with an editor, which matters when a service will not
 start at two in the morning.
 
 **No service discovery.** Services are declared, not discovered. A machine that
-appears on the tailnet does not automatically become part of the platform.
+appears on the network does not automatically become part of Banter.
 
-**No multi-user model.** One operator, one tailnet. Authentication is the
-gateway's device pairing, and the tailnet boundary is the security boundary.
+**No multi-user model.** One operator. Authentication is the gateway's device
+pairing, and the network boundary (a LAN, or a tailnet) is the security
+boundary.
 
 **No cloud dependency.** Speech models run on your hardware. The only external
 dependency is whatever the OpenClaw gateway itself talks to.
@@ -173,6 +180,7 @@ session model, and the streaming event shapes. It is the most complete
 description of what banter actually requires from an agent backend, and the
 right starting point for replacing it with something else.
 
-For operating it: the README's configuration and deployment sections, then
+For operating it: the README's configuration and deployment sections,
+[../OPERATIONS.md](../OPERATIONS.md), then
 [components/health-checker.md](../components/health-checker.md) and
 [components/event-log.md](../components/event-log.md).

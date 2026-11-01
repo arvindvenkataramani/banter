@@ -1,35 +1,39 @@
 # Text to speech
 
-What turns the agent's reply into audio. The shard registers the TTS services
-below; voice mode's active service, model and voice are `voice.tts.selection`
-in `config.json`, changed through `PATCH /api/voice/selection`, never by
-editing the file.
+What turns the agent's reply into audio. Voice mode's active service, model and
+voice are `voice.tts.selection` in `config.json`, changed through
+`PATCH /api/voice/selection`, never by editing the file. A TTS service is any
+registry entry with `capabilityId: "tts"` that answers `/v1/audio/speech`; the
+roster in the registry says which models and voices it offers.
+
+The repo contains these adapters, which you can register:
 
 | Service | Models | Role |
 |---|---|---|
 | `fluid-tts` | Pocket-TTS, Kokoro (ANE), LuxTTS | Swift server from the `services/fluid` package, CoreML/ANE |
-| `tts-kokoro` | Kokoro-82M | PyTorch server in `services/tts/kokoro`, the speech option on Linux |
+| `tts-kokoro` | Kokoro-82M | PyTorch server in `services/tts/kokoro`, which runs on Linux |
 | `tts-neutts-air` | NeuTTS-Air | PyTorch server in `services/tts/neutts-air`, with voice cloning |
 
-All of them expose OpenAI-compatible `/v1/audio/speech`, so failover needs no
-client change. Install and registry snippets are in
+All of them expose OpenAI-compatible `/v1/audio/speech`, so switching between
+them needs no client change. Install and registry snippets are in
 [`../tts-setup.md`](../tts-setup.md) and
-[`../linux-speech-servers.md`](../linux-speech-servers.md); the shard registry
-holds the service definitions and starts them on demand.
+[`../linux-speech-servers.md`](../linux-speech-servers.md); the registry holds
+the service definitions, and each entry's `lifecycle` settings say whether it
+starts at boot or on first use.
 
-`fluid-tts` listens on 8769. It is built against a FluidAudio fork carrying
-Banter's Pocket-TTS patches, see `services/fluid/patches/README.md`. An upgrade
-that skips reapplying the patches is silent: the service starts and serves
-degraded output.
+`fluid-tts` listens on the port in its entry's `network.port`. It is built against
+a FluidAudio fork carrying Banter's Pocket-TTS patches, see
+`services/fluid/patches/README.md`. An upgrade that skips reapplying the patches
+is silent: the service starts and serves degraded output.
 
-Kokoro-82M is the fastest engine measured and the cheapest to keep resident,
+Kokoro-82M measured as the fastest engine and the cheapest to keep resident,
 which suits it to high-volume output where voice identity does not matter.
-Cloned voices in voice mode go to Pocket-TTS or NeuTTS-Air.
+Cloned voices go to engines that support cloning, such as Pocket-TTS or NeuTTS-Air.
 
 ## Voices
 
 Preset voices come with the model. Cloned voices are conditioned on reference
-clips, held as WAV plus transcript pairs in the directory the shard registry's
+clips, held as WAV plus transcript pairs in the directory the registry's
 roster names, the same set across every cloning engine so quality is comparable
 between them. [`../voices-and-models.md`](../voices-and-models.md) describes
 how a voice, a model and a provider relate.

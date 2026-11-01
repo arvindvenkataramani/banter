@@ -118,21 +118,21 @@ Requires `onnxruntime-web@1.18.0` with the `ort.all` bundle (`onnxruntime-web/ex
 
 Status: implemented and working.
 
-### STT: Parakeet (`stt-client.ts`)
+### STT client (`stt-client.ts`)
 
-`transcribeAudio(wavBytes)` — POST to Parakeet STT endpoint (on the shard host). Returns transcript text.
+`transcribeAudio(wavBytes)` — POST to the STT service's endpoint. Returns transcript text.
 
-The endpoint URL comes from voice config / service registry. Service is demand-loaded on the shard.
+The endpoint URL comes from voice config and the service registry. Whether the service starts at boot or on first use is that registry entry's `lifecycle`.
 
-`human-voice.ts`'s `cleanTranscript` strips filler words (`uh`/`um`) from the committed transcript before it reaches the rest of the pipeline, once per committed utterance. Disfluency suppression is model-specific — `parakeet-unified-0.6b` drops fillers and hesitation repeats on its own, `parakeet-tdt-v3` transcribes them verbatim — so this keeps the dashboard's output consistent regardless of which model is loaded.
+`human-voice.ts`'s `cleanTranscript` strips filler words (`uh`/`um`) from the committed transcript before it reaches the rest of the pipeline, once per committed utterance. Disfluency suppression is model-specific — some STT models drop fillers and hesitation repeats on their own and others transcribe them verbatim — so this keeps the dashboard's output consistent regardless of which model is loaded.
 
 It does not strip `<unk>` tokens. `MicCapture` writes each audio chunk exactly once and VAD state resets between utterances, so the mic loop should never hand STT the kind of corrupted or state-leaked audio that produces `<unk>`; if `<unk>` ever appears in a transcript, that's a signal of an audio-pipeline bug to fix at the source, not text to mask.
 
-Status: implemented and working when Parakeet is running.
+Status: implemented and working when the registered STT service is running.
 
 ### TTS: Streaming backend (`streaming-backend.ts`, `playback-engine.ts`)
 
-TTS requests stream audio chunks from a demand-loaded provider on the shard host. The `PlaybackEngine` feeds these into either MSE streaming or a blob queue, depending on browser support.
+TTS requests stream audio chunks from the registered TTS service. The `PlaybackEngine` feeds these into either MSE streaming or a blob queue, depending on browser support.
 
 Text → TTS path:
 1. `text-chunker.ts` splits LLM output into speakable chunks at sentence boundaries
@@ -140,7 +140,7 @@ Text → TTS path:
 3. `streaming-backend.ts` POSTs each chunk to the TTS endpoint
 4. `PlaybackEngine` queues and plays audio chunks in order
 
-Status: implemented. The example registries register `fluid-tts` (TTS) and `fluid-stt` (STT). `tts-kokoro`, `tts-neutts-air` and `stt-whisper` ship as optional adapters under `services/` that you add to the registry yourself. The registry is the live list — check it rather than this line.
+Status: implemented. Which STT and TTS services exist is whatever the registry lists; see [../models.md](../models.md) for adapters you can register.
 
 ### Streamed audio seams
 

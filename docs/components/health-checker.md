@@ -20,12 +20,12 @@ For each enabled service: fetch `endpoint + healthPath` with a timeout. Map the 
 
 Disabled services are skipped entirely.
 
-The Tailscale HTTPS endpoint is probed first. If that fails and the service
+The service's derived endpoint (`scheme://host:port`, `http` unless the entry sets `scheme: "https"`) is probed first. If that fails and the service
 is local to the checking node, localhost is tried as a fallback: reachable
-there but not over Tailscale means the process is up and Serve is broken, so
+there but not at the derived endpoint (for example, behind a Tailscale Serve binding that is broken) means the process is up and routing is broken, so
 the outcome is `service.degraded` rather than `service.down`.
 
-"Healthy" therefore means reachable by the rest of the platform, not merely
+"Healthy" therefore means reachable by the rest of Banter, not merely
 that the process is alive.
 
 ---

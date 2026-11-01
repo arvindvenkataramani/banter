@@ -2,7 +2,7 @@
 
 Which speech-to-text and text-to-speech models to run, and what each one needs. For ready-to-copy registry/config snippets once you've chosen, see [tts-setup.md](tts-setup.md) and [stt-setup.md](stt-setup.md); for what those registry fields mean in general, see [configuration.md](configuration.md); for the adapter code itself, see [../services/README.md](../services/README.md).
 
-Most of what this repo builds and ships — the fluid servers, `stt/whisper`, and every MLX-based option (`parakeet-mlx-fastapi`, `mlx-audio`) — is Apple Silicon only. Each model and adapter below says so where it applies. For a Linux install, see [docs/linux-speech-servers.md](linux-speech-servers.md).
+Most of what this repo builds — the fluid servers, `stt/whisper`, and every MLX-based option (`parakeet-mlx-fastapi`, `mlx-audio`) — is Apple Silicon only. Each model and adapter below says so where it applies. For a Linux install, see [docs/linux-speech-servers.md](linux-speech-servers.md).
 
 Neither the model nor the framework matters to Banter. Any server is usable if it:
 
@@ -14,13 +14,13 @@ Anything satisfying that can be registered, health-checked, and demand-started t
 
 ## Quick start
 
-**On Apple Silicon**, the shipped registry and config examples already default to `fluid-stt`/`fluid-tts` — see [`services/fluid`](../services/fluid/README.md) for what they offer. `scripts/install.sh` offers to build them, or run `scripts/fluid-build.sh` yourself; nothing in this section is needed on that path. See [docs/voices-and-models.md](voices-and-models.md) to add or change a voice or model on top of it.
+**On Apple Silicon**, one option is the fluid servers, `fluid-stt` and `fluid-tts` — see [`services/fluid`](../services/fluid/README.md) for what they offer. The example registry shows them registered; `scripts/install.sh` offers to build them, or run `scripts/fluid-build.sh` yourself. Nothing in this section is needed if you use them. See [docs/voices-and-models.md](voices-and-models.md) to add or change a voice or model on top of it.
 
 **On Linux**, the fluid servers don't build — the package targets macOS 15+ on Apple Silicon only. See [docs/linux-speech-servers.md](linux-speech-servers.md) for what runs there instead.
 
-The Kokoro + Parakeet pair below is worth knowing regardless of the above: Kokoro runs on Linux as well as Apple Silicon (see its Platform column below); `parakeet-mlx-fastapi` is Apple Silicon (MLX) only, same as the fluid servers. Both install with pip, both download their own models on first run, and neither needs a compile step. See [Text-to-speech](#text-to-speech-models-recommended) and [Speech-to-text](#speech-to-text-models-recommended) below for what else is available.
+The Kokoro + Parakeet pair below is another option: Kokoro runs on Linux as well as Apple Silicon (see its Platform column below); `parakeet-mlx-fastapi` is Apple Silicon (MLX) only, same as the fluid servers. Both install with pip, both download their own models on first run, and neither needs a compile step. See [Text-to-speech](#text-to-speech-models) and [Speech-to-text](#speech-to-text-models) below for what else is available.
 
-Both sections end with a service entry to add to `registry.json` and start once by hand — `loadStrategy: "demand"` means Banter starts it on first use and unloads it after thirty minutes idle; set `"autoStart": true` instead if you would rather it came up with the control plane.
+Both sections end with a service entry to add to `registry.json` and start once by hand — `loadStrategy: "demand"` with `idleUnload` means Banter starts it on first use and unloads it after the `idleTimeout` (thirty minutes here) idle; `"autoStart": true` has it come up with the control plane instead.
 
 ### Kokoro (TTS) — Linux and Apple Silicon
 
@@ -49,7 +49,7 @@ Add this entry to `registry.json`'s `services`:
 }
 ```
 
-Then add a `roster.providers` entry for it in `registry.json` — alongside the `fluid-tts`/`fluid-stt` entries already there, not replacing them — naming its model and at least one preset voice, and point `config.json`'s `voice.tts.selection` at it:
+Then add a `roster.providers` entry for it in `registry.json` — a new key in that object, not replacing the providers already there — naming its model and at least one preset voice, and point `config.json`'s `voice.tts.selection` at it:
 
 ```json
 "roster": {
@@ -161,11 +161,11 @@ General-purpose runtime servers worth knowing about:
 
 A server's platform restriction comes from what it's built on, not from the model it happens to be serving.
 
-## Text-to-speech models recommended
+## Text-to-speech models
 
 One row per model, linked to its model card or source. For comparative quality/speed data across TTS models and to discover new ones suitable for you, see [5uck1ess/tts-bench](https://github.com/5uck1ess/tts-bench), a third-party benchmark suite. For registry/config snippets to actually set one of these up, see [tts-setup.md](tts-setup.md).
 
-These models are recommended because they're suitable for realtime or near-realtime use. There are models that generate better audio but they're not usable in a voice conversation context.
+The models below are suitable for realtime or near-realtime use. There are models that generate better audio but they're not usable in a voice conversation context.
 
 | Model | Platform | Served via | Notes |
 |---|---|---|---|
@@ -190,7 +190,7 @@ These models are recommended because they're suitable for realtime or near-realt
 
 ---
 
-## Speech-to-text models recommended
+## Speech-to-text models
 
 One row per model, each with more than one server option. For registry/config snippets to actually set one of these up, see [stt-setup.md](stt-setup.md).
 
@@ -200,7 +200,7 @@ One row per model, each with more than one server option. For registry/config sn
 | [Whisper](https://huggingface.co/openai/whisper-large-v3-turbo) | `stt/whisper` is Apple Silicon (MLX); faster-whisper and whisper.cpp run on Linux too | this repo's adapter ([`stt/whisper`](../services/stt/whisper)), faster-whisper, or whisper.cpp | 809M parameters (large-v3-turbo). 99 languages. A pruned variant of large-v3 — fewer decoder layers, faster inference, slight accuracy loss. |
 | Anything OpenAI-compatible | whatever the server runs on | either | Any server that exposes `POST /v1/audio/transcriptions` plus a health endpoint meets the contract, whatever model it's actually running. |
 
-**Parakeet.** Two ways to run it on Apple Silicon — `parakeet-mlx-fastapi` (third-party, pip, MLX; the Quick Start's pip alternative) or `fluid-stt` (this repo's adapter, the default in the shipped registry examples; build with `scripts/fluid-build.sh`, see [`services/fluid`](../services/fluid/README.md)). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path, and also serves Parakeet Unified and Nemotron's streaming variants alongside the batch model. For Linux, see [docs/linux-speech-servers.md](linux-speech-servers.md).
+**Parakeet.** Two ways to run it on Apple Silicon — `parakeet-mlx-fastapi` (third-party, pip, MLX; the Quick Start's pip alternative) or `fluid-stt` (this repo's adapter; build with `scripts/fluid-build.sh`, see [`services/fluid`](../services/fluid/README.md)). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path, and also serves Parakeet Unified and Nemotron's streaming variants alongside the batch model. For Linux, see [docs/linux-speech-servers.md](linux-speech-servers.md).
 
 **Whisper.** [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) is the checkpoint `stt/whisper` (this repo's adapter, built on `mlx-whisper`, Apple Silicon only) defaults to. Choose a different Whisper checkpoint with `--model` to trade accuracy for speed and memory.
 

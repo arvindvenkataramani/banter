@@ -1,6 +1,6 @@
 # Component: Service Lifecycle
 
-*How the platform starts, stops, monitors, and recovers services. This is the unified model — both the control plane and the shard use the same shared module.*
+*How Banter starts, stops, monitors, and recovers services. This is the unified model — both the control plane and the shard use the same shared module.*
 
 ---
 
@@ -12,11 +12,11 @@ Three launchers exist:
 
 | Launcher | What it starts | Tailscale Serve for |
 |----------|---------------|-------------------|
-| `control-runner.sh` | Control plane (bun) | Port 4200 on Pi |
-| `shard-runner` (Swift) | Control shard (bun) | Port 4200 on Mac |
+| `control-runner.sh` | Control plane (bun) | The control port, when Tailscale is present |
+| `shard-runner` (Swift) | Control shard (bun) | The shard port, when Tailscale is present |
 | **Shared lifecycle module** | All application services | Each service's port |
 
-The runners (shell/Swift) are entry points called by the OS service manager (systemd/launchd). They own serve for the platform processes they launch. The shared lifecycle module runs inside those platform processes and owns serve for application services.
+The runners (shell/Swift) are entry points called by the OS service manager (systemd/launchd). They own serve for the Banter processes they launch. The shared lifecycle module runs inside those Banter processes and owns serve for application services.
 
 ---
 
@@ -28,7 +28,7 @@ A single TypeScript module in `control/shared/src/` used by both the control pla
 - Health polling during startup
 - Tailscale Serve setup/teardown (atomic with process lifecycle)
 - Crash detection via held child references
-- Restart with backoffex
+- Restart with backoff
 - Idle eviction
 - Lifecycle locking (one operation at a time per service)
 
@@ -63,7 +63,7 @@ For services without `tailscaleServe`, steps 3, 7, and 8 are skipped.
 
 The lifecycle module derives commands from the runner configuration in the registry:
 
-**`process`** — platform-managed. The module spawns the process directly via `Bun.spawn`, holds the child reference for crash detection. Stop is by terminating the child process. Environment variables and working directory come from `ops.env`.
+**`process`** — Banter-managed. The module spawns the process directly via `Bun.spawn`, holds the child reference for crash detection. Stop is by terminating the child process. Environment variables and working directory come from `ops.env`. `main` marks the port as `{port}` (filled from `network.port`) and may use `{registry}` (the path of the registry the node loaded); a literal port is refused at load.
 
 **`systemd`** — OS-managed on Linux. Start/stop/restart/enable/disable derived from the unit name: `systemctl --user {action} {unit}`. Install/uninstall copies the unit file and reloads the daemon.
 
@@ -97,7 +97,7 @@ On unexpected process exit, if `restartOnCrash` is true:
 
 When `restartOnCrash` is false, a crash emits `service.crashed` and the service stays down until manually restarted.
 
-The restart counter and backoff state are in-memory — lost on platform restart. This is acceptable: the platform restarting is itself a recovery event; services with `autoStart: true` will be started fresh.
+The restart counter and backoff state are in-memory — lost on restart. This is acceptable: the control plane or shard restarting is itself a recovery event; services with `autoStart: true` will be started fresh.
 
 ### Interaction with idle eviction
 
@@ -136,7 +136,7 @@ Disabled services are skipped.
 
 ### Endpoint resolution
 
-Primary: Tailscale HTTPS endpoint (`https://HOSTNAME:PORT/HEALTHPATH`). If primary fails and the service is local to the checking node, fallback to `http://localhost:PORT/HEALTHPATH`. If fallback succeeds, emit `service.degraded` — the process is alive but Tailscale routing is broken.
+Primary: the derived endpoint (`scheme://HOSTNAME:PORT/HEALTHPATH`, `http` unless the entry sets `scheme: "https"`). If primary fails and the service is local to the checking node, fallback to `http://localhost:PORT/HEALTHPATH`. If fallback succeeds, emit `service.degraded` — the process is alive but the derived endpoint (for example a Tailscale Serve binding) is not reachable.
 
 ### Consecutive failure threshold
 
@@ -163,7 +163,7 @@ All services in a round are checked in parallel (`Promise.allSettled`). The next
 
 ## Idle eviction
 
-For services with `lifecycle.idleUnload: true`, the platform monitors activity and stops services that have been idle too long.
+For services with `lifecycle.idleUnload: true`, Banter monitors activity and stops services that have been idle too long.
 
 ### Activity tracking
 
@@ -192,9 +192,9 @@ The lock lives in shared code, used by both control plane and shard.
 
 ## Runners (control-runner.sh and shard-runner)
 
-These are not part of the shared lifecycle module. They are OS-level entry points that supervise the platform processes themselves.
+These are not part of the shared lifecycle module. They are OS-level entry points that supervise the Banter processes themselves.
 
-### control-runner.sh (Pi, systemd)
+### control-runner.sh (systemd)
 
 1. Read control port from registry
 2. Teardown stale Tailscale Serve for that port
@@ -203,7 +203,7 @@ These are not part of the shared lifecycle module. They are OS-level entry point
 
 systemd handles restart-on-crash (`Restart=always`). `ExecStopPost` tears down serve on stop.
 
-### shard-runner (Mac, Swift, launchd)
+### shard-runner (Swift, launchd)
 
 1. Read shard port from registry
 2. Teardown stale Tailscale Serve
@@ -217,6 +217,6 @@ launchd keeps shard-runner alive (`KeepAlive: true`). shard-runner keeps bun ali
 
 ## service-control.sh (debugging tool)
 
-A standalone shell script for manual service management, not called by the platform in production. Reads registry, can start/stop/status a service by ID. When used manually, the operator is the launcher and is responsible for Tailscale Serve.
+A standalone shell script for manual service management, not called by Banter in production. Reads registry, can start/stop/status a service by ID. When used manually, the operator is the launcher and is responsible for Tailscale Serve.
 
 Usage: `service-control.sh <start|stop|status> <service-id>`

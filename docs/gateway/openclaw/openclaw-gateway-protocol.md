@@ -657,7 +657,7 @@ Talk Mode's loop: listen for speech → submit transcript via `chat.send` agains
 
 The `talk.speak` RPC supports voice configuration (voice ID, speed, stability, output format) and provider-specific settings (ElevenLabs params, etc.). Audio format defaults to pcm_44100 on macOS/iOS and pcm_24000 on Android.
 
-Banter's approach differs: it runs its own STT and TTS services (registered in the shard's registry) and only uses the gateway for LLM chat via `chat.send`. This gives Banter control over the voice pipeline while still sharing the session with WebChat and other clients.
+Banter's approach differs: it runs its own STT and TTS services (registered in the registry) and only uses the gateway for LLM chat via `chat.send`. This gives Banter control over the voice pipeline while still sharing the session with WebChat and other clients.
 
 ---
 

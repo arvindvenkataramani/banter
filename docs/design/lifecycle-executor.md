@@ -56,11 +56,11 @@ The API field is `pending`, replacing `locked`. It describes the request, not th
 
 Locking remains the internal mechanism — `acquireLock`, `releaseLock`, `clearLocks` keep their names. The state is what a caller observes; the lock is how the executor produces it.
 
-`pending` is false for `external` runners always. The platform cannot start or stop them, so no lifecycle work can be outstanding.
+`pending` is false for `external` runners always. The control plane cannot start or stop them, so no lifecycle work can be outstanding.
 
 Queued and executing are deliberately not distinguished. A caller waiting on an operation needs to know whether it is still outstanding; which half of outstanding it occupies changes nothing it would do.
 
-A client waits while `pending` is true, then reads health once it clears. These are two questions — is anything still running, and is the service usable — and asking them in sequence keeps each answer bounded to what it can actually establish. Health read mid-operation describes a service the platform is still working on.
+A client waits while `pending` is true, then reads health once it clears. These are two questions — is anything still running, and is the service usable — and asking them in sequence keeps each answer bounded to what it can actually establish. Health read mid-operation describes a service the control plane is still working on.
 
 The operation's bound is the executor's task deadline, derived per service from `startupTime`. A client holds no deadline of its own on how long an operation may take, since a browser-side constant cannot know which service it is starting and would abandon a slow model still legitimately coming up. Waiting is therefore unbounded in that dimension, which is what makes `pending` load-bearing: only an explicit `true` continues the wait, so a field the client never receives ends it.
 
@@ -92,7 +92,7 @@ Every caller whose task was replaced awaits the surviving task and receives its 
 
 Serve registration and removal each retry up to three attempts, with a short fixed delay between them.
 
-Retry covers writers the executor cannot serialize — an operator at a terminal, a Tailscale client update, anything outside the platform process. Serialization removes the collisions the platform causes; retry covers the rest. The etag error is the shape retry suits: the loser's read is stale, and a second attempt re-reads.
+Retry covers writers the executor cannot serialize — an operator at a terminal, a Tailscale client update, anything outside the control plane process. Serialization removes the collisions the control plane causes; retry covers the rest. The etag error is the shape retry suits: the loser's read is stale, and a second attempt re-reads.
 
 Both directions retry. A failed removal writes the same configuration behind the same etag and can lose the same race; a stale entry that fails to clear causes trouble later.
 
@@ -104,13 +104,13 @@ When attempts fail with differing errors, all distinct messages are reported. Tw
 
 A start with `tailscaleServe` produces two outcomes a consumer must distinguish: the process came up, and the service is reachable over Tailscale. The start keeps the two apart; a start whose registration fails does not tear down the process it just started ([lifecycle.ts](../../control/shared/src/lifecycle.ts)).
 
-A process that started successfully stays running when only its Serve registration failed. The service is reported as degraded — the state the platform already models for exactly this condition, emitted by the health checker when localhost answers and Tailscale does not — and the registration can be retried without restarting the process.
+A process that started successfully stays running when only its Serve registration failed. The service is reported as degraded — the state the control plane already models for exactly this condition, emitted by the health checker when localhost answers and Tailscale does not — and the registration can be retried without restarting the process.
 
 The recorded outcome names the stage that failed. A failed spawn and a failed registration call for different remedies, and `failed to start` describes neither.
 
 **Voice mode does not start against a degraded service.** The dashboard reaches a service over its Tailscale endpoint, which is precisely what a failed registration leaves broken, so degraded is unusable for that caller whatever the process is doing. Once the operation settles, anything short of healthy fails the caller, carrying the serve error rather than a bare start failure. A caller reaching the same service over loopback — a request from the shard itself — is unaffected, which is why the process stays running.
 
-**Both Serve-registration paths follow this rule.** `startService` writes Serve in two places: at the end of the full start sequence, and in the fast path, where a service found already running with a missing entry has its registration repaired and the existing process adopted. A failed repair is the same condition as a failed registration — more plainly so, since there the process was healthy before the platform touched it — and reporting it as a failed start would have the shard record `service.down` for a service answering on loopback.
+**Both Serve-registration paths follow this rule.** `startService` writes Serve in two places: at the end of the full start sequence, and in the fast path, where a service found already running with a missing entry has its registration repaired and the existing process adopted. A failed repair is the same condition as a failed registration — more plainly so, since there the process was healthy before the control plane touched it — and reporting it as a failed start would have the shard record `service.down` for a service answering on loopback.
 
 The crash-restart budget resets on both. The budget counts consecutive failed recoveries; a start that leaves a healthy process running is not one, whatever happened to its Serve entry.
 
@@ -120,7 +120,7 @@ The crash-restart budget resets on both. The budget counts consecutive failed re
 
 Resolution happens where it already does. `validateRegistry` merges `{...defaults.lifecycle, ...svc.lifecycle}` at load, so a service declaring nothing inherits the registry default and a service declaring a value overrides it. Consumers read the merged field without knowing which applied.
 
-What a declared value adds is an override: a service, or a registry, can state a duration the platform then honours. The code-level constant behind it stays as the floor.
+What a declared value adds is an override: a service, or a registry, can state a duration the control plane then honours. The code-level constant behind it stays as the floor.
 
 Keeping it is not untidiness. `startService` and `stopService` are called directly — by tests that deliberately bypass the registry, and by any future caller holding a `Service` it did not load through `validateRegistry`. A function that returns `NaN` for a service assembled by hand is worse than one carrying a sane default, and validation cannot reach a path that never passes through it.
 

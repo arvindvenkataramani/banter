@@ -1,6 +1,6 @@
 # Speech server API
 
-What Banter's dashboard calls on a speech server. Any server that answers these routes in this shape can be registered, whatever model or runtime is behind it. The [fluid servers](../services/fluid/README.md) implement all of it; the Python adapters under [`services/`](../services/README.md) implement the batch parts.
+What Banter's dashboard calls on a speech server. Any server that answers these routes in this shape can be registered, whatever model or runtime is behind it. The [fluid servers](../services/fluid/README.md) implement all of it, and the Python adapters under [`services/`](../services/README.md) implement the batch parts; they are examples of conforming servers.
 
 Taken from what the dashboard actually sends, not from a general OpenAI-API description.
 

@@ -1,9 +1,11 @@
 # Configuration
 
-Two files, both per-deployment and both gitignored. Copy the `.example.json` next to each and edit:
+Two files per node, both at the top of its deployment folder (`~/services/banter` by default):
 
-- **`control/control-plane/data/registry.json`** — hosts and services
-- **`control/control-plane/data/config.json`** — gateway credentials and voice settings
+- **`registry.json`** — hosts and services
+- **`config.json`** — gateway credentials and voice settings
+
+The repo tracks `config.example.json` and `registry.example.json` (under `control/control-plane/data/`; the shard's registry example is under `control/control-shard/data/`), not the live files. `scripts/install.sh` seeds the live files from them, and every later deploy merges the examples into them; see [Deployment](#deployment). Beside the two files the folder holds `shipped/` (what the last deploy shipped, the merge base) and `state/state.json` (the last agent used and the last session per agent). [design/live-config.md](design/live-config.md) describes how these files are kept.
 
 A normal run needs no environment variables.
 
@@ -17,14 +19,13 @@ This is everything required to get a working single-machine deploy. Nothing else
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "integrations": {
     "openclaw": {
       "gateway": {
         "url": "wss://your-gateway.example.com",
         "token": "your-gateway-token"
-      },
-      "defaultAgent": "main"
+      }
     }
   }
 }
@@ -62,7 +63,7 @@ This is everything required to get a working single-machine deploy. Nothing else
 
 The `control` entry is required: the control plane reads its own listening port from it.
 
-That is a working deploy with no voice. Add an STT and a TTS service to get the rest.
+That is a working deploy with no voice. Register an STT and a TTS service to get the rest.
 
 ---
 
@@ -91,19 +92,19 @@ A service entry answers four questions: what it is, where it runs, how to start 
 
 `capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and `voice.tts.selection.serviceId` both refer to these.
 
-A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry with at least one model and one voice able to reach it. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` list is still how `fluid-stt` declares what it can load. See [docs/voices-and-models.md#adding-another-model-or-another-speech-server](voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
+A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry with at least one model and one voice able to reach it. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` list is still how a server that reads one, such as `fluid-stt`, declares what it can load. See [docs/voices-and-models.md#adding-another-model-or-another-speech-server](voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
 
 ### Choosing a runner
 
 | `runner.type` | Use when | Needs |
 |---|---|---|
-| `process` | You want the platform to spawn it directly | `main` — the command, split on spaces |
+| `process` | You want Banter to spawn it directly | `main` — the command, split on spaces |
 | `systemd` | It is a systemd user unit | `unit`, `unitFile` |
 | `launchd` | It is a launchd agent (macOS) | `label`, `plist` |
-| `external` | It is already running and the platform should only watch it | nothing |
+| `external` | It is already running and Banter should only watch it | nothing |
 | `managed` | It has its own CLI for start/stop/health | `startCmd`, `stopCmd`, `healthCmd` |
 
-Use `external` for anything you manage yourself: another machine's service, a container, anything already running. The platform health-checks and routes to it without ever starting or stopping it.
+Use `external` for anything you manage yourself: another machine's service, a container, anything already running. Banter health-checks and routes to it without ever starting or stopping it.
 
 The `control` entry's `unitFile` points at `banter.service.template`, not a plain `.service` file — it has `__PROD__`/`__UNIT__` placeholders because the deploy path isn't known until install time. The install script fills those in and installs the result *before* it reads the registry at all, so this entry's `unitFile` is never copied as-is by the registry-driven step (which skips `id: "control"` for exactly that reason); it's declared here only because `unit`/`unitFile` are required together, and `service-control.sh` needs `unit` to restart the control plane by hand.
 
@@ -111,9 +112,9 @@ The service's port is written once, in `network.port`. A `process` runner's `run
 
 ### Demand-loading
 
-`loadStrategy: "demand"` starts the service on first use instead of at boot, and `idleUnload` with an `idleTimeout` in milliseconds evicts it after inactivity. This is why the control plane exists: a speech model that takes eight seconds to load has no business sitting resident all day.
+`loadStrategy: "demand"` starts the service on first use instead of at boot, and `idleUnload` with an `idleTimeout` in milliseconds evicts it after inactivity. This is why the control plane exists: a speech model that takes seconds to load need not sit resident all day.
 
-`loadStrategy: "startup"` starts it with the platform. `protected: true` prevents the dashboard from stopping it.
+`loadStrategy: "startup"` starts it with Banter. `protected: true` prevents the dashboard from stopping it.
 
 ### Endpoints and schemes
 
@@ -131,7 +132,7 @@ If most of your services are https, set it once for the whole registry:
 
 The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
 
-Both [fluid servers](../services/fluid/README.md) (`fluid-stt`, `fluid-tts`) read one comma-separated environment variable, `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all — not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` sets it for you from the registry's own `control` service port, covering both `localhost` and `127.0.0.1` on that port and on Vite's `5173`:
+Each speech server takes its allowlist from an environment variable, set under the service's `ops.env.variables`. The [fluid servers](../services/fluid/README.md) read one comma-separated variable, `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all — not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` fills in every `*_CORS_ORIGINS` variable it finds in a fresh registry from the registry's own `control` service port, covering `http://localhost` and `http://127.0.0.1` on that port and on Vite's `5173`:
 
 ```json
 "ops": {
@@ -141,11 +142,13 @@ Both [fluid servers](../services/fluid/README.md) (`fluid-stt`, `fluid-tts`) rea
 }
 ```
 
-Other servers vary — `tts/kokoro` and `tts/neutts-air` are permissive and need no configuration; `WHISPER_CORS_ORIGINS` for `stt/whisper`, `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`, `--allowed-origins` for `mlx-audio`. Check a server's own docs for the name.
+Other servers vary: some are permissive and need no configuration, others take a variable or flag (for example `WHISPER_CORS_ORIGINS` for `stt/whisper`, `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`, `--allowed-origins` for `mlx-audio`). Check a server's own docs for the name.
 
-A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Note that Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
+The origins `install.sh` writes cover only the machine itself. Opening the dashboard from another address, such as a LAN IP (`http://192.168.1.20:4200`) or an https hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder https tailnet origins; replace them with the origins you use.
 
-**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/gateway/openclaw/gateway-session-lifecycle.md](gateway/openclaw/gateway-session-lifecycle.md#browser-origin-check).
+A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
+
+**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `scripts/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open the dashboard from, such as a LAN address, too. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/gateway/openclaw/gateway-session-lifecycle.md](gateway/openclaw/gateway-session-lifecycle.md#browser-origin-check).
 
 ---
 
@@ -175,7 +178,7 @@ Leave the worker's services out of the primary's registry. The shard owns them a
 
 ## Voice
 
-Under `voice` in `config.json`. The pieces that matter:
+Under `voice` in `config.json`. The pieces that matter (the service ids and models are examples; use the ones in your registry and roster):
 
 ```json
 "voice": {
@@ -192,7 +195,7 @@ Under `voice` in `config.json`. The pieces that matter:
 
 `serviceId` values must match registry entries. `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [docs/voices-and-models.md](voices-and-models.md) for what a roster model and voice are, and how to add or change them.
 
-The dashboard's settings dialog writes back to `selection` — the STT picker only appears when more than one STT service is registered. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for the dashboard to read, but nothing writes it back.
+The dashboard's settings dialog writes back to `selection` — the STT picker only appears when the registry holds more than one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for the dashboard to read, but nothing writes it back.
 
 ### Settings scope
 
@@ -234,20 +237,29 @@ Each has an environment override (`BANTER_CONTROL_HOST`, `BANTER_EVENTS_PATH`, `
 |---|---|---|
 | `BANTER_PROD` | `~/services/banter` | Install location |
 | `BANTER_UNIT` | `banter` | systemd unit name |
-| `BANTER_REGISTRY_PATH` | `control/control-plane/data/registry.json` | Registry file |
-| `BANTER_CONFIG_PATH` | `control/control-plane/data/config.json` | Config file |
+| `BANTER_LIVE_DIR` | `$BANTER_PROD` | Live directory: `config.json`, `registry.json`, `shipped/`, `state/` |
+| `BANTER_REGISTRY_PATH` | `$BANTER_LIVE_DIR/registry.json` | Registry file |
+| `BANTER_CONFIG_PATH` | `$BANTER_LIVE_DIR/config.json` | Config file |
 | `DASHBOARD_DIST` | `dashboard/dist` | Built assets to serve |
 | `MIC_SAMPLE_DIR` | `banter-voice-debug/mic-samples` in the OS temp directory | Where `DEBUG` mic captures land; set it to keep them somewhere durable |
 
-`BANTER_PROD` and `BANTER_UNIT` are better set in `scripts/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
+`BANTER_PROD` and `BANTER_UNIT` are better set in `scripts/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. It stays in the checkout's `scripts/` because it names the deployment folder; a deploy copies it into `$BANTER_PROD/scripts/`, so the scripts systemd runs read the same settings. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
 
 A unit file cannot expand a shell variable, so `ops/systemd/banter.service.template` is rendered at install time with the deploy path and unit name substituted in, and the rendered unit passes `BANTER_PROD` back to the runner through `Environment=`.
 
-`control-deploy.sh` runs `deploy-preflight.sh` first, which refuses when the destination is non-empty and was not created by a previous banter deploy, or when the unit name belongs to something running elsewhere. It is a refusal, not a prompt; override deliberately with `BANTER_DEPLOY_FORCE=1`.
+`control-deploy.sh` runs `deploy-preflight.sh` first, which refuses when the destination is non-empty and was not created by a previous banter deploy or install, or when the unit name belongs to something running elsewhere. It is a refusal, not a prompt; override deliberately with `BANTER_DEPLOY_FORCE=1`.
 
-Both config files live inside the deployed tree, which a deploy removes and rebuilds. The deploy sets them aside first and puts them back afterwards, so your settings survive; the shipped examples are used only where there was nothing to preserve, which is a first deploy.
+A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, `ops/`, `scripts/`), so it never touches `config.json`, `registry.json`, `shipped/` or `state/`. What it does with them is a three-way merge of the last-shipped copy (`shipped/`), the live file and the repo's example, field by field, before anything is stopped:
 
-To start over from the examples instead — a registry edited into a state that no longer loads, say — pass `--reset-config`. An interactive deploy that finds live configuration asks which you want; an unattended one always keeps what is there, since silence is not consent.
+- changed only in the repo, the repo's value is taken;
+- changed only on the node (by hand, or through the dashboard), the node's value stays;
+- changed on both to different values, the deploy stops, names the fields and writes nothing. Resolve it by editing the live file or the example, then deploy again.
+
+A field in the live file that the code does not know is kept, with a warning in the log. There is no prompt: to start over from an example, delete the live file and deploy.
+
+The first deploy has no `shipped/` copy, so it takes the example as the base and keeps every value in the live file. Where the live file is missing, a first deploy seeds it from the old paths if present: `$BANTER_PROD/control/control-plane/data/{config,registry}.json` (for a shard, `~/services/shard/registry.json`), and otherwise from the example.
+
+Every load of `config.json` and `registry.json` also brings the file into line with its schema: missing fields get defaults, values are kept, and a value of the wrong type stops startup with a message naming the field. The control plane exits on an unreadable or invalid `config.json`. A dashboard setting is saved by changing that one field in the file on disk, so a hand edit made since startup survives. The last agent used and the last session per agent are not in `config.json`; they live in `state/state.json` and are never merged.
 
 ---
 
@@ -257,4 +269,4 @@ The dashboard's settings menu has a **Reload config** action, which hits `POST /
 
 The registry's `services`, `hosts`, `capabilities` and `defaults` all reload the same way — the in-memory copy is replaced from the file. A service already running keeps running as it was until you restart it; a service removed from the registry while still running is only reported, not stopped. The `shards` list is the one part reload never applies: a changed entry is reported but the running list is left as it was, so adding or removing a shard needs a restart of the control plane itself.
 
-A registry roster's `voices[]` — which voices exist and what they map to — takes effect on that reload alone, since the control plane assembles voices fresh on every request. A changed `providers` section — a new model, a changed preset list, and so on — does not: `fluid-stt` and `fluid-tts` read their provider's roster section once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. See [docs/voices-and-models.md#applying-an-edit](voices-and-models.md#applying-an-edit).
+A registry roster's `voices[]` — which voices exist and what they map to — takes effect on that reload alone, since the control plane assembles voices fresh on every request. A changed `providers` section — a new model, a changed preset list, and so on — does not: a server such as `fluid-stt` reads its provider's roster section once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. See [docs/voices-and-models.md#applying-an-edit](voices-and-models.md#applying-an-edit).

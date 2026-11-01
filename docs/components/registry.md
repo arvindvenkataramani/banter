@@ -60,7 +60,7 @@ The `roster` section declares what this node's model services offer: `providers`
 
 Every node builds its roster from its own registry. The shard serves its roster at `GET /api/roster`; the control plane polls it alongside the shard's services and assembles every node's roster with its own. Voices merge by id across nodes; a model id declared on two nodes is excluded from both and reported as a collision, since a selection names a model by id alone and a silent winner would leave one node's copy unreachable without saying so.
 
-`fluid-stt` and `fluid-tts` read their provider's roster section at startup (`--registry <path> --provider <id>`), so an edit reaches them only when they restart; `POST /api/config/reload` re-reads the registry but names the affected provider in a warning rather than restarting it for you. See [docs/voices-and-models.md](../voices-and-models.md) for how to edit the roster and apply the change.
+A server that reads its provider's roster section at startup (as `fluid-stt` and `fluid-tts` do, with `--registry {registry} --provider <id>`) sees an edit only when it restarts; `POST /api/config/reload` re-reads the registry but names the affected provider in a warning rather than restarting it for you. See [docs/voices-and-models.md](../voices-and-models.md) for how to edit the roster and apply the change.
 
 Among the provider fields, `sessions: true` declares that the runtime's streaming socket understands session ids and take-over — the same way `responseFormat` declares the audio format it returns. It applies to both STT and TTS providers, and `GET /api/voice` carries it through to each `stt.options` entry and each TTS provider so the dashboard can tell which services support taking over a held session.
 
@@ -170,7 +170,7 @@ Health-monitored but not managed. Start/stop API calls return 400.
 "install": { "artifacts": [ { "from": "services/fluid/.build/release/fluid-stt.app", "to": "fluid-stt.app" } ] }
 ```
 
-What the install scripts copy into place: a file, or a whole directory such as a resource bundle a binary loads from beside itself. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running platform.
+What the install scripts copy into place: a file, or a whole directory such as a resource bundle a binary loads from beside itself. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running control plane or shard.
 
 #### `lifecycle`
 
@@ -192,13 +192,14 @@ What the install scripts copy into place: a file, or a whole directory such as a
 
 ## Storage and access
 
-Each host's registry is a static JSON file local to that host. This repo ships an example, not a live one — `control/control-plane/data/registry.example.json` and `control/control-shard/data/registry.example.json` are templates to copy from, not a canonical deployed config:
+Each node's registry is a JSON file local to that node, `registry.json` at the top of its deployment folder (`$BANTER_PROD` for the control plane, `$BANTER_SHARD_PROD` for a shard, both `~/services/banter` by default). The repo tracks examples, not live files: `control/control-plane/data/registry.example.json` and `control/control-shard/data/registry.example.json` are templates that `scripts/install.sh` seeds the live file from and that every deploy three-way merges into it; see [`design/live-config.md`](../design/live-config.md). To create the live file by hand:
 
 ```bash
-cp control/control-plane/data/registry.example.json control/control-plane/data/registry.json
+mkdir -p ~/services/banter
+cp control/control-plane/data/registry.example.json ~/services/banter/registry.json
 ```
 
-The actual `registry.json` is gitignored; you edit it with your own hosts, capabilities, and services after installing. See [`docs/configuration.md`](../configuration.md) and [`docs/models.md`](../models.md) for example service entries (Kokoro, Parakeet, etc.) and [`docs/shard-setup.md`](../shard-setup.md) for the worker-host registry.
+You edit the live `registry.json` with your own hosts, capabilities, and services. See [`docs/configuration.md`](../configuration.md) and [`docs/models.md`](../models.md) for example service entries and [`docs/shard-setup.md`](../shard-setup.md) for the worker-host registry.
 
 The registry is loaded into memory once at startup. All reads go to the in-memory copy. Mutations update the in-memory copy and then write to disk **atomically** (write to temp file, rename into place).
 

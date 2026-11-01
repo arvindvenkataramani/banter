@@ -15,7 +15,7 @@ Banter defaults to plain `http`, so it works as shipped on one machine or a home
 - **The browser can't tell it's really your server.** `https` proves the page came from the machine it names. Over `http`, something on the network can answer in its place.
 - **Other websites can reach a plain-http server more easily.** Banter's API has no login of its own; it trusts whoever can reach it. A technique called DNS rebinding lets a web page you visit point its own name at an address on your network and call that address from your browser. A page served over `https` is much harder to target this way, because the attacker can't present a valid certificate for your machine's name.
 
-Platform, the system Banter is ported from, goes further: it assumes `https` everywhere and refuses requests from any page that isn't `https`. Banter doesn't, so `http` installs keep working; [dev/design/platform-divergence.md](../dev/design/platform-divergence.md) records that decision.
+Banter doesn't refuse requests from pages that aren't `https`, so `http` installs keep working.
 
 ### How Tailscale gives you https without managing certificates
 

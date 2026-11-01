@@ -7,7 +7,7 @@ Output degrades over long utterances (found in benchmarking), so this adapter su
 
 ## Install
 
-llama.cpp + NeuCodec, GGUF-quantized Qwen2 0.5B backbone. The example registry port is 8004, demand-loaded; give it a generous `startupTime` (120000 ms worked).
+llama.cpp + NeuCodec, GGUF-quantized Qwen2 0.5B backbone. The example registry port is 8004, with `loadStrategy: "demand"`; give it a generous `startupTime` (120000 ms worked).
 
 ```bash
 mkdir -p ~/services/tts/neutts-air

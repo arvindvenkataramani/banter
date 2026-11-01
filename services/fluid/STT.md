@@ -1,6 +1,6 @@
 # fluid-stt
 
-A speech-to-text server for Apple Silicon, built on FluidAudio's CoreML models. It holds one ASR model at a time and serves it two ways: whole files over HTTP, and live audio over a WebSocket. Registered on the platform as the service `fluid-stt`.
+A speech-to-text server for Apple Silicon, built on FluidAudio's CoreML models. It holds one ASR model at a time and serves it two ways: whole files over HTTP, and live audio over a WebSocket. Registered in a registry as the service `fluid-stt`.
 
 ## Package and layout
 
@@ -36,7 +36,7 @@ Each server ships as an `.app` bundle — `fluid-stt.app/Contents/MacOS/fluid-st
 |---|---|---|
 | Temporary files | `<user temp>/<bundle id>/` | at every startup, emptied first |
 | Caches | `~/Library/Caches/<bundle id>/` | by whatever writes to it — CoreML's runtime cache |
-| Application Support | `~/Library/Application Support/<bundle id>/` | not created; nothing writes here yet |
+| Application Support | `~/Library/Application Support/<bundle id>/` | not created; nothing writes here |
 
 The temp subdirectory holds this server's own scratch files — the batch transcription upload here, and StyleTTS2's reference-audio trim on `fluid-tts` — never the shared system temp directory. It is wiped and recreated on every start, so a crash never leaves a previous run's file behind. A server that cannot create it fails at startup, naming the path.
 
@@ -46,17 +46,17 @@ Each server also logs through unified logging with its bundle identifier as the 
 
 `fluid-stt --port 8767 --registry <path> --provider fluid-stt`
 
-`--registry` and `--provider` are required; a server started without both, or pointed at a registry it cannot read or a roster it cannot validate, fails at startup rather than serving an empty listing. The roster is the `roster` section of the node's registry — the same file the shard reads — naming which models exist under a set of provider ids; this server reads the `fluid-stt` provider's `sttModels` and validates that it can build a manager for each entry. A registry with no `roster` section, no such provider, or no `sttModels` under it is a startup failure naming the path and the provider.
+`--registry` and `--provider` are required; a server started without both, or pointed at a registry it cannot read or a roster it cannot validate, fails at startup rather than serving an empty listing. The roster is the `roster` section of the node's registry — the same file the control plane or shard loads — naming which models exist under a set of provider ids; this server reads the `fluid-stt` provider's `sttModels` and validates that it can build a manager for each entry. A registry with no `roster` section, no such provider, or no `sttModels` under it is a startup failure naming the path and the provider.
 
 The server starts holding no model. The first request that needs one loads it — the model it names, or the roster's `defaultModel` when it names none — and waits for the load; the load endpoints bring one up ahead of time. After the roster's `idleUnloadMs` without work (30 minutes when absent), the model is unloaded.
 
-`--bind local` (the default) listens on `127.0.0.1` only, which is what a local proxy such as Tailscale Serve forwards to: the proxy sits in front, registered for the service by the control shard, and the process itself binds no public interface. `--bind all` listens on every interface, the Tailscale one included, over plain HTTP, which is what a LAN install uses. Any other value fails at startup.
+`--bind local` (the default) listens on `127.0.0.1` only, which is what a local proxy such as Tailscale Serve forwards to: the proxy sits in front, registered for the service by the node that runs it, and the process itself binds no public interface. `--bind all` listens on every interface, the Tailscale one included, over plain HTTP, which is what a LAN setup uses. Any other value fails at startup.
 
 Optional CORS: set `FLUID_CORS_ORIGINS` (comma-separated origins) before starting. When the browser reaches the server directly, it must list the dashboard's origin; [shard-setup.md](../../docs/shard-setup.md) describes that path.
 
 ## Models
 
-The shipped roster offers three ids:
+The example roster offers three ids:
 
 | Model id | Kind | Selecting a variant |
 |---|---|---|
@@ -245,4 +245,4 @@ The boundary rule is written against parakeet-mlx's own tokenizer behaviour, whi
 
 `scripts/fluid-build.sh` builds both executables with `swift build -c release`, then assembles each into an `.app` bundle under `.build/release/`: `Contents/MacOS/<name>` holds the executable, `Contents/Info.plist` is rendered from the matching template in `Resources/` with the package version (from `VERSION`) and the source commit filled in, and the bundle is ad-hoc signed. `fluid-tts.app` also gets FluidAudio's `FluidAudio_FluidAudio.bundle` copied into `Contents/Resources/`, since a bundled executable's resource lookup checks there before falling back to the executable's own directory.
 
-`scripts/shard-install-services.sh` installs each bundle into `~/services/fluid/fluid-stt/fluid-stt.app` and `~/services/fluid/fluid-tts/fluid-tts.app` as the registry entries' `ops.install` declares, alongside a `SOURCE-COMMIT.txt` recording what they were built from and a `service.installed` event in the shard's log. A service already running is stopped through the control API before its bundle is replaced and started again afterward; one that was not running stays that way, and one whose bundle has not changed is not touched. The registry's launch command runs `fluid-stt.app/Contents/MacOS/fluid-stt` (or the `fluid-tts` equivalent) with `--registry` and `--provider`, pointing at the shard's own `registry.json`.
+`scripts/shard-install-services.sh` installs each bundle into `~/services/fluid/fluid-stt/fluid-stt.app` and `~/services/fluid/fluid-tts/fluid-tts.app` as each registry entry's `ops.install` declares, alongside a `SOURCE-COMMIT.txt` recording what they were built from and a `service.installed` event in the shard's log. A service already running is stopped through the control API before its bundle is replaced and started again afterward; one that was not running stays that way, and one whose bundle has not changed is not touched. The registry's launch command runs `fluid-stt.app/Contents/MacOS/fluid-stt` (or the `fluid-tts` equivalent) with `--registry` and `--provider`, with `{registry}` filled with the path of the shard's own `registry.json`.

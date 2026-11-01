@@ -140,7 +140,7 @@ The `shard-runner` binary:
 
 **Startup sequence:**
 1. shard-runner handles Tailscale Serve and process supervision
-2. The shard loads its registry from `~/services/shard/registry.json`, or from `BANTER_SHARD_REGISTRY_PATH` if set
+2. The shard loads its registry from `registry.json` at the top of its deployment folder (`~/services/banter` by default), or from `BANTER_SHARD_REGISTRY_PATH` if set
 3. Starts the health check loop and the idle eviction loop
 4. For each auto-start service: runs the start sequence (stop existing, spawn, health poll)
 

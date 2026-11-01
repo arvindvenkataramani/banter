@@ -52,7 +52,7 @@ Voices merge by id. The same person offered on two machines is one voice with th
 
 **Relationships** — read the assembled roster; write selections that reference roster ids.
 
-### Servers the platform builds
+### Servers Banter builds
 
 **Role** — instantiate what they are given.
 
@@ -66,7 +66,7 @@ Voices merge by id. The same person offered on two machines is one voice with th
 
 A running server logs the path and provider it loaded, so what it offers is always attributable to a file that can be opened. It reads its section once, at startup. A reload that changes a provider's section leaves the running server as it was, and the reload says which services need restarting; finding and restarting them automatically would mean walking the dependency tree for an edit that almost never happens.
 
-Third-party servers receive nothing and are not asked to. For those, the roster is the platform's claim about what the service will accept; a wrong id fails at the request. The annotations below apply only where the platform controls the server.
+Third-party servers receive nothing and are not asked to. For those, the roster is the control plane's claim about what the service will accept; a wrong id fails at the request. The annotations below apply only where Banter controls the server.
 
 ---
 
@@ -76,7 +76,7 @@ Third-party servers receive nothing and are not asked to. For those, the roster 
 
 Keyed by registry service id. The key being a service id is what makes availability checkable rather than asserted: a provider naming no registered service is a load error. The service's registry entry supplies its host and port, so the roster stores neither.
 
-A service absent from the roster is a service the platform will not route to. That is the mechanism working, and it is how a deprecated or unwanted service is excluded — by omission, needing no code change and no freeze.
+A service absent from the roster is a service the control plane will not route to. That is the mechanism working, and it is how a deprecated or unwanted service is excluded — by omission, needing no code change and no freeze.
 
 ### Models
 
@@ -84,7 +84,7 @@ A model has an identity — this model, these weights — and declares what it i
 
 For ASR a model declares its kind: batch, streaming, or both. For TTS it declares what synthesis requires, including whether it can clone and what it demands of a recording, the preset voices it knows by name, whether it is fast enough for the realtime voice loop (`realtime`), and whether its runtime can stream its audio (`streaming`). The voice loop's defaults for a model — how to split text (`chunking`), how many requests to send at once (`concurrency`), and fields every request carries (`requestParams`) — are declared on the model too. A model's capability — speech-to-text or text-to-speech — comes from its provider's registry entry, and decides which fields are required.
 
-**The key is the runtime's, not the platform's.** A model entry carries the identifier each provider's runtime uses to reach it. `pocket-tts` under the FluidAudio server and `mlx-community/pocket-tts` under mlx-audio are one model reached by two runtimes that address it differently — the same relation a voice has to a model that offers her under its own name. What files a key resolves to, in which cache root, under whose conventions, is the runtime's business and the roster does not model it. FluidAudio backends read FluidAudio's cache roots; other runtimes read theirs.
+**The key is the runtime's, not Banter's.** A model entry carries the identifier each provider's runtime uses to reach it. `pocket-tts` under the FluidAudio server and `mlx-community/pocket-tts` under mlx-audio are one model reached by two runtimes that address it differently — the same relation a voice has to a model that offers her under its own name. What files a key resolves to, in which cache root, under whose conventions, is the runtime's business and the roster does not model it. FluidAudio backends read FluidAudio's cache roots; other runtimes read theirs.
 
 **Loading names a mode where there is a choice.** A model that does one thing needs no mode. A model capable of both is refused if asked to load without one — naming the model and the choices — rather than defaulting silently into the wrong latency. Both is a legitimate explicit choice. The refusal is what keeps a caller from discovering its mistake as unexplained latency instead of an error.
 
@@ -161,7 +161,7 @@ Kind and transport are reported separately although they correlate today. One de
 
 **A server with no roster is misconfigured, not empty.** Receiving nothing is a startup failure, not a server that offers nothing: an empty listing is indistinguishable from a healthy server whose models are all gone, and that ambiguity is what this design exists to remove. A roster naming a model the server cannot map to a manager is the same failure, named.
 
-`present` is not availability. Availability is a platform fact — is there a registered service, does the roster list this model, can the assembler reach the node. Weights on disk is one input a server contributes, and it is what makes advertising a model whose weights were never downloaded impossible to restate.
+`present` is not availability. Availability is a fact the control plane knows — is there a registered service, does the roster list this model, can the assembler reach the node. Weights on disk is one input a server contributes, and it is what makes advertising a model whose weights were never downloaded impossible to restate.
 
 A model capable of both is one entry reporting `kind: both`, not two entries. Which Swift class serves a request is the server's business, and a listing that shows two models where there is one describes the code rather than the model.
 

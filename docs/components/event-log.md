@@ -1,6 +1,6 @@
 # Component: Event Log
 
-*Append-only ground truth for all state transitions in the platform.*
+*Append-only ground truth for all state transitions in Banter.*
 
 ---
 
@@ -50,7 +50,7 @@ The full `EventType` union — including events like `memory.pressure` and `tail
 
 ## Storage
 
-Path: `logs/events.jsonl` inside the deployment (configurable via `BANTER_EVENTS_PATH`; the shard uses `BANTER_SHARD_EVENTS_PATH` instead, defaulting to `$BANTER_SHARD_ROOT/banter/logs/events.jsonl`). Not checked into git — runtime state, not config.
+Path: `logs/events.jsonl` inside the deployment (configurable via `BANTER_EVENTS_PATH`; the shard uses `BANTER_SHARD_EVENTS_PATH` instead, defaulting to `logs/events.jsonl` inside the shard's deployment folder, `$BANTER_SHARD_PROD`). Not checked into git — runtime state, not config.
 
 ---
 

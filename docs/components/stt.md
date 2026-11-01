@@ -7,7 +7,7 @@ in the browser, one on the speech machine.
 |---|---|---|---|
 | VAD | Silero | browser (ONNX) | per-frame speech detection; drives the pause threshold |
 | Turn detection | Pipecat smart-turn v3 | browser (ONNX) | turn-completion probability; drives the adaptive commit delay |
-| Transcription | Parakeet TDT v3 | shard host, CoreML | the transcript, on commit |
+| Transcription | the model the STT service's roster names | speech machine | the transcript, on commit |
 
 Why the decision logic sits this way — two-stage commit, the adaptive curve, why
 Parakeet's punctuation cannot serve as a completion signal — is in
@@ -16,20 +16,25 @@ implementation is `dashboard/src/lib/voice/`; the ONNX runtime version is pinned
 
 ## Services
 
-| Service | Model | Runtime | Port | Status |
-|---|---|---|---|---|
-| `fluid-stt` | Parakeet TDT v3, Parakeet Unified 0.6B, Nemotron Streaming EN 0.6B | FluidAudio / CoreML | 8767 | **Selected** — `voice.stt.serviceId` and `voice.stt.model` in `config.json` |
-| `stt-whisper` | Whisper large-v3-turbo | MLX (`services/stt/whisper`) | 8766 | Optional adapter; multilingual only. It ships as code only: neither example registry has an entry for it, so add one by hand to use it |
+Voice mode's STT service and model are `voice.stt.serviceId` and `voice.stt.model` in `config.json`; the service is any registry entry with `capabilityId: "stt"` that answers `/v1/audio/transcriptions`. The repo contains two adapters you can register:
 
-`fluid-stt` is ours, not upstream: FluidAudio ships no server. It lives in
-[`../../services/fluid/`](../../services/fluid/) beside `fluid-tts`, and
-`scripts/fluid-build.sh` builds both, and `scripts/shard-install-services.sh`
-installs them to `~/services/fluid/fluid-stt` and `~/services/fluid/fluid-tts`. The models it offers are the `fluid-stt` provider's
-`sttModels` in the `roster` section of the shard's registry (the shipped file is
-`control/control-shard/data/registry.example.json`), which it reads at startup
-through `--registry`.
+| Service | Model | Runtime | Notes |
+|---|---|---|---|
+| `fluid-stt` | Parakeet TDT v3, Parakeet Unified 0.6B, Nemotron Streaming EN 0.6B | FluidAudio / CoreML (`services/fluid`) | Apple Silicon; streaming and batch |
+| `stt-whisper` | Whisper large-v3-turbo | MLX (`services/stt/whisper`) | Multilingual; batch |
 
-**The process is always on; the model is not.** The shard starts `fluid-stt` with itself and never idle-unloads it. The server starts with no model resident, and the first request that needs one loads it: the model the request names, or the roster's `defaultModel` (`parakeet-unified-0.6b`) when it names none, in the mode its route needs — streaming for a WebSocket, batch for a transcription. A request never replaces a resident model: naming a different one is a 409, and a nameless request uses whatever is resident. A model that serves both modes gains the missing one when a request needs it. A model that needs a parameter (Nemotron's chunk size) loads on a request only when the request carries it: the dashboard's stream socket sends `chunkMs`, and a different tier of the resident model is a 409 like any other model. Requests arriving during a load wait for it, about 13 s warm and longer on a first load from a new path; a WebSocket is accepted before the load starts. After `idleUnloadMs` without work against the model (in the same provider block; 30 minutes when absent or not positive), it is unloaded, whether a request or `/v1/models/load` brought it up; health checks and model listings are not work, and an open session is never unloaded.
+`fluid-stt` is not upstream: FluidAudio contains no server. It lives in
+[`../../services/fluid/`](../../services/fluid/) beside `fluid-tts`;
+`scripts/fluid-build.sh` builds both, and `scripts/shard-install-services.sh` or
+`scripts/control-install-services.sh` copies the built binaries to the path each
+service's `ops.install` names. The models a `fluid-stt` entry offers are its
+provider's `sttModels` in the `roster` section of the registry that registers
+it, which it reads at startup through `--registry {registry}` in `runner.main`.
+The example registries (`control/control-plane/data/registry.example.json`,
+`control/control-shard/data/registry.example.json`) show the shape; edit them to
+register the services you use.
+
+**The process and the model have separate lifetimes.** The registry's `lifecycle` decides when a `fluid-stt` process runs. A Deepgram-compatible client cannot start the process itself, so a registry serving one needs `loadStrategy: "startup"` and `idleUnload: false` on that entry. Inside a running process, the server starts with no model resident, and the first request that needs one loads it: the model the request names, or the roster's `defaultModel` when it names none, in the mode its route needs — streaming for a WebSocket, batch for a transcription. A request never replaces a resident model: naming a different one is a 409, and a nameless request uses whatever is resident. A model that serves both modes gains the missing one when a request needs it. A model that needs a parameter (Nemotron's chunk size) loads on a request only when the request carries it: the dashboard's stream socket sends `chunkMs`, and a different tier of the resident model is a 409 like any other model. Requests arriving during a load wait for it, about 13 s warm and longer on a first load from a new path; a WebSocket is accepted before the load starts. After `idleUnloadMs` without work against the model (in the same provider block; 30 minutes when absent or not positive), it is unloaded, whether a request or `/v1/models/load` brought it up; health checks and model listings are not work, and an open session is never unloaded.
 
 **A session is the sole occupant of the service.** While a WebSocket holds the session — the dashboard's stream or a Deepgram `/listen` socket — everything else is refused at once: batch transcriptions, loads that would change the model, unloads and other sessions (except a takeover, which replaces the session). A load already satisfied succeeds without change, so voice mode starting on another device can reach its takeover. Outside a session, requests queue: a batch transcription behind another waits up to two minutes. Deepgram's own API decides mode by transport, `POST /listen` being pre-recorded and the WebSocket live, so a `/listen` POST is a non-session batch request and its WebSocket is a session. The rule assumes one person using one client at a time: voice mode and meeting transcription do not run together. Why it is shaped this way: [`../design/fluid-stt-on-demand-load.md`](../design/fluid-stt-on-demand-load.md).
 
@@ -38,12 +43,11 @@ conversion returns correctly merged word timestamps; the MLX Parakeet server
 strips the leading space that marks a word boundary and returns sub-word
 fragments — 56 of them for a 28-word clip.
 
-**Banter ships no MLX Parakeet service.** One measured 0.053 WER against
-`fluid-stt`'s 0.033 on the same corpus and has the word-timing defect above,
-so `fluid-stt` is the Parakeet path.
+**Parakeet through MLX** measured 0.053 WER against `fluid-stt`'s 0.033 on the same
+corpus and has the word-timing defect above.
 
-**Whisper is not recommended for English.** It is kept for multilingual input
-only; on English it is slower and less accurate than Parakeet here.
+**Whisper suits multilingual input.** On English it measured slower and less
+accurate than Parakeet.
 
 ## Transport, for the streaming path
 

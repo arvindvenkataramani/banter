@@ -2,7 +2,7 @@
 
 For **which** models to run and what each one needs, see [docs/models.md](../docs/models.md). This page is about the adapter code.
 
-Adapter code and install docs for the STT/TTS model servers this repo is built around. The platform doesn't install or manage these for you — it starts them (once you've installed them yourself) via each service's `runner` entry in your `registry.json`, health-gates them on `network.healthPath`, and exposes them to the browser via `tailscale serve`.
+Adapter code and install docs for the STT/TTS model servers this repo is built around. Banter doesn't install these for you. Once you've installed one yourself and registered it, the control plane starts it via the service's `runner` entry in your `registry.json` (as its `lifecycle` settings say), health-gates it on `network.healthPath`, and, if the entry sets `tailscaleServe`, exposes it to the browser via `tailscale serve`.
 
 Two kinds of entries here:
 
@@ -27,11 +27,11 @@ Registry `runner.main` examples (Python adapters run under a venv's interpreter 
 .venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port {port}   # whisper
 ```
 
-`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags — what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/voices-and-models.md](../docs/voices-and-models.md)). The shipped example registry runs them as:
+`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags — what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/voices-and-models.md](../docs/voices-and-models.md)). The example registry shows them registered as:
 
 ```
-fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
-fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
+fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt
+fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry {registry} --provider fluid-tts
 ```
 
 ## Third-party, pip-installable

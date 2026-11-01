@@ -12,7 +12,7 @@ Each server is an application bundle: `fluid-stt.app/Contents/MacOS/fluid-stt` b
 
 The plist carries `CFBundleIdentifier`, `CFBundleName`, `CFBundleExecutable`, `CFBundleShortVersionString` (the package version), `CFBundleVersion` (the source commit the build came from, which `SOURCE-COMMIT.txt` records today), `CFBundlePackageType` (`APPL`) and `LSMinimumSystemVersion` matching the package's platform floor. `LSBackgroundOnly` is set, since neither server has a user interface. The plists are template files in the package; the build script fills in the version fields when it writes each bundle's Info.plist, before signing.
 
-`GET /healthz` reports the bundle identifier and both version fields beside what it reports now, so the platform can see which build is running without reading the install directory.
+`GET /healthz` reports the bundle identifier and both version fields beside what it reports now, so the control plane can see which build is running without reading the install directory.
 
 ## Locations
 
@@ -24,7 +24,7 @@ Every location a server owns derives from its bundle identifier through `FileMan
 
 **Application Support:** `~/Library/Application Support/<bundle id>/`, for state the server owns and must keep across restarts. The servers hold none. Model weights are not server state and do not go here.
 
-**Configuration:** the platform registry, passed with `--registry`, stays the only configuration. It is shared with the shard and owned by the platform, so it cannot move into a per-application location, and a second configuration source beside it would let the two disagree. The servers do not read `UserDefaults`.
+**Configuration:** the registry, passed with `--registry`, stays the only configuration. It is shared with the shard and owned by the control plane, so it cannot move into a per-application location, and a second configuration source beside it would let the two disagree. The servers do not read `UserDefaults`.
 
 **Logs:** stdout continues to reach the shard runner's log files under the install directory. Each server also logs through unified logging with its bundle identifier as the subsystem, so `log stream --predicate 'subsystem == "<bundle id>"'` and Console.app show it alongside the rest of the system.
 

@@ -1,8 +1,8 @@
 # fluid-stt: models load on demand and unload when idle
 
-The fluid-stt process runs for as long as the shard does. The model it serves is loaded by the first request that needs it and dropped after a configured interval without work. An explicit load through the model-lifecycle endpoint also loads a model.
+The model fluid-stt serves is loaded by the first request that needs it and dropped after a configured interval without work. An explicit load through the model-lifecycle endpoint also loads a model.
 
-The case that forces this is Deepgram's `/listen`. A Deepgram client has no notion of loading a model, so with the server starting empty, Anarlog's first request always failed. The shard cannot do the loading either: fluid-stt is registered never to be idle-unloaded, because the shard's idle unload stops the process, and the process is what has to stay up.
+The case that forces this is Deepgram's `/listen`. A Deepgram client has no notion of loading a model, so with the server starting empty, a Deepgram client's first request would fail. The node's lifecycle cannot do the loading either: its idle unload stops the whole process. A registry serving a Deepgram client therefore gives fluid-stt `loadStrategy: "startup"` and `idleUnload: false`, and the server manages its model itself.
 
 ## The rule that does not change
 
@@ -54,9 +54,9 @@ The interval is the roster's `idleUnloadMs`, beside the default model in the pro
 
 **Role.** The model a request that names none loads.
 
-**Key logic.** A field in the fluid-stt provider's block of the shard registry, beside the model list the server already reads at startup. The control plane's voice config cannot be the home: the server cannot read it, and it sits on the other machine. The default is validated with the rest of the roster when the server starts: it must name a model in the list, and one that needs no parameter. An invalid default stops startup, as an invalid roster already does. A missing default is allowed; a nameless request into an empty slot is then refused with the existing "no model is loaded" error.
+**Key logic.** A field in the fluid-stt provider's block of the registry that registers it, beside the model list the server already reads at startup. The control plane's voice config cannot be the home: the server cannot read it, and it sits on the other machine. The default is validated with the rest of the roster when the server starts: it must name a model in the list, and one that needs no parameter. An invalid default stops startup, as an invalid roster already does. A missing default is allowed; a nameless request into an empty slot is then refused with the existing "no model is loaded" error.
 
-The default is `parakeet-unified-0.6b`. It serves both modes, so one default answers both the WebSocket and the batch `/listen`, and it is the model the voice config already names.
+A default that serves both modes answers both the WebSocket and the batch `/listen`; keeping it the model the voice config names stops the two drifting apart.
 
 ### The routes
 
@@ -68,4 +68,4 @@ The dashboard's batch client sends its model name, as its streaming client alrea
 
 ## Out of scope
 
-The shard's lifecycle for fluid-stt is unchanged: started with the shard, never idle-unloaded.
+How long the process runs is the registry's `lifecycle`, outside this design.
