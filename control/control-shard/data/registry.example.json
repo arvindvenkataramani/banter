@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "type": "shard",
   "servicesRoot": "~/services",
   "defaults": {
@@ -100,7 +100,7 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/shard/registry.json --provider fluid-stt"
+        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt"
       },
       "ops": {
         "env": {
@@ -146,7 +146,7 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry ~/services/shard/registry.json --provider fluid-tts"
+        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry {registry} --provider fluid-tts"
       },
       "ops": {
         "env": {

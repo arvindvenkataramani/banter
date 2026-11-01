@@ -8,7 +8,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/deploy-env.sh"
 PROD="$BANTER_PROD"
-REGISTRY="${BANTER_REGISTRY_PATH:-$PROD/control/control-plane/data/registry.json}"
+REGISTRY="$BANTER_REGISTRY_PATH"
 
 # systemd user units run with a minimal PATH; see control-runner.sh.
 if command -v jq >/dev/null 2>&1; then

@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "runtime": {
     "host": "localhost",
     "eventsPath": "~/services/banter/logs/events.jsonl"
@@ -9,8 +9,7 @@
       "gateway": {
         "url": "wss://your-gateway.example.com",
         "token": "your-gateway-token"
-      },
-      "defaultAgent": "your-agent-id"
+      }
     }
   },
   "voice": {

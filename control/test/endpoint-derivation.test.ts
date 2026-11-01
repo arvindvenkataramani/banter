@@ -111,7 +111,7 @@ describe("managed runners", () => {
       services: [{
         id: "svc", name: "Service", capabilityId: "tts", hostId: "h",
         permissions: { enabled: true, protected: false },
-        runner: { type: "managed", startCmd: ["true"], stopCmd: ["true"], healthCmd: ["true"] },
+        runner: { type: "managed", startCmd: ["true"], stopCmd: ["true"], healthCmd: "true" },
         network: { port: 9009, healthPath: "/health", tailscaleServe: true },
       }],
       shards: [],

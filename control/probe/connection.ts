@@ -10,11 +10,10 @@ import type { CaptureSink } from "./capture";
 
 const CONNECT_PROTOCOL = 4;
 
-const OPERATOR_SCOPES = [
-  "operator.read",
-  "operator.write",
-  "operator.approvals",
-];
+// Read and send, nothing administrative: without operator.admin,
+// operator.pairing or operator.approvals the gateway refuses config changes,
+// device pairing and resolving exec approvals.
+const OPERATOR_SCOPES = ["operator.read", "operator.write"];
 
 // GATEWAY_CLIENT_CAPS in 2026.7.1 holds exactly this one entry. Without it the
 // gateway never registers the connection for structured tool events, and the

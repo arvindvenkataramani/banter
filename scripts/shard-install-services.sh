@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Install launchd agents and built artifacts for the control shard (Mac).
-# - Reads the shard's live registry (~/services/shard/registry.json, or wherever
-#   BANTER_SHARD_REGISTRY_PATH / BANTER_SHARD_ROOT point, as the shard does) to
-#   find services with runner.type == "launchd". Fails if there is none.
+# - Reads the shard's live registry ($BANTER_SHARD_REGISTRY_PATH, at the top of
+#   the shard's folder, as the shard does) to find services with
+#   runner.type == "launchd". Fails if it is missing.
 # - Copies only the referenced .plist files to ~/Library/LaunchAgents/
 # - Installs the built artifacts each service declares in ops.install
 #   (install-artifacts.sh). Any other file a service needs in its working
@@ -27,18 +27,16 @@ fi
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 source "$(dirname "$0")/deploy-env.sh"
 source "$(dirname "$0")/install-artifacts.sh"
-source "$(dirname "$0")/shard-registry.sh"
 
 # The registry the shard itself reads, not a copy in the source tree: the live
-# one is untracked and lives outside the deployed tree, so a deploy staged from
-# git has no registry of its own. Skipping quietly would leave the plists and
-# artifacts uninstalled with nothing to say so.
-REGISTRY="$(banter_shard_registry_path)"
+# one is untracked and sits at the top of the shard's folder, so a deploy staged
+# from git has no registry of its own. Skipping quietly would leave the plists
+# and artifacts uninstalled with nothing to say so.
+REGISTRY="$BANTER_SHARD_REGISTRY_PATH"
 if [[ ! -f "$REGISTRY" ]]; then
-  echo "[install-services] error: no shard registry at $REGISTRY" >&2
-  echo "[install-services]        This is where the shard reads its registry. Create it from" >&2
-  echo "[install-services]        control/control-shard/data/registry.example.json (docs/shard-setup.md)," >&2
-  echo "[install-services]        or set BANTER_SHARD_REGISTRY_PATH or BANTER_SHARD_ROOT to where it is." >&2
+  echo "[install-services] error: no registry at $REGISTRY" >&2
+  echo "[install-services]        This is the live registry the shard reads; shard-deploy.sh merges the repo's example into it." >&2
+  echo "[install-services]        Set BANTER_SHARD_REGISTRY_PATH if it lives elsewhere." >&2
   exit 1
 fi
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"

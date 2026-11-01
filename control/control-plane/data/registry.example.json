@@ -1,6 +1,6 @@
 {
   "_comment": "Single-machine starting registry: this machine, the control plane, and the fluid speech servers (fluid-stt for transcription, fluid-tts for synthesis) from services/fluid. Both are process runners: the control plane starts each on first use, from the binary scripts/fluid-build.sh builds and the install step copies into ops.env.workingDirectory. The roster section declares what each server offers — its models and the stock voices that need no reference recording — and is what voice mode's choices are built from. Add more hosts, capabilities, services and shards as you need them; docs/configuration.md covers every field.",
-  "version": 2,
+  "version": 3,
   "type": "control",
   "hosts": [
     {
@@ -60,7 +60,7 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
+        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt"
       },
       "ops": {
         "env": {
@@ -105,7 +105,7 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts"
+        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry {registry} --provider fluid-tts"
       },
       "ops": {
         "env": {

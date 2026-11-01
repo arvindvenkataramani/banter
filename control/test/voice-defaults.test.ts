@@ -175,6 +175,28 @@ describe("PATCH /api/voice/selection", () => {
     expect(disk.voice.tts.selection.voice).toBe("af_heart");
   });
 
+  it("saves into the file as it is on disk: keeps an unknown field and a hand edit made since load", async () => {
+    const app = await makeApp();
+    const onDisk = JSON.parse(await readFile(configPath, "utf-8"));
+    onDisk.somethingNewer = { kept: true };
+    onDisk.timezone = "Europe/London";
+    await writeFile(configPath, JSON.stringify(onDisk, null, 2));
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/voice/selection", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice: "af_heart" }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.tts.selection.voice).toBe("af_heart");
+    expect(disk.somethingNewer).toEqual({ kept: true });
+    expect(disk.timezone).toBe("Europe/London");
+  });
+
   it("updates speed and persists to disk", async () => {
     const app = await makeApp();
 

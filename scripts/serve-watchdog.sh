@@ -9,7 +9,7 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 
 source "$(dirname "$0")/deploy-env.sh"
-REGISTRY="${BANTER_REGISTRY_PATH:-$BANTER_PROD/control/control-plane/data/registry.json}"
+REGISTRY="$BANTER_REGISTRY_PATH"
 STATUS=$(tailscale serve status 2>/dev/null || true)
 
 # Extract (port) pairs for services on this host with tailscaleServe=true.

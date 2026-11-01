@@ -23,7 +23,7 @@ type Doc = Record<string, any>;
 /** A valid control registry with one systemd service, edited by `edit` before it is written. */
 async function write(edit: (doc: Doc) => void = () => {}): Promise<Doc> {
   const doc: Doc = {
-    version: 2,
+    version: 3,
     type: "control",
     hosts: [{ id: "host1", name: "Host One", hostname: "host1.ts.net", role: "control" }],
     capabilities: [{ id: "cap1", name: "Capability One" }],
@@ -57,20 +57,16 @@ describe("loading", () => {
   });
 
   const REJECTED: [string, (doc: Doc) => void, RegExp][] = [
-    ["no version", d => { delete d.version; }, /version/],
-    ["an unsupported version", d => { d.version = 99; }, /unsupported version/],
     ["no type", d => { delete d.type; }, /type/],
-    ["an invalid type", d => { d.type = "banana"; }, /invalid type/],
+    ["an invalid type", d => { d.type = "banana"; }, /type/],
     ["a service naming an unknown capability", d => { svc(d).capabilityId = "nope"; }, /capabilityId/],
     ["a service naming an unknown host", d => { svc(d).hostId = "nope"; }, /hostId/],
     ["a service with no enabled flag", d => { svc(d).permissions = {}; }, /enabled/],
     ["a host port that is not a positive integer", d => { d.hosts[0].port = -1; }, /port/],
     ["a roster provider naming a service not in this registry", d => { d.roster = { providers: { ghost: ROSTER.providers.svc1 }, voices: [] }; }, /roster:.*ghost/],
     ["a service with no runner", d => { delete svc(d).runner; }, /runner is required/],
-    ["an unknown runner type", d => { svc(d).runner = { type: "docker" }; }, /runner.type must be one of/],
+    ["an unknown runner type", d => { svc(d).runner = { type: "docker" }; }, /runner\.type/],
     ["a process runner without main", d => { svc(d).runner = { type: "process" }; }, /process runner requires runner.main/],
-    ["a port written into runner.main", d => { svc(d).runner = { type: "process", main: "server --port 3000" }; }, /svc1.*runner.main.*\{port\}/],
-    ["a port written into runner.main with =", d => { svc(d).runner = { type: "process", main: "server --port=3000" }; }, /svc1.*runner.main.*\{port\}/],
     ["a PORT among a service's variables", d => { svc(d).ops = { env: { variables: { PORT: "3000" } } }; }, /svc1.*PORT.*network.port/],
     ["a systemd runner without unit", d => { delete svc(d).runner.unit; }, /systemd runner requires/],
     ["a launchd runner without label", d => { svc(d).runner = { type: "launchd", plist: "ops/svc1.plist" }; }, /launchd runner requires/],
@@ -80,16 +76,16 @@ describe("loading", () => {
     ["a systemd service without a health path", d => { delete svc(d).network.healthPath; }, /network.healthPath is required/],
     ["an unknown group in defaults", d => { d.defaults = { bogus: { x: true } }; }, /unknown (field|group) in defaults/],
     ["a shard-only default on a control registry", d => { d.defaults = { network: { tailscaleServe: true } }; }, /shard-only field/],
-    ["a service scheme other than http or https", d => { svc(d).network.scheme = "ftp"; }, /network.scheme must be "http" or "https", got "ftp"/],
-    ["a default scheme other than http or https", d => { d.defaults = { network: { scheme: "ftp" } }; }, /defaults.network.scheme must be "http" or "https", got "ftp"/],
-    ["a shard scheme other than http or https", d => { d.shards = [{ hostId: "host1", port: 5007, scheme: "ftp" }]; }, /scheme must be "http" or "https", got "ftp"/],
+    ["a service scheme other than http or https", d => { svc(d).network.scheme = "ftp"; }, /network\.scheme.*got "ftp"/],
+    ["a default scheme other than http or https", d => { d.defaults = { network: { scheme: "ftp" } }; }, /defaults\.network\.scheme.*got "ftp"/],
+    ["a shard scheme other than http or https", d => { d.shards = [{ hostId: "host1", port: 5007, scheme: "ftp" }]; }, /shard.*scheme.*got "ftp"/],
     ["ops.install with no artifacts", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [] } }; }, /svc1.*ops.install.artifacts/],
-    ["an artifact without a to", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a" }] } }; }, /svc1.*to/],
+    ["an artifact without a to", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a" }] } }; }, /services\[svc1\].*\bto\b/],
     ["an absolute artifact to", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a", to: "/usr/local/bin/app" }] } }; }, /svc1.*relative/],
     ["an artifact to climbing out with ..", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "a", to: "../app" }] } }; }, /svc1.*relative/],
     ["an absolute artifact from", d => { svc(d).ops = { ...INSTALL, install: { artifacts: [{ from: "/tmp/app", to: "app" }] } }; }, /svc1.*relative/],
     ["ops.install with no working directory", d => { svc(d).ops = { install: INSTALL.install }; }, /svc1.*workingDirectory/],
-    ["intervals that are not an object", d => { d.intervals = 5; }, /intervals must be an object/],
+    ["intervals that are not an object", d => { d.intervals = 5; }, /intervals/],
     ["an unknown interval", d => { d.intervals = { pollMs: 1000 }; }, /unknown field in intervals/],
     ["an interval that is not a positive integer", d => { d.intervals = { healthMs: 0 }; }, /intervals.healthMs must be a positive integer/],
     ["a shard poll interval on a shard", d => { d.type = "shard"; d.intervals = { shardPollMs: 1000 }; }, /shardPollMs is control-only/],
@@ -211,7 +207,7 @@ describe("writing", () => {
 
   const REFUSED: [string, string, Record<string, unknown>, RegExp][] = [
     ["an unknown service", "nope", { network: { port: 1234 } }, /nope/],
-    ["a scheme other than http or https", "svc1", { network: { scheme: "ftp" } }, /network.scheme must be "http" or "https", got "ftp"/],
+    ["a scheme other than http or https", "svc1", { network: { scheme: "ftp" } }, /network\.scheme.*got "ftp"/],
     ["a note that is not a string", "svc1", { notes: 42 }, /notes must be a string/],
     ["clearing the port", "svc1", { network: { port: null } }, /network.port cannot be cleared/],
     ["clearing the health path", "svc1", { network: { healthPath: null } }, /network.healthPath cannot be cleared/],

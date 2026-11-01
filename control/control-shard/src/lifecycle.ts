@@ -14,16 +14,17 @@ interface ShardStartupDeps {
   runFn: RunFn;
   pollHealthFn: PollHealthFn;
   spawnFn?: SpawnFn;
+  registryPath?: string;
 }
 
 export async function shardStartup(deps: ShardStartupDeps): Promise<void> {
-  const { registryState, eventsPath, runFn, pollHealthFn, spawnFn } = deps;
+  const { registryState, eventsPath, runFn, pollHealthFn, spawnFn, registryPath } = deps;
 
   for (const svc of registryState.services) {
     if (svc.lifecycle?.autoStart !== true) continue;
     console.log(`Auto-starting ${svc.id}...`);
     try {
-      const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, eventsPath, spawnFn), { deadlineMs: startDeadlineMs(svc) });
+      const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, eventsPath, spawnFn, undefined, registryPath), { deadlineMs: startDeadlineMs(svc) });
       if (result.ok) {
         svc.state = { ...svc.state, loadTime: Date.now() };
         console.log(`  ${svc.id} started`);

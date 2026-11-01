@@ -15,8 +15,7 @@ import { CaptureSink } from "./capture";
 import { ProbeConnection } from "./connection";
 import { CAPTURE_DIR, IDENTITY_PATH, pruneCaptures } from "./paths";
 import { join } from "node:path";
-import { homedir } from "node:os";
-import { resolveConfigValue } from "../control-plane/src/gateway-config";
+import { loadGatewayConfig } from "./gateway";
 
 const DISPLAY_NAME = "Banter gateway probe";
 
@@ -37,23 +36,6 @@ function parseArgs(argv: string[]): Args {
     else if (arg === "--limit") args.limit = Number(argv[++i]);
   }
   return args;
-}
-
-async function loadGatewayConfig(): Promise<{ url: string; token: string }> {
-  const configPath =
-    process.env.BANTER_CONFIG_PATH ??
-    join(
-      process.env.BANTER_PROD ?? join(homedir(), "services", "banter"),
-      "control",
-      "control-plane",
-      "data",
-      "config.json",
-    );
-  const config = await Bun.file(configPath).json();
-  const gw = config?.integrations?.openclaw?.gateway;
-  const token = resolveConfigValue(gw?.token);
-  if (!gw?.url || !token) throw new Error(`no gateway url/token in ${configPath}`);
-  return { url: gw.url, token };
 }
 
 function timestamp(): string {

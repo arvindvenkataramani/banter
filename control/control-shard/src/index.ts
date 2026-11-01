@@ -44,7 +44,7 @@ const pingMap = new Map<string, number>();
 // callers are awaiting it — not once per caller, which duplicate service.down
 // events in the fire-and-forget start route used to produce under coalescing.
 async function loadService(svc: Service): Promise<StartResult> {
-  const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, EVENTS_PATH, spawnFn), { deadlineMs: startDeadlineMs(svc) });
+  const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, EVENTS_PATH, spawnFn, undefined, REGISTRY_PATH), { deadlineMs: startDeadlineMs(svc) });
   if (result.ok) {
     svc.state = { ...svc.state, loadTime: Date.now() };
   } else {
@@ -139,6 +139,7 @@ await shardStartup({
   runFn,
   pollHealthFn,
   spawnFn,
+  registryPath: REGISTRY_PATH,
 });
 
 // ── Shutdown ───────────────────────────────────────────────────────────────────

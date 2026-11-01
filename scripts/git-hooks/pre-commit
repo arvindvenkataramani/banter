@@ -18,4 +18,20 @@ if git diff --cached --name-only -- control/ | grep -q .; then
     echo "[pre-commit] warning: bun run docs failed; docs/api-reference.md not regenerated." >&2
   fi
 fi
+
+# The example config.json and registry.json files carry the schema's version and
+# defaults. A commit touching control/ syncs them and takes any change into the
+# commit.
+if git diff --cached --name-only -- control/ | grep -q .; then
+  root="$(git rev-parse --show-toplevel)"
+  templates="control/control-plane/data/config.example.json control/control-plane/data/registry.example.json control/control-shard/data/registry.example.json"
+  if (cd "$root/control" && bun run config:sync >/dev/null 2>&1); then
+    if ! (cd "$root" && git diff --quiet -- $templates); then
+      (cd "$root" && git add -- $templates)
+      echo "[pre-commit] example config and registry files synced and added to this commit."
+    fi
+  else
+    echo "[pre-commit] warning: bun run config:sync failed; examples not synced." >&2
+  fi
+fi
 exit 0

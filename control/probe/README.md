@@ -23,6 +23,14 @@ bugs in whichever client lent it — and a shared identity cannot be
 revoked without revoking that client too. `openclaw devices list` shows
 the probe as **"Banter gateway probe"**, revocable on its own.
 
+## Permissions
+
+The probe connects with `operator.read` and `operator.write`: it can read sessions and transcripts and send messages, and nothing administrative. Without `operator.admin`, `operator.pairing` and `operator.approvals`, the gateway refuses config changes, device pairing and resolving exec approvals (`missing scope: …`). The scopes are set in `connection.ts`.
+
+## Gateway URL and token
+
+The scripts read `integrations.openclaw.gateway` from the deployed `config.json` (`$BANTER_CONFIG_PATH`, else `$BANTER_LIVE_DIR/config.json`, else `$BANTER_PROD/config.json`, default `~/services/banter/config.json`). The token there is a `${OPENCLAW_GATEWAY_TOKEN}` reference, resolved from the environment when set and otherwise from `$BANTER_PROD/.env.secrets` (default `~/services/banter/.env.secrets`), the file `scripts/control-dev.sh` loads. See `gateway.ts`.
+
 ## Setup
 
 Pair once:
@@ -70,6 +78,15 @@ Subscribes and records, never sends. This is the position of a client
 attaching to a run it did not start — which is the only way to observe
 `session.tool`, since run originators are deduplicated out of that
 broadcast.
+
+`--session <key>` watches one session and `--all-sessions` watches every one. A conversation the dashboard creates has its own key (`agent:main:dashboard:<uuid>`), so watching `agent:main:main` misses it.
+
+### Reading transcripts
+
+```bash
+bun run control/probe/history.ts --list
+bun run control/probe/history.ts --session agent:main:main --raw
+```
 
 ### Reading captures
 
@@ -140,4 +157,4 @@ cd control && bun test
 `test/probe-capture.test.ts`, `probe-identity.test.ts` and
 `probe-connection.test.ts` cover session filtering, redaction, compaction
 stripping, identity derivation and challenge signing, and the handshake
-against a mock gateway. No test touches the real gateway.
+against a mock gateway. `probe-gateway.test.ts` covers reading the secrets file and resolving the token reference. No test touches the real gateway.

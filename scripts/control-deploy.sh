@@ -8,21 +8,11 @@
 #   control-deploy.sh main      — deploy from main without prompting
 #   control-deploy.sh dev       — deploy from working tree without prompting
 #
-# The deployed config.json and registry.json are kept across a deploy.
-#   --reset-config              — replace both with the shipped examples.
-#   --reset-config=registry.json — replace only that file, keeping the rest.
-#                                 Takes a comma-separated list; the bare form
-#                                 above means all of them. This is the same
-#                                 per-file choice an interactive run offers, so
-#                                 an unattended deploy can express it too.
-#
-#                                 Without the flag the live files are never
-#                                 overwritten: an interactive run offers the
-#                                 choice, a non-interactive one keeps them.
-#                                 Either way a shipped example that is older
-#                                 than the live file it would replace, and
-#                                 differs from it, stops the deploy rather than
-#                                 overwriting.
+# The repo's config.example.json and registry.example.json are merged field by
+# field into the live directory ($BANTER_LIVE_DIR, the deployed folder itself)
+# before anything is stopped. Changed only in the repo, the repo's value is
+# taken; changed only on this node, the node's value stays; changed on both to
+# different values, the deploy stops and names the fields. There is no prompt.
 #
 # First-time setup:
 #   loginctl enable-linger $USER
@@ -33,10 +23,9 @@ source "$(dirname "$0")/deploy-env.sh"
 PROD="$BANTER_PROD"
 SCRIPTS_DIR="$REPO/scripts"
 
-# Temporary directories to remove on exit. Bash keeps only one EXIT trap, and
-# this script makes two kinds of temp directory — an extracted source tree and a
-# config stash — so they share one trap over a list rather than each installing
-# its own and silently replacing the other.
+# Temporary directories to remove on exit. Bash keeps only one EXIT trap, so
+# every temporary directory registers in this list rather than installing its
+# own trap and silently replacing the others.
 CLEANUP_DIRS=()
 cleanup() {
   for d in ${CLEANUP_DIRS+"${CLEANUP_DIRS[@]}"}; do
@@ -56,15 +45,7 @@ bash "$SCRIPTS_DIR/deploy-preflight.sh" "$BANTER_PROD" || {
 SRC="$REPO"
 FORCE_REF=""
 for arg in "$@"; do
-  case "$arg" in
-    # Replace the deployed config and registry with the shipped examples instead
-    # of keeping them. Without this the live files are preserved, and an
-    # interactive deploy asks before doing anything else. A comma-separated
-    # list after = names exactly which files to take from the repo.
-    --reset-config) export BANTER_RESET_CONFIG=all ;;
-    --reset-config=*) export BANTER_RESET_CONFIG="${arg#*=}" ;;
-    *) FORCE_REF="$arg" ;;
-  esac
+  FORCE_REF="$arg"
 done
 
 if [[ -n "$FORCE_REF" ]]; then
@@ -118,20 +99,36 @@ fi
 cd "$SRC/dashboard"
 bun run build
 
+# Merge the repo's example configuration into the live directory while the old
+# control plane is still running; a conflict leaves everything untouched. A first
+# deploy starts from the files an older layout kept under
+# $PROD/control/control-plane/data/, where they exist, and otherwise from the
+# examples.
+OLD_DATA="$PROD/control/control-plane/data"
+LEGACY_ARGS=()
+[[ -f "$OLD_DATA/config.json" ]]   && LEGACY_ARGS+=(--legacy-config "$OLD_DATA/config.json")
+[[ -f "$OLD_DATA/registry.json" ]] && LEGACY_ARGS+=(--legacy-registry "$OLD_DATA/registry.json")
+echo "[control-deploy] Merging configuration into $BANTER_LIVE_DIR..."
+if ! bun "$SRC/control/scripts/deploy-config.ts" plane "$BANTER_LIVE_DIR" "$SRC/control/control-plane/data" ${LEGACY_ARGS+"${LEGACY_ARGS[@]}"}; then
+  echo "[control-deploy] Configuration merge failed — nothing was stopped or changed." >&2
+  exit 1
+fi
+
 echo "[control-deploy] Stopping control plane..."
 systemctl --user stop "$BANTER_UNIT" 2>/dev/null || true
 
-# Set the live config and registry aside before the tree they live in is
-# removed. The stash is outside $PROD deliberately — anywhere inside it would be
-# removed along with everything else.
-CONFIG_STASH="$(mktemp -d "${TMPDIR:-/tmp}/banter-config-stash.XXXXXX")"
-CLEANUP_DIRS+=("$CONFIG_STASH")
-# A refusal comes before anything is copied, so the old deployment restarts intact.
-if ! bash "$SCRIPTS_DIR/deploy-preserve-config.sh" save "$PROD" "$CONFIG_STASH" "$SRC/control/control-plane/data"; then
-  echo "[control-deploy] Deploy refused — restarting the existing control plane." >&2
-  systemctl --user start "$BANTER_UNIT"
-  exit 1
-fi
+# A failure from here on brings the old control plane back, then removes the
+# temporary directories.
+restart_on_failure() {
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "[control-deploy] Deploy failed — restarting $BANTER_UNIT." >&2
+    systemctl --user start "$BANTER_UNIT" 2>/dev/null || true
+  fi
+  cleanup
+  exit $rc
+}
+trap restart_on_failure EXIT
 
 echo "[control-deploy] Copying files to $PROD..."
 mkdir -p "$PROD" "$PROD/control"
@@ -149,7 +146,9 @@ cp    "$SRC/control/package.json"        "$PROD/control/package.json"
 # control-plane — runtime source and registry only (no tests, no ops)
 mkdir -p "$PROD/control/control-plane"
 cp -r "$SRC/control/control-plane/src"           "$PROD/control/control-plane/src"
-cp -r "$SRC/control/control-plane/data"          "$PROD/control/control-plane/data"
+# control-plane/data holds only the field reference; the live files are in the live directory.
+mkdir -p "$PROD/control/control-plane/data"
+cp    "$SRC/control/control-plane/data/config.md" "$PROD/control/control-plane/data/config.md"
 cp    "$SRC/control/control-plane/package.json"  "$PROD/control/control-plane/package.json"
 
 # dashboard — built assets only (served directly by control plane)
@@ -158,14 +157,16 @@ cp -r "$SRC/dashboard/dist"          "$PROD/dashboard/dist"
 
 cp -r "$SRC/ops"          "$PROD/ops"
 cp -r "$SRC/scripts"      "$PROD/scripts"
+# deploy.conf is untracked, so a deploy from main has none in its stage. It stays
+# in the checkout because it names this folder; the copy lets the deployed
+# scripts, which systemd runs, read the same settings.
+if [[ -f "$SCRIPTS_DIR/deploy.conf" ]]; then
+  cp "$SCRIPTS_DIR/deploy.conf" "$PROD/scripts/deploy.conf"
+fi
 # Strip dashboard workspace from package.json — only dist is deployed, not the full package
 bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
 cp    "$SRC/tsconfig.json"   "$PROD/tsconfig.json"
 cp    "$SRC/bun.lock"        "$PROD/bun.lock" 2>/dev/null || true
-
-# Put the live config and registry back over the examples the copy just laid
-# down. Where there was nothing to save, the examples stand — a first deploy.
-bash "$SCRIPTS_DIR/deploy-preserve-config.sh" restore "$PROD" "$CONFIG_STASH"
 
 echo "[control-deploy] Installing dependencies..."
 cd "$PROD"

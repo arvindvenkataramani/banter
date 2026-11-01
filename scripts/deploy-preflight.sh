@@ -66,6 +66,12 @@ elif [[ -f "$DEST/$MARKER" ]]; then
   else
     refuse "$DEST carries a deployment marker for project '${PROJECT:-unknown}', not banter."
   fi
+elif command -v jq >/dev/null 2>&1 && jq -e '.type == "control" or .type == "shard"' "$DEST/registry.json" >/dev/null 2>&1 \
+     && [[ -z "$(ls -A "$DEST" | grep -vxE 'registry\.json|config\.json|shipped|state|logs|\.env\.secrets')" ]]; then
+  # No mark yet, but the folder holds a banter registry and nothing else beyond
+  # what an install writes: that is the state scripts/install.sh leaves before
+  # the first deploy. A folder with anything else in it is refused.
+  echo "[preflight] destination $DEST holds only a banter install's live files — safe to deploy over."
 else
   refuse "$DEST is not empty and was not created by banter — it may belong to another deployment."
 fi

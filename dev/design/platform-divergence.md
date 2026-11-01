@@ -26,6 +26,8 @@ Differences the rule doesn't settle are recorded under [Decided](#decided). A ne
 3. `git log -3 -- <file>` in both repos tells you whether platform moved after the last port (Banter is behind) or Banter changed something platform lacks (Banter is ahead).
 4. Check every finding against the code before recording it. Audits by agents have reported deploys that could not happen, and tests as lost that platform had rewritten.
 5. Before taking a platform design, read platform's stated reason for it and check that the reason applies to Banter.
+6. Take platform's code and schema, never its deployment values. Platform's live `registry.json` and `config.json` describe its own machines: which services run, their lifecycles, hosts and origins. Banter's example registries keep their own values.
+7. Docs describe how the software works and how to configure it. They make no claims about which services an install has, registers, runs or has retired. Outside a doc whose subject is one component, a service is named only as an example. When porting a platform doc, strip what it says about platform's running setup.
 
 ## Keep: features Banter leaves out
 
@@ -72,49 +74,17 @@ Banter changes that platform lacks. They stay.
 
 In porting order. Platform commits are named so each port can be diffed.
 
-### 1. Live config
+### Docs that follow live config
 
-Platform commits: `de44bd6`, `bdeef42`, `b4d13ea`. This is a pass of its own, taken as platform has it.
-
-- **What it is:**
-  - Each node keeps `config.json`, `registry.json`, `shipped/` and `state/state.json` at the top of its deployment folder. A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, `ops/`, `scripts/`), so it never touches them.
-  - Every load syncs each file to a Zod schema, with defaults and repair rules.
-  - A config that fails its schema stops startup; Banter's `index.ts:22` swallows the failure today.
-  - Saves change one field on disk.
-  - Runtime state (`lastAgent`, `lastSessionByAgent`) lives in `state.json`, not `config.json`.
-  - A deploy three-way merges the last-shipped, live and repo copies, and stops on a conflict.
-- **Files:**
-  - `live-config/{sync,merge,rules,deploy}.ts`, `deploy-config.ts`, `sync-templates.ts`, the pre-commit sync, and their tests.
-  - `paths.ts`, `paths.test.ts` and `deploy-env.test.ts`.
-  - `platform_detect_node`, `{port}` and `{registry}` in `runner.main`, and the probe's shared token loader (`2a893cf`).
-  - The control and shard installs fail loudly when the live registry is missing.
-  - Whether `history.ts`'s git-backed history comes over is a separate choice.
-- **What it replaces in Banter:**
-  - `deploy-preserve-config.sh`, its compare-and-prompt, and `--reset-config`.
-  - `shard-registry.sh` and `shardRoot`; the shard registry moves from `~/services/shard/registry.json` to the top of the shard's folder.
-- **Banter's form:**
-  - The merge's repo side is Banter's example files, so an untouched placeholder never conflicts.
-  - First-deploy seeding reads Banter's old locations, `control/control-plane/data/` and `~/services/shard/`.
-  - `deploy.conf` stays in the checkout's `scripts/`, because it names the deployment folder, and the deploy copies it into `$PROD/scripts/`. Without that copy, a deploy deletes `$PROD/scripts`, recopies it from a git stage that lacks the untracked file, and the scripts systemd runs fall back to defaults. Platform's `~/.config/platform/deploy.conf` stays out.
-- **Stripped:** the schema's `mediaGeneration`, `vault` and `content` blocks, media slot and voice fields, `extraOrigins` (`schemas.ts:262`, `registry.ts:124`) and `defaultScheme`'s https default. Hunk-merge `registry.ts`; never overwrite it.
-- **Renamed:** `PLATFORM_*` becomes `BANTER_*`, and Banter's folders stay lowercase (`~/services`, not `~/Services`).
-- **One commit for the API rename.** `PATCH /api/gateway/defaultAgent` becomes `lastAgent`, and these change together:
-  - `gateway-config.ts`
-  - `routes.ts`
-  - `session-manager.ts`
-  - `use-session-manager.ts`, keeping Banter's hoisted effect dependencies
-  - the example config and `docs/configuration.md`
-  - the regenerated API reference
-- **Human review:** the deploy and config scripts, and the probe's reading of `.env.secrets` and its narrower gateway scopes, are on CONTRIBUTING's human-review list.
-- **Dependencies:** none new. Zod `4.3.6` is already pinned.
-
-### 2. Docs that follow live config
-
-These describe config and deploy, so they are brought up to date once live config lands.
+These describe config and deploy, and still describe the old layout.
 
 - **Strip and port:** `OPERATIONS.md`, without the Pi, NAS and personal machines.
 - **Refresh against platform and the new layout:** `control-plane-api.md`, `registry.md`, `service-lifecycle.md`, `event-log.md`, `control-shard.md`, `shard-setup.md`, `stt-setup.md` and `voices-and-models.md`.
 - **`docs/architecture/README.md`** says a tailnet is the only configuration; Banter defaults to http.
+
+### Not taken yet
+
+Live config's git-backed history of the live files (`history.ts`).
 
 ### Lint
 

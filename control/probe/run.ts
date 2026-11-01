@@ -8,8 +8,7 @@
 // then run scenarios. The probe is its own device and is revocable on its own.
 
 import { join } from "node:path";
-import { homedir } from "node:os";
-import { resolveConfigValue } from "../control-plane/src/gateway-config";
+import { loadGatewayConfig } from "./gateway";
 import { loadOrCreateIdentity } from "./identity";
 import { CaptureSink } from "./capture";
 import { ProbeConnection } from "./connection";
@@ -61,25 +60,6 @@ function parseArgs(argv: string[]): Args {
     else if (arg === "--model") args.model = argv[++i];
   }
   return args;
-}
-
-async function loadGatewayConfig(): Promise<{ url: string; token: string }> {
-  const configPath =
-    process.env.BANTER_CONFIG_PATH ??
-    join(
-      process.env.BANTER_PROD ?? join(homedir(), "services", "banter"),
-      "control",
-      "control-plane",
-      "data",
-      "config.json",
-    );
-  const config = await Bun.file(configPath).json();
-  const gw = config?.integrations?.openclaw?.gateway;
-  const token = resolveConfigValue(gw?.token);
-  if (!gw?.url || !token) {
-    throw new Error(`no gateway url/token in ${configPath}`);
-  }
-  return { url: gw.url, token };
 }
 
 function timestamp(): string {

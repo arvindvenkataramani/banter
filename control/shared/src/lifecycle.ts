@@ -72,10 +72,10 @@ function getRunner(svc: Service): ServiceRunner {
   return svc.runner ?? { type: "external" };
 }
 
-export function deriveStartCmd(svc: Service): string[] | null {
+export function deriveStartCmd(svc: Service, opts?: { registryPath?: string }): string[] | null {
   const r = getRunner(svc);
   switch (r.type) {
-    case "process": return r.main.split(" ").map(arg => arg.replaceAll("{port}", String(svc.network.port)));
+    case "process": return r.main.split(" ").map(arg => arg.replaceAll("{port}", String(svc.network.port)).replaceAll("{registry}", opts?.registryPath ?? "{registry}"));
     case "systemd": return ["systemctl", "--user", "start", `${r.unit}.service`];
     case "launchd": return ["launchctl", "bootstrap", `gui/${process.getuid?.() ?? 501}`, `${process.env.HOME}/Library/LaunchAgents/${r.label}.plist`];
     case "external": return null;
@@ -167,7 +167,8 @@ export async function startService(
   svc: Service,
   eventsPath: string,
   spawnFn?: SpawnFn,
-  probeFn: ProbeFn = defaultProbeFn
+  probeFn: ProbeFn = defaultProbeFn,
+  registryPath?: string
 ): Promise<StartResult> {
   const runner = getRunner(svc);
   if (runner.type === "external") {
@@ -280,7 +281,7 @@ export async function startService(
   }
 
   // Step 2: Start the process
-  const startCmd = deriveStartCmd(svc);
+  const startCmd = deriveStartCmd(svc, { registryPath });
   if (!startCmd) {
     return { ok: false, error: `no start command for runner type '${runner.type}'` };
   }
@@ -295,7 +296,7 @@ export async function startService(
     spawnOpts.env = { ...svc.ops?.env?.variables, PORT: String(svc.network.port) };
     const child = spawnFn(startCmd, spawnOpts);
     children.set(svc.id, child);
-    watchForExit(runFn, svc, eventsPath, child, pollHealthFn, spawnFn);
+    watchForExit(runFn, svc, eventsPath, child, pollHealthFn, spawnFn, registryPath);
   } else {
     // systemd/launchd: runFn completes quickly (systemctl start returns immediately)
     const startResult = await runFn(startCmd);
@@ -435,7 +436,8 @@ export async function restartService(
   pollHealthFn: PollHealthFn,
   svc: Service,
   eventsPath: string,
-  spawnFn?: SpawnFn
+  spawnFn?: SpawnFn,
+  registryPath?: string
 ): Promise<StartResult> {
   const runner = getRunner(svc);
   if (runner.type === "external") {
@@ -461,7 +463,7 @@ export async function restartService(
 
   // process runner: stop then start
   await stopService(runFn, svc, eventsPath);
-  return startService(runFn, pollHealthFn, svc, eventsPath, spawnFn);
+  return startService(runFn, pollHealthFn, svc, eventsPath, spawnFn, undefined, registryPath);
 }
 
 export async function enableService(
@@ -516,6 +518,7 @@ interface HandleExitOpts {
   restartCount: number;
   pollHealthFn: PollHealthFn;
   spawnFn?: SpawnFn;
+  registryPath?: string;
 }
 
 /** Observe a spawned child's exit and route a crash into recovery.
@@ -538,7 +541,8 @@ function watchForExit(
   eventsPath: string,
   child: SpawnedChild,
   pollHealthFn: PollHealthFn,
-  spawnFn?: SpawnFn
+  spawnFn?: SpawnFn,
+  registryPath?: string
 ): void {
   if (!child.exited) return;
 
@@ -568,6 +572,7 @@ function watchForExit(
       restartCount,
       pollHealthFn,
       spawnFn,
+      registryPath,
     });
   }).catch(() => {
     // A rejected `exited` tells us nothing actionable about the service.
@@ -627,7 +632,7 @@ export async function handleProcessExit(
 
   // Wait backoff then attempt restart
   await new Promise(r => setTimeout(r, restartBackoff));
-  await submit(svc.id, "start", () => startService(runFn, opts.pollHealthFn, svc, eventsPath, opts.spawnFn), { deadlineMs: startDeadlineMs(svc) });
+  await submit(svc.id, "start", () => startService(runFn, opts.pollHealthFn, svc, eventsPath, opts.spawnFn, undefined, opts.registryPath), { deadlineMs: startDeadlineMs(svc) });
 }
 
 // ── WithLock variants ────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/deploy-env.sh"
 PROD="$BANTER_PROD"
-REGISTRY="${BANTER_REGISTRY_PATH:-$PROD/control/control-plane/data/registry.json}"
+REGISTRY="$BANTER_REGISTRY_PATH"
 
 # systemd user units run with a minimal PATH, so jq and bun are found the way
 # the deploy scripts find them: on PATH, then the usual install locations.
@@ -37,4 +37,6 @@ export PATH
 # BANTER_CONTROL_PORT is passed explicitly so the server binds the same port we just
 # handed to Tailscale Serve, rather than falling back to its own default.
 cd "$PROD/control/control-plane"
-exec env DASHBOARD_DIST="$PROD/dashboard/dist" BANTER_CONTROL_PORT="$BANTER_CONTROL_PORT" "$BUN" run src/index.ts
+exec env DASHBOARD_DIST="$PROD/dashboard/dist" BANTER_CONTROL_PORT="$BANTER_CONTROL_PORT" \
+  BANTER_LIVE_DIR="$BANTER_LIVE_DIR" BANTER_REGISTRY_PATH="$BANTER_REGISTRY_PATH" BANTER_CONFIG_PATH="$BANTER_CONFIG_PATH" \
+  "$BUN" run src/index.ts

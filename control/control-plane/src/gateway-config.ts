@@ -1,10 +1,13 @@
 import { Hono } from 'hono'
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises'
-import { writeFileAtomic } from '../../shared/src/atomic-write'
+import { withFileLock, writeFileAtomic, writeFileAtomicUnlocked } from '../../shared/src/atomic-write'
 import { reloadRegistry } from '../../shared/src/registry'
+import { syncDocument } from '../../shared/src/live-config/sync'
+import { moveRuntimeState } from '../../shared/src/live-config/rules'
+import { configSpec, stateSpec, type PlatformConfig as ConfigDocument, type RuntimeState } from '../../shared/src/live-config/schemas'
 import { deriveHealthMap, deriveHealth } from '../../shared/src/events'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
 import { CHUNK_STRATEGIES } from '../../../shared/types'
 import type { Service, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
 import type { AssembledRoster } from './roster-assembly'
@@ -14,68 +17,8 @@ export interface ModelChunkingPref {
   chunking?: { mode?: string; minWords?: number; maxWords?: number }
 }
 
-export interface PlatformConfig {
-  version: number
-  /**
-   * Process-level settings: where this deployment listens and logs. Each has an
-   * environment override, but a normal run needs none. Loop intervals live in
-   * registry.json under `intervals`. The listening port is deliberately absent —
-   * it comes from the registry's own `control` service entry, so it is declared
-   * in one place rather than two that could disagree. See runtime-settings.ts.
-   */
-  runtime?: {
-    host?: string
-    eventsPath?: string
-  }
-  integrations?: {
-    openclaw?: {
-      gateway?: {
-        url?: string
-        token?: string
-      }
-      defaultAgent?: string
-      defaultSession?: string
-      // Last session name the dashboard was viewing, per agent — distinct
-      // from defaultSession (that agent's structural home/default
-      // conversation, e.g. 'main'). Restores the actual last-viewed
-      // conversation on reload instead of always resetting to the default.
-      lastSessionByAgent?: Record<string, string>
-    }
-  }
-  voice?: {
-    enabled?: boolean
-    /** What a voice session does when a voice server it wants — TTS or STT —
-     * is held by another session. `ask` (default) shows a dialog offering to
-     * take it over; `always` takes over without asking. */
-    takeover?: 'ask' | 'always'
-    tts?: {
-      /** Roster ids: `model` names a roster model, `voice` a roster voice or
-       * one of the model's presets. What exists is the shard roster's to say. */
-      selection?: { serviceId: string; model: string; voice: string; speed?: number }
-      options?: { chunkStrategy?: string | null; minChunkWords?: number | null; maxChunkWords?: number | null }
-      /** Keyed serviceId -> roster model id. */
-      modelPrefs?: Record<string, Record<string, ModelChunkingPref>>
-      settingsScope?: 'global' | 'per-model'
-    }
-    stt?: {
-      serviceId?: string
-      /** Which model a voice session loads before its first utterance. The STT
-       * server starts holding nothing and never loads implicitly. */
-      model?: string
-      /** Which half of a model reporting kind `both` to load. Consulted only
-       * there: a model that does one thing is not a choice. */
-      preferStreaming?: boolean
-      /** Which streaming latency tier to load, for a model declaring several.
-       * A tier is a parameter over one set of weights, not a model. */
-      chunkMs?: number
-      options?: Array<{ serviceId: string; name: string; sessions?: boolean }>
-      [key: string]: unknown
-    }
-    debug?: {
-      saveMicSamples?: boolean
-    }
-  }
-}
+/** The configuration document; its shape is the schema in shared/src/live-config/schemas.ts. */
+export type PlatformConfig = ConfigDocument
 
 export type VoiceSelectionPatch = {
   serviceId?: string
@@ -156,10 +99,79 @@ export function resolveConfigValue(value: string | undefined): string | undefine
   return process.env[match[1]] ?? undefined
 }
 
+const serialize = (doc: unknown) => JSON.stringify(doc, null, 2) + '\n'
+
+/** The runtime-state file sits beside the configuration, in `state/`. */
+export function statePathFor(configPath: string): string {
+  return join(dirname(configPath), 'state', 'state.json')
+}
+
+/** Reads the state file, synced with its schema; an absent file is an empty state. */
+async function readStateFile(statePath: string): Promise<{ state: RuntimeState; write: boolean }> {
+  let raw: unknown = {}
+  let exists = true
+  try {
+    raw = JSON.parse(await readFile(statePath, 'utf-8'))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    exists = false
+  }
+  const result = syncDocument(raw, stateSpec)
+  for (const w of result.warnings) console.warn(`state: ${w}`)
+  return { state: result.doc, write: result.writable && (result.changed || !exists) }
+}
+
+async function writeStateFile(statePath: string, state: RuntimeState): Promise<void> {
+  await mkdir(dirname(statePath), { recursive: true })
+  await writeFileAtomic(statePath, serialize(state))
+}
+
+/**
+ * Loads the configuration: runtime state the file still holds moves to the
+ * state file first, then the document is synced with its schema. Whichever
+ * file changed is written back, the state file first; a configuration from
+ * newer code is used as it stands and never written.
+ */
 export async function loadConfig(configPath: string): Promise<PlatformConfig> {
-  const raw = await readFile(configPath, 'utf-8')
-  const config = JSON.parse(raw) as PlatformConfig
-  return config
+  const raw = JSON.parse(await readFile(configPath, 'utf-8')) as Record<string, unknown>
+  const statePath = statePathFor(configPath)
+  const { state, write: writeState } = await readStateFile(statePath)
+
+  const fromNewerCode = typeof raw.version === 'number' && raw.version > configSpec.version
+  const moved = fromNewerCode ? false : moveRuntimeState(raw, state as unknown as Record<string, unknown>)
+  const result = syncDocument(raw, configSpec)
+  for (const w of result.warnings) console.warn(`config: ${w}`)
+
+  if (writeState || moved) await writeStateFile(statePath, syncDocument(state, stateSpec).doc)
+  if ((result.changed || moved) && result.writable) {
+    await writeFileAtomic(configPath, serialize(result.doc))
+  }
+  return result.doc
+}
+
+export async function readRuntimeState(configPath: string): Promise<RuntimeState> {
+  return (await readStateFile(statePathFor(configPath))).state
+}
+
+/**
+ * Applies `mutate` to the document as it stands on disk and writes it back, so
+ * a hand edit or a field this code does not know survives the save. The result
+ * is checked against the schema before anything is written, and the live
+ * object is refreshed in place from what was written.
+ */
+async function saveConfigField(
+  configPath: string,
+  live: PlatformConfig,
+  mutate: (doc: PlatformConfig) => void,
+): Promise<void> {
+  await withFileLock(configPath, async () => {
+    const doc = JSON.parse(await readFile(configPath, 'utf-8')) as PlatformConfig
+    mutate(doc)
+    const synced = syncDocument(doc, configSpec).doc
+    await writeFileAtomicUnlocked(configPath, serialize(doc))
+    for (const key of Object.keys(live)) delete (live as Record<string, unknown>)[key]
+    Object.assign(live, synced)
+  })
 }
 
 /**
@@ -316,7 +328,21 @@ export async function updateVoiceSelection(
     }
   }
 
-  // Apply patch
+  if (patch.saveMicSamples !== undefined && typeof patch.saveMicSamples !== 'boolean') {
+    throw new ValidationError('saveMicSamples must be a boolean')
+  }
+  if (patch.takeover !== undefined && patch.takeover !== 'ask' && patch.takeover !== 'always') {
+    throw new ValidationError("takeover must be 'ask' or 'always'")
+  }
+
+  await saveConfigField(configPath, config, doc => applyVoicePatch(doc, patch))
+
+  return config.voice
+}
+
+/** Applies a validated patch to a configuration document. */
+function applyVoicePatch(config: PlatformConfig, patch: VoiceSelectionPatch): void {
+  if (!config.voice) config.voice = {}
   const currentSelection = config.voice.tts?.selection ?? { serviceId: '', model: '', voice: '' }
   const currentOptions = config.voice.tts?.options ?? {}
 
@@ -335,7 +361,6 @@ export async function updateVoiceSelection(
     ...('maxChunkWords' in patch && { maxChunkWords: patch.maxChunkWords }),
   }
 
-  // Mutate config in memory
   if (!config.voice.tts) {
     config.voice.tts = {}
   }
@@ -376,23 +401,11 @@ export async function updateVoiceSelection(
   }
 
   if (patch.saveMicSamples !== undefined) {
-    if (typeof patch.saveMicSamples !== 'boolean') {
-      throw new ValidationError('saveMicSamples must be a boolean')
-    }
     if (!config.voice.debug) config.voice.debug = {}
     config.voice.debug.saveMicSamples = patch.saveMicSamples
   }
 
-  if (patch.takeover !== undefined) {
-    if (patch.takeover !== 'ask' && patch.takeover !== 'always') {
-      throw new ValidationError("takeover must be 'ask' or 'always'")
-    }
-    config.voice.takeover = patch.takeover
-  }
-
-  await writeFileAtomic(configPath, JSON.stringify(config, null, 2))
-
-  return config.voice
+  if (patch.takeover !== undefined) config.voice.takeover = patch.takeover
 }
 
 export class ValidationError extends Error {
@@ -409,27 +422,28 @@ export class RosterUnavailableError extends Error {
   }
 }
 
-export async function updateDefaultAgent(
-  configPath: string,
-  config: PlatformConfig,
-  agentId: string
-): Promise<string> {
+/** Reads the state file, applies `mutate`, and writes it back under the file's lock. */
+async function saveState(configPath: string, mutate: (state: RuntimeState) => void): Promise<RuntimeState> {
+  const statePath = statePathFor(configPath)
+  return withFileLock(statePath, async () => {
+    const { state } = await readStateFile(statePath)
+    mutate(state)
+    await mkdir(dirname(statePath), { recursive: true })
+    await writeFileAtomicUnlocked(statePath, serialize(state))
+    return state
+  })
+}
+
+export async function updateLastAgent(configPath: string, agentId: string): Promise<string> {
   if (typeof agentId !== 'string' || !agentId.trim()) {
     throw new ValidationError('agentId must be a non-empty string')
   }
-
-  if (!config.integrations) config.integrations = {}
-  if (!config.integrations.openclaw) config.integrations.openclaw = {}
-  config.integrations.openclaw.defaultAgent = agentId
-
-  await writeFileAtomic(configPath, JSON.stringify(config, null, 2))
-
+  await saveState(configPath, state => { state.lastAgent = agentId })
   return agentId
 }
 
 export async function updateLastSession(
   configPath: string,
-  config: PlatformConfig,
   agentId: string,
   sessionName: string
 ): Promise<Record<string, string>> {
@@ -440,36 +454,31 @@ export async function updateLastSession(
     throw new ValidationError('sessionName must be a non-empty string')
   }
 
-  if (!config.integrations) config.integrations = {}
-  if (!config.integrations.openclaw) config.integrations.openclaw = {}
-  if (!config.integrations.openclaw.lastSessionByAgent) config.integrations.openclaw.lastSessionByAgent = {}
-  config.integrations.openclaw.lastSessionByAgent[agentId] = sessionName
-
-  await writeFileAtomic(configPath, JSON.stringify(config, null, 2))
-
-  return config.integrations.openclaw.lastSessionByAgent
+  const state = await saveState(configPath, s => { s.lastSessionByAgent[agentId] = sessionName })
+  return state.lastSessionByAgent
 }
 
 export function registerGatewayConfig(app: Hono<any>, config: PlatformConfig, configPath?: string) {
-  app.get('/api/gateway', (c) => {
+  app.get('/api/gateway', async (c) => {
     const gw = config.integrations?.openclaw?.gateway
     const token = resolveConfigValue(gw?.token)
     if (!gw?.url || !token) {
       return c.json({ error: 'Gateway not configured' }, 503)
     }
-    const defaultAgent = config.integrations?.openclaw?.defaultAgent
     const defaultSession = config.integrations?.openclaw?.defaultSession
-    const lastSessionByAgent = config.integrations?.openclaw?.lastSessionByAgent
+    const state = configPath ? await readRuntimeState(configPath) : undefined
+    const lastAgent = state?.lastAgent
+    const lastSessionByAgent = state && Object.keys(state.lastSessionByAgent).length > 0 ? state.lastSessionByAgent : undefined
     return c.json({
       url: gw.url,
       token,
-      ...(defaultAgent && { defaultAgent }),
+      ...(lastAgent && { lastAgent }),
       ...(defaultSession && { defaultSession }),
       ...(lastSessionByAgent && { lastSessionByAgent }),
     })
   })
 
-  app.patch('/api/gateway/defaultAgent', async (c) => {
+  app.patch('/api/gateway/lastAgent', async (c) => {
     if (!configPath) {
       return c.json({ error: 'Config path not set' }, 500)
     }
@@ -483,8 +492,8 @@ export function registerGatewayConfig(app: Hono<any>, config: PlatformConfig, co
       return c.json({ error: 'agentId required' }, 400)
     }
     try {
-      const agentId = await updateDefaultAgent(configPath, config, body.agentId)
-      return c.json({ defaultAgent: agentId })
+      const agentId = await updateLastAgent(configPath, body.agentId)
+      return c.json({ lastAgent: agentId })
     } catch (err) {
       if (err instanceof ValidationError) {
         return c.json({ error: err.message }, 400)
@@ -507,7 +516,7 @@ export function registerGatewayConfig(app: Hono<any>, config: PlatformConfig, co
       return c.json({ error: 'agentId and sessionName required' }, 400)
     }
     try {
-      const lastSessionByAgent = await updateLastSession(configPath, config, body.agentId, body.sessionName)
+      const lastSessionByAgent = await updateLastSession(configPath, body.agentId, body.sessionName)
       return c.json({ lastSessionByAgent })
     } catch (err) {
       if (err instanceof ValidationError) {
@@ -580,11 +589,19 @@ export function registerVoiceConfig(
   })
 }
 
+/** A leading `~` in a configured path means the home directory. */
+export function expandTilde(p: string): string {
+  if (p === '~') return homedir()
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2))
+  return p
+}
+
 // Debug scratch: mic samples are throwaway captures for diagnosing the voice
 // pipeline, so they default under the OS temp dir rather than a data
 // directory. Set MIC_SAMPLE_DIR to keep them somewhere durable.
-const MIC_SAMPLE_DIR = process.env.MIC_SAMPLE_DIR
-  ?? join(tmpdir(), 'banter-voice-debug/mic-samples')
+const MIC_SAMPLE_DIR = expandTilde(
+  process.env.MIC_SAMPLE_DIR ?? join(tmpdir(), 'banter-voice-debug/mic-samples')
+)
 const MIC_SAMPLE_RETENTION = 50
 
 export function registerVoiceDebug(app: Hono<any>, config: PlatformConfig) {

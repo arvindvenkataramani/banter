@@ -1,17 +1,14 @@
-// Listen-only companion to run.ts.
+// Records what the gateway sends for the sessions it is told to watch.
 //
 //   bun run control/probe/listen.ts [--duration <seconds>] [--session <key>] [--all-sessions]
 //
-// Connects, subscribes, and never sends a chat message — so the gateway never
-// registers it as a run-scoped tool recipient. This is the position of a
-// dashboard that attaches to an in-flight session: the source says such
-// clients get tool lifecycle via the session.tool mirror instead of run-scoped
-// agent events. Running this alongside run.ts is what verifies that claim,
-// and the background/cron delivery question, on the wire.
+// Connects, subscribes, and never sends. It is never the client that started a
+// run, so it receives tool lifecycle on the session.tool mirror rather than as
+// run-scoped agent tool events — the position of a dashboard tab watching a
+// run another device started.
 
 import { join } from "node:path";
-import { homedir } from "node:os";
-import { resolveConfigValue } from "../control-plane/src/gateway-config";
+import { loadGatewayConfig } from "./gateway";
 import { loadOrCreateIdentity } from "./identity";
 import { CaptureSink } from "./capture";
 import { ProbeConnection } from "./connection";
@@ -36,23 +33,6 @@ function parseArgs(argv: string[]): Args {
   }
   if (args.sessionKeys.length === 0) args.sessionKeys.push(DEFAULT_SESSION_KEY);
   return args;
-}
-
-async function loadGatewayConfig(): Promise<{ url: string; token: string }> {
-  const configPath =
-    process.env.BANTER_CONFIG_PATH ??
-    join(
-      process.env.BANTER_PROD ?? join(homedir(), "services", "banter"),
-      "control",
-      "control-plane",
-      "data",
-      "config.json",
-    );
-  const config = await Bun.file(configPath).json();
-  const gw = config?.integrations?.openclaw?.gateway;
-  const token = resolveConfigValue(gw?.token);
-  if (!gw?.url || !token) throw new Error(`no gateway url/token in ${configPath}`);
-  return { url: gw.url, token };
 }
 
 function timestamp(): string {

@@ -16,12 +16,10 @@ import Foundation
 
 // ── Registry ─────────────────────────────────────────────────────────────────
 
-// Lowercase `services`, matching the shard's own resolution in src/paths.ts and
-// the control plane's root. On a case-sensitive filesystem `~/Services` is a
-// different directory. Outside the deployed tree deliberately — the deploy
-// removes and rebuilds that tree, and the live registry is not tracked.
+// The live registry sits at the top of the deployment folder, as in
+// src/paths.ts; a deploy replaces only the code folders inside it.
 let registryPath = ProcessInfo.processInfo.environment["BANTER_SHARD_REGISTRY_PATH"]
-    ?? "\(NSHomeDirectory())/services/shard/registry.json"
+    ?? "\(NSHomeDirectory())/services/banter/registry.json"
 
 struct Registry: Decodable {
     let services: [Service]

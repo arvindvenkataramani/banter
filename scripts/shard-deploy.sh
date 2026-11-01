@@ -6,6 +6,12 @@
 #   shard-deploy.sh           — check branch status, prompt if dev is ahead
 #   shard-deploy.sh main      — deploy from main without prompting
 #   shard-deploy.sh dev       — deploy from working tree without prompting
+#
+# The repo's registry.example.json is merged field by field into the live
+# directory ($BANTER_SHARD_LIVE_DIR, the shard's folder itself) before anything
+# is stopped. Changed only in the repo, the repo's value is taken; changed only
+# on this node, the node's value stays; changed on both to different values, the
+# deploy stops and names the fields. There is no prompt.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -96,6 +102,19 @@ xcrun swiftc "$SWIFT_SRC" -o "$RUNNER_BIN" \
 codesign --sign - --force "$RUNNER_BIN"
 echo "[shard-deploy]   compiled and ad-hoc signed"
 
+# Merge the repo's example registry into the live directory while the old shard
+# is still running; a conflict leaves everything untouched. A first deploy
+# starts from the registry an older layout kept at ~/services/shard/registry.json,
+# where there is one, and otherwise from the example.
+OLD_REGISTRY="$HOME/services/shard/registry.json"
+LEGACY_ARGS=()
+[[ -f "$OLD_REGISTRY" ]] && LEGACY_ARGS+=(--legacy-registry "$OLD_REGISTRY")
+echo "[shard-deploy] Merging configuration into $BANTER_SHARD_LIVE_DIR..."
+if ! bun "$SRC/control/scripts/deploy-config.ts" shard "$BANTER_SHARD_LIVE_DIR" "$SRC/control/control-shard/data" ${LEGACY_ARGS+"${LEGACY_ARGS[@]}"}; then
+  echo "[shard-deploy] Configuration merge failed — nothing was stopped or changed." >&2
+  exit 1
+fi
+
 echo "[shard-deploy] Stopping control shard..."
 # bootout returns before the old shard exits, and the shard spends that time
 # stopping its services, removing their Serve entries as it goes. Overlapping
@@ -107,6 +126,19 @@ if [[ -n "$RUNNER_PID" ]]; then
   OLD_PIDS="$RUNNER_PID $(pgrep -P "$RUNNER_PID" || true)"
 fi
 launchctl bootout "gui/$UID_NUM" "$LAUNCHD_AGENTS_DIR/${SHARD_LABEL}.plist" 2>/dev/null || true
+
+# A failure from here on re-bootstraps the old agent, then removes the
+# temporary directories.
+restart_on_failure() {
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "[shard-deploy] Deploy failed — restarting the control shard." >&2
+    launchctl bootstrap "gui/$UID_NUM" "$LAUNCHD_AGENTS_DIR/${SHARD_LABEL}.plist" 2>/dev/null || true
+  fi
+  cleanup
+  exit $rc
+}
+trap restart_on_failure EXIT
 if [[ -n "$OLD_PIDS" ]]; then
   waited=0
   for pid in $OLD_PIDS; do

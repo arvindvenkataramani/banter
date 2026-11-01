@@ -20,6 +20,7 @@ echo "[shard-uninstall] Removing plist file..."
 rm -f "$LAUNCHD_AGENTS_DIR/${SHARD_LABEL}.plist"
 
 echo "[shard-uninstall] Removing deployed files..."
+echo "[shard-uninstall] Deleting $PROD, including the live registry.json and state/ in it." >&2
 rm -rf "$PROD"
 
 echo "[shard-uninstall] Done. Run shard-deploy.sh to reinstall."

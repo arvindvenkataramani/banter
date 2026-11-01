@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-# Defines BANTER_PROD — where the deployment (and so the live config) lives.
+# Defines BANTER_PROD and the live config and registry paths inside it.
 source "$REPO/scripts/deploy-env.sh"
 VITE_PORT="${VITE_PORT:-5173}"
 BANTER_DEV_CONTROL_PORT="${BANTER_DEV_CONTROL_PORT:-4201}"
@@ -44,29 +44,20 @@ if command -v lsof >/dev/null 2>&1; then
   done
 fi
 
-# Dev reads and writes the same live config as production. The repo's
-# config.json is the tracked template and the deploy source; it is never read at
-# runtime. Deploy is what copies template → live, and asks before overwriting.
-CONFIG_LIVE="$BANTER_PROD/control/control-plane/data/config.json"
-if [ ! -f "$CONFIG_LIVE" ]; then
-  echo "[dev] No live config at $CONFIG_LIVE — run scripts/control-deploy.sh first." >&2
+# Dev reads and writes the same live directory as production. The repo's
+# config.example.json and registry.example.json are the tracked deploy source;
+# they are never read at runtime. Deploy is what merges them into the live files.
+if [ ! -f "$BANTER_CONFIG_PATH" ]; then
+  echo "[dev] No live config at $BANTER_CONFIG_PATH — the next control-deploy.sh creates the live directory, seeding it from the old in-tree files or the examples." >&2
   exit 1
 fi
-
-# The registry is live state too — services are enabled, patched, and had their
-# ports changed through the API, and all of that lands in the deployed copy. The
-# control plane defaults it relative to its own source, so without this dev runs
-# the deployed config against the repo's registry and disagrees with production
-# about which services exist. Every other script here defaults to $PROD; match
-# them.
-REGISTRY_LIVE="$BANTER_PROD/control/control-plane/data/registry.json"
-if [ ! -f "$REGISTRY_LIVE" ]; then
-  echo "[dev] No live registry at $REGISTRY_LIVE — run scripts/control-deploy.sh first." >&2
+if [ ! -f "$BANTER_REGISTRY_PATH" ]; then
+  echo "[dev] No live registry at $BANTER_REGISTRY_PATH — the next control-deploy.sh creates the live directory, seeding it from the old in-tree files or the examples." >&2
   exit 1
 fi
 
 # Secrets referenced from config.json as ${VAR}. Production gets these from the
-# platform.service drop-in; dev reads the same values from a file kept outside
+# banter.service drop-in; dev reads the same values from a file kept outside
 # the repo so nothing secret is ever in the tree.
 SECRETS_ENV="$BANTER_PROD/.env.secrets"
 if [ -f "$SECRETS_ENV" ]; then
@@ -82,7 +73,7 @@ echo "[dev] Starting control plane (port $BANTER_DEV_CONTROL_PORT) and Vite (por
 # without this, dev health checks decide what production reports.
 DEV_EVENTS="$REPO/control/control-plane/data/events.dev.jsonl"
 
-(cd "$REPO/control" && DEBUG=1 BANTER_CONTROL_PORT="$BANTER_DEV_CONTROL_PORT" BANTER_CONFIG_PATH="$CONFIG_LIVE" BANTER_REGISTRY_PATH="$REGISTRY_LIVE" BANTER_EVENTS_PATH="$DEV_EVENTS" DASHBOARD_DIST="$REPO/dashboard/dist" bun run --watch control-plane/src/index.ts) &
+(cd "$REPO/control" && DEBUG=1 BANTER_CONTROL_PORT="$BANTER_DEV_CONTROL_PORT" BANTER_CONFIG_PATH="$BANTER_CONFIG_PATH" BANTER_REGISTRY_PATH="$BANTER_REGISTRY_PATH" BANTER_LIVE_DIR="$BANTER_LIVE_DIR" BANTER_EVENTS_PATH="$DEV_EVENTS" DASHBOARD_DIST="$REPO/dashboard/dist" bun run --watch control-plane/src/index.ts) &
 (cd "$REPO/dashboard" && VITE_PROXY_TARGET="http://localhost:$BANTER_DEV_CONTROL_PORT" bun run dev -- --port "$VITE_PORT" --strictPort) &
 
 # Wait for Vite to bind before setting up tailscale serve

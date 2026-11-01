@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { loadRegistry } from "../../shared/src/registry";
 import { createControlPlaneApp } from "./app";
 import { checkService, startHealthLoop } from "../../shared/src/health";
@@ -12,14 +13,21 @@ import { createRunFn, createSpawnFn, createPollHealthFn } from "../../shared/src
 const DEPLOYMENT_ROOT = DEFAULT_DEPLOYMENT_ROOT;
 
 // Bootstrap pointers: where to find the files. These stay in the environment
-// because a file cannot carry its own location. Both default to the deployed
-// tree, so a normal run needs neither.
-const REGISTRY_PATH = process.env.BANTER_REGISTRY_PATH ?? join(import.meta.dir, "../data/registry.json");
-const CONFIG_PATH = process.env.BANTER_CONFIG_PATH ?? join(import.meta.dir, "../data/config.json");
+// because a file cannot carry its own location. The node's live directory is
+// the top of its deployment folder, and holds config.json, registry.json,
+// shipped/ and state/; a normal run needs none of them set.
+const LIVE_DIR = process.env.BANTER_LIVE_DIR ?? join(homedir(), "services/banter");
+const REGISTRY_PATH = process.env.BANTER_REGISTRY_PATH ?? join(LIVE_DIR, "registry.json");
+const CONFIG_PATH = process.env.BANTER_CONFIG_PATH ?? join(LIVE_DIR, "config.json");
 const DIST = process.env.DASHBOARD_DIST ?? join(DEPLOYMENT_ROOT, "dashboard/dist");
 
 const registry = await loadRegistry(REGISTRY_PATH);
-const config = await loadConfig(CONFIG_PATH).catch(() => undefined);
+// A missing, unreadable or invalid configuration stops startup.
+const config = await loadConfig(CONFIG_PATH).catch((err) => {
+  if ((err as NodeJS.ErrnoException).code === "ENOENT") console.error(`config: ${CONFIG_PATH} not found`);
+  else console.error(`config: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+});
 
 // Everything else — port, bind address, event log, loop intervals — comes from
 // the registry and config, with the environment kept only as an override.

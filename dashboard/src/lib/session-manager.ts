@@ -76,8 +76,8 @@ export function displayedModel(row: GatewaySessionRow, selectedAt: number | null
   return row.model ? qualify(row.modelProvider, row.model) : null
 }
 
-function persistDefaultAgent(agentId: string): void {
-  fetch('/api/gateway/defaultAgent', {
+function persistLastAgent(agentId: string): void {
+  fetch('/api/gateway/lastAgent', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ agentId }),
@@ -248,7 +248,7 @@ export class SessionManager {
     this._models = this.modelsForAgent(agentId)
 
     if (agentChanged && this.initialized) {
-      persistDefaultAgent(agentId)
+      persistLastAgent(agentId)
     }
     if (this.initialized) {
       this.lastSessionByAgent[agentId] = name

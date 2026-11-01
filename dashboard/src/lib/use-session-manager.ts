@@ -41,7 +41,7 @@ const EMPTY_CONVERSATION_SNAPSHOT: ConversationSnapshot = {
 export interface GatewayConfig {
   url: string
   token: string
-  defaultAgent?: string
+  lastAgent?: string
   defaultSession?: string
   lastSessionByAgent?: Record<string, string>
 }
@@ -85,18 +85,18 @@ export function useSessionManager(): SessionManagerHandle {
   // config object itself would rebuild the manager on every fetch that
   // returned equivalent values.
   const hasConfig = config != null
-  const defaultAgent = config?.defaultAgent
+  const lastAgent = config?.lastAgent
   const defaultSession = config?.defaultSession
   const lastSessionByAgent = config?.lastSessionByAgent
   useEffect(() => {
     if (!connection || !hasConfig) return
-    const manager = new SessionManager(connection, defaultAgent, defaultSession, lastSessionByAgent)
+    const manager = new SessionManager(connection, lastAgent, defaultSession, lastSessionByAgent)
     managerRef.current = manager
     setManagerVersion((v) => v + 1)
     return () => {
       managerRef.current = null
     }
-  }, [connection, hasConfig, defaultAgent, defaultSession, lastSessionByAgent])
+  }, [connection, hasConfig, lastAgent, defaultSession, lastSessionByAgent])
 
   // Initialize once the gateway reports connected.
   useEffect(() => {

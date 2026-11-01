@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install system service units and built artifacts for the control plane.
-# - Reads registry.json to find services with runner.type == "systemd"
+# - Reads the live registry ($BANTER_REGISTRY_PATH) to find services with runner.type == "systemd";
+#   fails if it is missing
 # - Copies the referenced unit files to ~/.config/systemd/user/
 # - Installs the built artifacts each service declares in ops.install, the same
 #   way the shard does (install-artifacts.sh)
@@ -30,7 +31,13 @@ source "$(dirname "$0")/deploy-env.sh"
 source "$(dirname "$0")/install-artifacts.sh"
 PROD="$BANTER_PROD"
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
-REGISTRY="$SRC/control/control-plane/data/registry.json"
+REGISTRY="$BANTER_REGISTRY_PATH"
+if [[ ! -f "$REGISTRY" ]]; then
+  echo "[install-services] error: no registry at $REGISTRY" >&2
+  echo "[install-services]        This is the live registry the control plane reads; control-deploy.sh merges the repo's example into it." >&2
+  echo "[install-services]        Set BANTER_REGISTRY_PATH if it lives elsewhere." >&2
+  exit 1
+fi
 SERVICES_SRC="$SRC/services"
 SERVICES_DEST="$HOME/services"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"

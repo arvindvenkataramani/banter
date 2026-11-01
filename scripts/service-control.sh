@@ -5,65 +5,18 @@
 # Works on either node, whichever registry is deployed there.
 # This is a backup/diagnostic tool — prefer the control API for normal operations.
 #
-# Registry path: whichever of the plane/shard registries is actually deployed
-# here, rather than inferred from the OS — either node can run on either OS.
-# Override with BANTER_REGISTRY_PATH or BANTER_SHARD_REGISTRY_PATH.
+# Which node this machine is comes from the registries (platform_detect_node in
+# deploy-env.sh), not the OS: $BANTER_REGISTRY_PATH if its type is "control",
+# else $BANTER_SHARD_REGISTRY_PATH if its type is "shard".
 #
 # Service names use fuzzy matching: "parakeet" matches "stt-parakeet",
 # "voxtral" matches "tts-voxtral", etc. Exact matches take priority.
 set -euo pipefail
 
-# ── OS detection and registry path ───────────────────────────────────────────
+# ── Node and registry path ───────────────────────────────────────────────────
 
-# Probe for a deployed registry instead of guessing from `uname`. A shard can
-# run on Linux and a plane on macOS; what decides which node this is, is which
-# registry is on disk. The shard's registry is looked for where the shard reads
-# it (shard-registry.sh), which is outside the deployed tree. `~/Services` is
-# checked for legacy macOS installs.
-NODE=""
-PROD=""
-REGISTRY=""
-
-source "$(dirname "$0")/shard-registry.sh"
-
-if [[ -n "${BANTER_REGISTRY_PATH:-}" ]]; then
-  REGISTRY="$BANTER_REGISTRY_PATH"
-  NODE="control"
-elif [[ -n "${BANTER_SHARD_REGISTRY_PATH:-}" ]]; then
-  REGISTRY="$BANTER_SHARD_REGISTRY_PATH"
-  NODE="shard"
-else
-  for root in "$HOME/services/banter" "$HOME/Services/banter"; do
-    if [[ -f "$root/control/control-plane/data/registry.json" ]]; then
-      PROD="$root"
-      REGISTRY="$root/control/control-plane/data/registry.json"
-      NODE="control"
-      break
-    fi
-  done
-  if [[ -z "$REGISTRY" && -f "$(banter_shard_registry_path)" ]]; then
-    REGISTRY="$(banter_shard_registry_path)"
-    PROD="${BANTER_SHARD_PROD:-$(dirname "$(dirname "$REGISTRY")")/banter}"
-    NODE="shard"
-  fi
-fi
-
-if [[ -z "$REGISTRY" ]]; then
-  echo "error: no deployed registry found under ~/services or ~/Services." >&2
-  echo "       Set BANTER_REGISTRY_PATH or BANTER_SHARD_REGISTRY_PATH to point at one." >&2
-  exit 1
-fi
-
-# PROD is unset when the path came from an env var; derive it from the registry.
-# A control-plane registry sits four levels below its deploy directory; a
-# shard's sits outside the deployed tree, so there is nothing to derive.
-if [[ -z "$PROD" ]]; then
-  if [[ "$NODE" == "control" ]]; then
-    PROD="$(cd "$(dirname "$REGISTRY")/../../../.." && pwd)"
-  else
-    PROD="${BANTER_SHARD_PROD:-$(dirname "$(dirname "$REGISTRY")")/banter}"
-  fi
-fi
+source "$(dirname "$0")/deploy-env.sh"
+platform_detect_node || exit 1
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 
@@ -104,14 +57,6 @@ fi
 
 ACTION="$1"
 shift
-
-# ── Registry check ───────────────────────────────────────────────────────────
-
-if [[ ! -f "$REGISTRY" ]]; then
-  echo "error: registry not found at $REGISTRY" >&2
-  echo "hint: has the platform been deployed? run control-deploy.sh or shard-deploy.sh first." >&2
-  exit 1
-fi
 
 # ── List command (no service arg needed) ─────────────────────────────────────
 
@@ -197,7 +142,7 @@ SERVICE_ID=$(resolve_service "$SERVICE_QUERY") || exit 1
 svc_json=$(jq -e --arg id "$SERVICE_ID" '.services[] | select(.id == $id)' "$REGISTRY")
 
 RUNNER_TYPE=$(echo "$svc_json" | jq -r '.runner.type // "external"')
-RUNNER_MAIN=$(echo "$svc_json" | jq -r '.network.port as $p | (.runner.main // "") | gsub("{port}"; ($p // "" | tostring))')
+RUNNER_MAIN=$(echo "$svc_json" | jq -r --arg reg "$REGISTRY" '.network.port as $p | (.runner.main // "") | gsub("{port}"; ($p // "" | tostring)) | gsub("{registry}"; $reg)')
 RUNNER_UNIT=$(echo "$svc_json" | jq -r '.runner.unit // empty')
 RUNNER_LABEL=$(echo "$svc_json" | jq -r '.runner.label // empty')
 RUNNER_PLIST=$(echo "$svc_json" | jq -r '.runner.plist // empty')

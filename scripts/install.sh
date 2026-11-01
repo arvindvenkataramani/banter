@@ -13,6 +13,9 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
+# BANTER_PROD and the live config and registry paths inside it, honouring
+# scripts/deploy.conf.
+source "$REPO/scripts/deploy-env.sh"
 
 log() { echo "[install] $*"; }
 die() { echo "[install] error: $*" >&2; exit 1; }
@@ -55,12 +58,19 @@ log "Verifying VAD + turn-detection model assets..."
 
 # --- configure it --------------------------------------------------------------
 
-REGISTRY="control/control-plane/data/registry.json"
-CONFIG="control/control-plane/data/config.json"
+# The live registry and config sit at the top of the deployment folder, where the
+# control plane reads them. The first deploy merges the shipped examples into
+# them, keeping every value written here.
+REGISTRY="$BANTER_REGISTRY_PATH"
+CONFIG="$BANTER_CONFIG_PATH"
+OLD_DATA="$BANTER_PROD/control/control-plane/data"
 
 if [[ -f "$REGISTRY" || -f "$CONFIG" ]]; then
-  log "control/control-plane/data/{registry,config}.json already exist — leaving them as-is."
+  log "$REGISTRY and $CONFIG already exist — leaving them as-is."
+elif [[ -f "$OLD_DATA/registry.json" || -f "$OLD_DATA/config.json" ]]; then
+  log "Found live files in the older location $OLD_DATA — the deploy moves them to $BANTER_LIVE_DIR."
 else
+  mkdir -p "$(dirname "$REGISTRY")" "$(dirname "$CONFIG")"
   # A service's working directory is used as given — nothing downstream expands
   # "~" — so the example's "~/..." becomes this user's home here, once.
   #
@@ -77,7 +87,7 @@ else
         (.services[] | select(.ops.env.variables[$var]? != null) | .ops.env.variables[$var]) = $origins)' \
     control/control-plane/data/registry.example.json > "$REGISTRY"
   cp control/control-plane/data/config.example.json    "$CONFIG"
-  log "Created registry.json and config.json from the shipped examples."
+  log "Created $REGISTRY and $CONFIG from the shipped examples."
 
   GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-}"
   GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
@@ -107,6 +117,11 @@ log "registry.json ships with fluid-stt and fluid-tts already declared, but thei
 
 # --- install as a service -------------------------------------------------------
 
+if [[ ! -f "$REGISTRY" ]]; then
+  # An install over the older layout: the registry is still where the code used
+  # to keep it, until the deploy below moves it.
+  REGISTRY="$OLD_DATA/registry.json"
+fi
 BANTER_PORT="$(jq -r '.services[] | select(.id == "control") | .network.port' "$REGISTRY")"
 [[ -n "$BANTER_PORT" && "$BANTER_PORT" != "null" ]] || die "could not read the control plane's port from $REGISTRY"
 
@@ -131,7 +146,7 @@ case "$OS" in
     log "Deploying (the systemd step is expected to fail here)..."
     scripts/control-deploy.sh || true
 
-    PROD="$HOME/services/banter"
+    PROD="$BANTER_PROD"
     [[ -f "$PROD/scripts/control-runner.sh" ]] || die "deploy did not produce $PROD — check the output above for a real failure, not just the expected systemd one."
 
     log "Starting the control plane in the background..."

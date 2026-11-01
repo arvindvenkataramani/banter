@@ -85,6 +85,10 @@ async function main() {
     }
   }
 
+  // A capture with no scenarios (listen.ts, history.ts) is one section.
+  const hasScenarios = [...sections.keys()].some((k) => k !== "(setup)" && k !== "(between)");
+  if (!hasScenarios) sections.set(path, entries);
+
   for (const [name, section] of sections) {
     if (name === "(setup)" || name === "(between)") continue;
     console.log(`\n=== ${name} ===`);

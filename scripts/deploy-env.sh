@@ -5,7 +5,9 @@
 # The defaults describe an ordinary deployment, so nothing needs to be set for
 # one. To install somewhere else, copy deploy.conf.example to deploy.conf and
 # edit it — that file is per-machine and untracked, so the setting survives
-# every deploy and never has to be retyped or exported.
+# every deploy and never has to be retyped or exported. It stays in the
+# checkout's scripts/ because it names the deployment folder; a deploy copies
+# it into the deployed scripts/, so the scripts systemd runs read it too.
 #
 # Precedence: environment > deploy.conf > defaults. The environment wins so a
 # one-off (a staging deploy, a test) does not require editing the file, and so
@@ -15,32 +17,48 @@
 
 # Per-machine overrides, if present. Sourced before the defaults below so its
 # assignments become the ${VAR:-default} fallbacks rather than being overwritten
-# by them.
+# by them. Any listed name already set in the environment is put back afterwards,
+# so the environment wins.
 __deploy_conf="$(dirname "${BASH_SOURCE[0]}")/deploy.conf"
 if [[ -f "$__deploy_conf" ]]; then
-  # Environment wins: stash anything already set, source, then put it back.
-  __env_prod="${BANTER_PROD:-}"; __env_unit="${BANTER_UNIT:-}"
-  __env_shard="${BANTER_SHARD_PROD:-}"
+  __conf_names="BANTER_PROD BANTER_UNIT BANTER_LIVE_DIR BANTER_REGISTRY_PATH BANTER_CONFIG_PATH BANTER_EVENTS_PATH BANTER_STAGE_DIR BANTER_SHARD_PROD BANTER_SHARD_LIVE_DIR BANTER_SHARD_REGISTRY_PATH BANTER_SHARD_EVENTS_PATH"
+  __conf_kept=""
+  for __conf_name in $__conf_names; do
+    if [[ -n "${!__conf_name:-}" ]]; then
+      printf -v "__conf_kept_$__conf_name" '%s' "${!__conf_name}"
+      __conf_kept="$__conf_kept $__conf_name"
+    fi
+  done
   # shellcheck source=/dev/null
   source "$__deploy_conf"
-  [[ -n "$__env_prod" ]] && BANTER_PROD="$__env_prod"
-  [[ -n "$__env_unit" ]] && BANTER_UNIT="$__env_unit"
-  [[ -n "$__env_shard" ]] && BANTER_SHARD_PROD="$__env_shard"
-  unset __env_prod __env_unit __env_shard
+  for __conf_name in $__conf_kept; do
+    __conf_ref="__conf_kept_$__conf_name"
+    printf -v "$__conf_name" '%s' "${!__conf_ref}"
+    unset "$__conf_ref"
+  done
+  unset __conf_names __conf_kept __conf_name __conf_ref
 fi
 unset __deploy_conf
 
 # The control plane, deployed with systemd on the primary machine.
 BANTER_PROD="${BANTER_PROD:-$HOME/services/banter}"
 BANTER_UNIT="${BANTER_UNIT:-banter}"
+# The control plane's live directory, the deployed folder itself: config.json,
+# registry.json, shipped/ and state/. A deploy merges into these and never
+# deletes them.
+BANTER_LIVE_DIR="${BANTER_LIVE_DIR:-$BANTER_PROD}"
+BANTER_REGISTRY_PATH="${BANTER_REGISTRY_PATH:-$BANTER_LIVE_DIR/registry.json}"
+BANTER_CONFIG_PATH="${BANTER_CONFIG_PATH:-$BANTER_LIVE_DIR/config.json}"
 # The control plane's event log, for artifact installs.
 BANTER_EVENTS_PATH="${BANTER_EVENTS_PATH:-$BANTER_PROD/logs/events.jsonl}"
 
 # The shard's half of the same idea, deployed with launchd on a worker Mac.
-# Lowercase `services`, matching the plane: on a case-sensitive filesystem
-# `~/Services` is a different directory, and the shard's own path resolution
-# prefers the lowercase spelling.
+# Lowercase `services`, matching the plane. A machine runs one node, so the
+# shard's folder is the same default as the plane's.
 BANTER_SHARD_PROD="${BANTER_SHARD_PROD:-$HOME/services/banter}"
+# The shard's live directory: registry.json, shipped/ and state/.
+BANTER_SHARD_LIVE_DIR="${BANTER_SHARD_LIVE_DIR:-$BANTER_SHARD_PROD}"
+BANTER_SHARD_REGISTRY_PATH="${BANTER_SHARD_REGISTRY_PATH:-$BANTER_SHARD_LIVE_DIR/registry.json}"
 # The shard's event log, where installs are recorded alongside everything else.
 # Same variable the shard itself reads.
 BANTER_SHARD_EVENTS_PATH="${BANTER_SHARD_EVENTS_PATH:-$BANTER_SHARD_PROD/logs/events.jsonl}"
@@ -124,4 +142,31 @@ platform_find_jq() {
 platform_find_bun() {
   platform_find_tool bun \
     "$HOME/.bun/bin/bun" /home/linuxbrew/.linuxbrew/bin/bun /opt/homebrew/bin/bun /usr/local/bin/bun
+}
+
+# Which node this machine is, decided by the registries rather than the OS.
+# Sets NODE (control or shard), REGISTRY and PROD, or prints what it looked at
+# and returns 1. The registry's `type` is what tells them apart: both nodes
+# default to the same folder, so the control and shard registry paths are one
+# file unless one of them is moved.
+platform_detect_node() {
+  local jq type
+  jq="$(platform_find_jq)" || return 1
+  if [[ -f "$BANTER_REGISTRY_PATH" ]]; then
+    type="$("$jq" -r '.type // empty' "$BANTER_REGISTRY_PATH" 2>/dev/null || true)"
+    if [[ "$type" == "control" ]]; then
+      NODE=control REGISTRY="$BANTER_REGISTRY_PATH" PROD="$BANTER_PROD"
+      return 0
+    fi
+  fi
+  if [[ -f "$BANTER_SHARD_REGISTRY_PATH" ]]; then
+    type="$("$jq" -r '.type // empty' "$BANTER_SHARD_REGISTRY_PATH" 2>/dev/null || true)"
+    if [[ "$type" == "shard" ]]; then
+      NODE=shard REGISTRY="$BANTER_SHARD_REGISTRY_PATH" PROD="$BANTER_SHARD_PROD"
+      return 0
+    fi
+  fi
+  echo "error: no control or shard registry found; looked at $BANTER_REGISTRY_PATH (control) and $BANTER_SHARD_REGISTRY_PATH (shard)" >&2
+  echo "hint: has banter been deployed? run control-deploy.sh or shard-deploy.sh first." >&2
+  return 1
 }

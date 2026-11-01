@@ -393,11 +393,11 @@ export const getVoice = createRoute({
   },
 });
 
-export const patchGatewayDefaultAgent = createRoute({
+export const patchGatewayLastAgent = createRoute({
   method: "patch",
-  path: "/api/gateway/defaultAgent",
+  path: "/api/gateway/lastAgent",
   tags: ["Config"],
-  summary: "Set the default OpenClaw agent",
+  summary: "Record the last-used OpenClaw agent",
   request: {
     body: {
       content: {
@@ -411,14 +411,14 @@ export const patchGatewayDefaultAgent = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.object({ defaultAgent: z.string() }),
+          schema: z.object({ lastAgent: z.string() }),
         },
       },
-      description: "Default agent updated",
+      description: "Last agent recorded",
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Missing agentId or invalid JSON body",
+      description: "Missing agentId, invalid JSON body, or an agentId that fails validation",
     },
     500: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -452,7 +452,7 @@ export const patchGatewayLastSession = createRoute({
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Missing agentId/sessionName or invalid JSON body",
+      description: "Missing agentId or sessionName, invalid JSON body, or a value that fails validation",
     },
     500: {
       content: { "application/json": { schema: ErrorSchema } },

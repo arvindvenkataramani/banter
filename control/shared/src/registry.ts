@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import { withFileLock, writeFileAtomicUnlocked } from "./atomic-write";
+import { withFileLock, writeFileAtomic, writeFileAtomicUnlocked } from "./atomic-write";
+import { syncDocument } from "./live-config/sync";
+import { registrySpec } from "./live-config/schemas";
 import { validateRoster, emptyRoster } from "./roster";
 import type { Registry, Service, ReloadWarning, Provider } from "../../../shared/types";
 
@@ -109,11 +111,9 @@ function validateInstall(svc: Record<string, unknown>): void {
   }
 }
 
-function validateRegistry(data: unknown): Registry {
+/** Semantic validation of a registry document; fills defaults and derived fields in place. */
+export function validateRegistry(data: unknown): Registry {
   const d = data as Record<string, unknown>;
-
-  // Version check (must be first)
-  if (d.version !== 2) throw new Error(`registry: unsupported version (expected 2, got ${d.version ?? "undefined"})`);
 
   // Type check
   if (d.type !== "control" && d.type !== "shard") throw new Error(`registry: invalid type (expected "control" or "shard", got "${d.type}")`);
@@ -319,10 +319,23 @@ function validateRegistry(data: unknown): Registry {
   return data as Registry;
 }
 
+// Reads the file and syncs it with the registry schema. The synced file is
+// written back when `write` names a lock mode and the sync changed it and the
+// file is not from newer code; warnings go to the log.
+async function readSyncedRegistry(path: string, write: "none" | "locked" | "held"): Promise<Record<string, unknown>> {
+  const raw = JSON.parse(await readFile(path, "utf-8"));
+  const result = syncDocument(raw, registrySpec);
+  for (const w of result.warnings) console.warn(`registry: ${w}`);
+  if (result.changed && result.writable && write !== "none") {
+    const text = JSON.stringify(result.doc, null, 2) + "\n";
+    if (write === "locked") await writeFileAtomic(path, text);
+    else await writeFileAtomicUnlocked(path, text);
+  }
+  return result.doc as Record<string, unknown>;
+}
+
 export async function loadRegistry(path: string): Promise<Registry> {
-  const content = await readFile(path, "utf-8");
-  const data = JSON.parse(content);
-  return validateRegistry(data);
+  return validateRegistry(await readSyncedRegistry(path, "locked"));
 }
 
 // ── updateService ──────────────────────────────────────────────────────────────
@@ -352,7 +365,7 @@ export async function updateService(
     // The patch applies to the service as written on disk, not to the loaded
     // copy: that copy carries values merged in from `defaults` and a derived
     // endpoint, and writing it back would pin every default into the file.
-    const doc = JSON.parse(await readFile(registryPath, "utf-8")) as { services: Record<string, unknown>[] };
+    const doc = await readSyncedRegistry(registryPath, "none") as { services: Record<string, unknown>[] };
     const rawIdx = doc.services.findIndex(s => s.id === serviceId);
     if (rawIdx === -1) throw new Error(`service "${serviceId}" not found in ${registryPath}`);
     const updated = structuredClone(doc.services[rawIdx]) as unknown as Service;
@@ -477,8 +490,7 @@ export async function reloadRegistry(
   return withFileLock(path, async () => {
     let fresh: Registry;
     try {
-      const content = await readFile(path, "utf-8");
-      fresh = validateRegistry(JSON.parse(content));
+      fresh = validateRegistry(await readSyncedRegistry(path, "held"));
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

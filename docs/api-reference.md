@@ -282,17 +282,17 @@ Voice configuration (TTS providers, models, voices, options)
 
 ---
 
-### `PATCH` /api/gateway/defaultAgent
+### `PATCH` /api/gateway/lastAgent
 
-Set the default OpenClaw agent
+Record the last-used OpenClaw agent
 
 **Request body:**
 - `agentId`: string
 
 **Responses:**
-- **200** — Default agent updated
-  - `defaultAgent`: string
-- **400** — Missing agentId or invalid JSON body
+- **200** — Last agent recorded
+  - `lastAgent`: string
+- **400** — Missing agentId, invalid JSON body, or an agentId that fails validation
   → [Error](#error)
 - **500** — Config path not set
   → [Error](#error)
@@ -310,7 +310,7 @@ Record the last-used session name for an agent
 **Responses:**
 - **200** — Last session recorded
   - `lastSessionByAgent`: object
-- **400** — Missing agentId/sessionName or invalid JSON body
+- **400** — Missing agentId or sessionName, invalid JSON body, or a value that fails validation
   → [Error](#error)
 - **500** — Config path not set
   → [Error](#error)

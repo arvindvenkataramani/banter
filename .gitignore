@@ -30,10 +30,13 @@ __pycache__/
 # ...except the app's icons, which are served from public/favicon/.
 !dashboard/public/favicon/*.png
 
-# Superseded by the live-config model (the dev server now reads the deployed
-# config), but a local copy may linger from before the change — never track it.
+# Files an older install wrote into the checkout; they can hold hosts and tokens.
+control/control-plane/data/registry.json
+control/control-plane/data/config.json
 control/control-plane/data/config.dev.json
+control/control-shard/data/registry.json
 
+# The dev server's own event log (scripts/control-dev.sh)
 control/control-plane/data/events.dev.jsonl
 # The event log defaults inside the tree it runs from, so a run out of the repo
 # writes here rather than into a deployment.
@@ -60,11 +63,6 @@ scripts/deploy.conf
 # assets alongside them in public/models/ ARE committed; see NOTICE.
 dashboard/public/models/*.wasm
 dashboard/public/models/*.mjs
-
-# Live data files — examples ship instead (see data/*.example.json)
-control/control-plane/data/registry.json
-control/control-plane/data/config.json
-control/control-shard/data/registry.json
 
 # Event log written by a local (non-deployed) control plane run
 logs/

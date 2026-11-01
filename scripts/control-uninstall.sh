@@ -35,7 +35,7 @@ else
   # too generic a command line to pkill -f safely; it could match an unrelated
   # bun process. Its listening port is unique, so find it by that instead.
   echo "[control-uninstall] No systemd — stopping the control plane by its port..."
-  REGISTRY="${BANTER_REGISTRY_PATH:-$PROD/control/control-plane/data/registry.json}"
+  REGISTRY="$BANTER_REGISTRY_PATH"
   if [[ -f "$REGISTRY" ]] && command -v jq >/dev/null 2>&1; then
     PORT="$(jq -r '.services[] | select(.id == "control") | .network.port' "$REGISTRY" 2>/dev/null || true)"
     if [[ -n "$PORT" && "$PORT" != "null" ]] && command -v lsof >/dev/null 2>&1; then
@@ -45,6 +45,7 @@ else
 fi
 
 echo "[control-uninstall] Removing deployed files..."
+echo "[control-uninstall] Deleting $PROD, including the live config.json, registry.json and state/ in it." >&2
 rm -rf "$PROD"
 
 echo "[control-uninstall] Done. Run control-deploy.sh to reinstall."

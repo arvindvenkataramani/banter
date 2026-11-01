@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "test": "bun test --cwd shared",
+    "config:sync": "bun run scripts/sync-templates.ts",
     "start": "bun run control-plane/src/index.ts"
   },
   "dependencies": {

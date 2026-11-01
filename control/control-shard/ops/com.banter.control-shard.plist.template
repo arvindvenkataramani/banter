@@ -34,10 +34,10 @@
   <dict>
     <key>PATH</key>
     <string>__HOME__/.bun/bin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin</string>
-    <!-- Outside the deployed tree deliberately: the deploy removes and rebuilds
-         that tree, and the live registry is not tracked — only an example is. -->
+    <!-- The live registry sits at the top of the deployment folder: a deploy
+         replaces only the code folders inside it and merges into this file. -->
     <key>BANTER_SHARD_REGISTRY_PATH</key>
-    <string>__HOME__/services/shard/registry.json</string>
+    <string>__HOME__/services/banter/registry.json</string>
   </dict>
 </dict>
 </plist>

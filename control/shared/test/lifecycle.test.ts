@@ -153,9 +153,11 @@ describe("commands each runner type issues", () => {
   const launchd = makeService({ runner: { type: "launchd", label: "com.example.svc" } });
   const managed = makeService({ runner: MANAGED });
   const process_ = makeService({ runner: { type: "process", main: ".venv/bin/uvicorn server:app --port {port}" } });
+  const withRegistry = makeService({ runner: { type: "process", main: "./fluid-server --registry {registry} --port {port}" } });
 
   const TABLE: [string, (s: Service) => string[] | null, Service, string[] | null][] = [
     ["process start, with {port} filled from network.port", deriveStartCmd, process_, [".venv/bin/uvicorn", "server:app", "--port", "8080"]],
+    ["process start, with {registry} filled from the registry path the node loaded", (s) => deriveStartCmd(s, { registryPath: "/live/registry.json" }), withRegistry, ["./fluid-server", "--registry", "/live/registry.json", "--port", "8080"]],
     ["process stop (the held child is killed instead)", deriveStopCmd, process_, null],
     ["systemd start", deriveStartCmd, systemd, ["systemctl", "--user", "start", "embedding.service"]],
     ["systemd stop", deriveStopCmd, systemd, ["systemctl", "--user", "stop", "embedding.service"]],

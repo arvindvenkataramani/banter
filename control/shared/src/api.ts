@@ -144,7 +144,7 @@ export function createApp(deps: AppDeps) {
     if (!svc) return c.json({ error: "service not found" }, 404);
     if (!svc.permissions.enabled) return c.json({ error: "service is disabled" }, 400);
 
-    const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, eventsPath, spawnFn), { deadlineMs: startDeadlineMs(svc) });
+    const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, eventsPath, spawnFn, undefined, registryPath), { deadlineMs: startDeadlineMs(svc) });
     if (!result.ok) {
       const status = result.error?.includes("external") ? 400 : 500;
       return c.json({ error: result.error ?? "start failed" }, status as any);
@@ -173,7 +173,7 @@ export function createApp(deps: AppDeps) {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
     if (!svc) return c.json({ error: "service not found" }, 404);
 
-    const result = await submit(svc.id, "restart", () => restartService(runFn, pollHealthFn, svc, eventsPath, spawnFn), { deadlineMs: restartDeadlineMs(svc) });
+    const result = await submit(svc.id, "restart", () => restartService(runFn, pollHealthFn, svc, eventsPath, spawnFn, registryPath), { deadlineMs: restartDeadlineMs(svc) });
     if (!result.ok) {
       const status = result.error?.includes("external") ? 400 : 500;
       return c.json({ error: result.error ?? "restart failed" }, status as any);
