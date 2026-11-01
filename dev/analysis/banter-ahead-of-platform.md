@@ -4,7 +4,7 @@ Changes in Banter (`~/Code/banter`) that platform (`~/Code/airavatha/sutradhara/
 
 Rechecked against platform `dev` at `ac32bcb` on 2026-10-31. The full register of differences is [dev/design/platform-divergence.md](../design/platform-divergence.md).
 
-Most of these exist because Banter has to run on setups platform doesn't: one Mac running both nodes, Linux, an install somewhere other than the default, and users who aren't Arvind.
+Most of these exist because Banter has to run on setups platform doesn't: Linux, an install somewhere other than the default, and users who aren't Arvind.
 
 ## Already taken
 
@@ -27,11 +27,6 @@ Platform took these in `fd9920e` and `ac32bcb`. Where platform's form differs, B
 `shard-registry.sh` is no longer offered. Platform defines the shard registry's path once in `deploy-env.sh`, which solves the same problem. Both now keep the shard registry at the top of the shard's deployment folder.
 
 ## Scripts
-
-### Per-name staging
-
-- **Banter:** `platform_stage_dir` in `scripts/deploy-env.sh` takes an optional name, and `scripts/shard-deploy.sh` stages under `<unit>-shard`, so a control plane and a shard deployed from one Mac don't share a staging tree.
-- **Platform:** `platform_stage_dir` (`deploy-env.sh:92-97`) takes no name.
 
 ### Systemd unit from a template
 
