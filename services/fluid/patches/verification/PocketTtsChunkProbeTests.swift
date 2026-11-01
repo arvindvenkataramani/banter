@@ -14,7 +14,7 @@ final class PocketTtsChunkProbeTests: XCTestCase {
     func testPrintChunks() throws {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let tokenizerURL = home.appendingPathComponent(
-            ".cache/fluidaudio/Models/pocket-tts/v2.1/english/constants_bin/tokenizer.model")
+            ".cache/fluidaudio/Models/pocket-tts-coreml/constants_bin/tokenizer.model")
         guard FileManager.default.fileExists(atPath: tokenizerURL.path) else {
             throw XCTSkip("tokenizer.model not on disk; run the PocketTTS CLI once to download it")
         }

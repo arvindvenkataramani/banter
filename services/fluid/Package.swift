@@ -31,7 +31,8 @@ let package = Package(
     dependencies: [
         // Pinned to a fork, not upstream: unpatched FluidAudio garbles any text
         // containing ( ) / … or an emoji and cuts sentences mid-phrase. This
-        // branch carries the three fixes in patches/. Read `patches/README.md`
+        // branch carries the three fixes in patches/, plus upstream #942 (the
+        // LuxTTS mid-phrase pause fix) cherry-picked on top. Read `patches/README.md`
         // before changing this pin: a bump that drops them fails silently, in
         // the audio.
         //
@@ -39,7 +40,7 @@ let package = Package(
         // after v0.15.7 and is in no release.
         .package(
             url: "https://github.com/arvindvenkataramani/FluidAudio.git",
-            revision: "6843a35b46da4f79a653bafe2cb09624eb07dca1"
+            revision: "568fef9fe97d684ab54d0eadd4338e7e57964351"
         ),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
         .package(

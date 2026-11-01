@@ -1,6 +1,6 @@
 # FluidAudio patches for Pocket-TTS
 
-Unpatched FluidAudio at `b68f4847` speaks Pocket-TTS badly in two ways, and both are in FluidAudio, not in `fluid-tts`. The three patches here fix them, and **the servers apply them**: `../Package.swift` pins `arvindvenkataramani/FluidAudio` at `6843a35b`, which is the three commits stacked on `b68f4847` in that order.
+Unpatched FluidAudio at `b68f4847` speaks Pocket-TTS badly in two ways, and both are in FluidAudio, not in `fluid-tts`. The three patches here fix them, and **the servers apply them**: `../Package.swift` pins `arvindvenkataramani/FluidAudio` at `568fef9f` (branch `local/pocket-tts-plus-luxtts-942`): the three commits stacked on `b68f4847` in that order, then upstream #942 (`4ed6d59d`, LuxTTS mid-phrase pauses) cherry-picked on top.
 
 Read this before changing the FluidAudio pin in `../Package.swift`. A pin bump that drops these fixes brings the defects back silently; nothing fails, the audio just gets worse.
 
@@ -49,5 +49,5 @@ Never use a `fluidaudiocli` binary from a shared working clone as the "before": 
 ## Where the rest lives
 
 - Investigation, measurements, and the state of the upstream filings: the vault note below, and issues #931/#933/#934 with PRs #932 and #935.
-- Listening samples and the issue drafts: `$WORKSPACE/system/projects/benchmarks/voice/tts/pocket-tts-chunking.md`.
+- Listening samples and the issue drafts: `$WORKSPACE/system/projects/benchmarks/voice/tts/analysis/pocket-tts-chunking.md`.
 - The same commits on the fork `arvindvenkataramani/FluidAudio`, as `fix/pocket-tts-tokenizer-unknown-characters`, `feat/pocket-tts-cut-placement` and `local/pocket-tts-whole-sentences`.

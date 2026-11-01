@@ -12,7 +12,7 @@ import sentencepiece
 here = os.path.dirname(os.path.abspath(__file__))
 model = os.path.expanduser(
     sys.argv[1] if len(sys.argv) > 1
-    else "~/.cache/fluidaudio/Models/pocket-tts/v2.1/english/constants_bin/tokenizer.model"
+    else "~/.cache/fluidaudio/Models/pocket-tts-coreml/constants_bin/tokenizer.model"
 )
 sp = sentencepiece.SentencePieceProcessor(model)
 for line in open(os.path.join(here, "tokenizer-parity-input.txt"), encoding="utf-8"):
