@@ -5,13 +5,13 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+source "$REPO/scripts/deploy-env.sh"
 # The live registry, where the shard reads it (the repo has only an example).
 source "$REPO/scripts/shard-registry.sh"
 REGISTRY="$(banter_shard_registry_path)"
 [[ -f "$REGISTRY" ]] || { echo "[shard-dev] error: no shard registry at $REGISTRY — see docs/shard-setup.md" >&2; exit 1; }
 UID_NUM="$(id -u)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
-SHARD_LABEL="com.banter.control-shard"
 
 # Read shard port from registry
 SHARD_PORT=$(awk '

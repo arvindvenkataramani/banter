@@ -8,7 +8,6 @@ source "$SCRIPTS_DIR/deploy-env.sh"
 PROD="$BANTER_SHARD_PROD"
 LAUNCHD_AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
-SHARD_LABEL="com.banter.control-shard"
 
 echo "[shard-uninstall] Tearing down tailscale serve..."
 "$SCRIPTS_DIR/shard-stop.sh"

@@ -4,8 +4,9 @@
 # Requires the shard to already be deployed (plists installed via shard-deploy.sh).
 set -euo pipefail
 
+SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPTS_DIR/deploy-env.sh"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
-SHARD_LABEL="com.banter.control-shard"
 UID_NUM="$(id -u)"
 
 # Fail fast if shard is not deployed

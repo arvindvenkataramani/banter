@@ -28,9 +28,8 @@ if [[ "$ARCH" != "arm64" ]]; then
   exit 1
 fi
 
-MACOS_VERSION="$(sw_vers -productVersion)"
-MACOS_MAJOR="${MACOS_VERSION%%.*}"
-if [[ "$MACOS_MAJOR" -lt 15 ]]; then
+MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || echo 0)"
+if [[ "${MACOS_VERSION%%.*}" -lt 15 ]]; then
   echo "[fluid-build] error: macOS 15 or later required (found $MACOS_VERSION)." >&2
   echo "[fluid-build]        Update macOS, then re-run this script." >&2
   exit 1
@@ -45,7 +44,7 @@ SWIFT_VERSION_OUTPUT="$(swift --version 2>&1)"
 if ! grep -q "Swift version 6" <<<"$SWIFT_VERSION_OUTPUT"; then
   echo "[fluid-build] error: Swift 6 toolchain required. Found:" >&2
   echo "[fluid-build]        $SWIFT_VERSION_OUTPUT" >&2
-  echo "[fluid-build]        Install: xcode-select --install" >&2
+  echo "[fluid-build]        Install Xcode 16 or later, or: xcode-select --install" >&2
   exit 1
 fi
 

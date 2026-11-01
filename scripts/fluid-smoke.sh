@@ -9,8 +9,9 @@
 # The deploy:
 #   - fluid-build.sh builds fluid-stt.app.
 #   - install-artifacts.sh installs it from a scratch registry into a scratch
-#     working directory, the same code path a real install takes. Its control
-#     URL points at nothing, so it never stops or starts a live service.
+#     working directory under /var/tmp, the same code path a real install
+#     takes. Its control URL points at nothing, so it never stops or starts a
+#     live service.
 #   - The installed copy is re-stamped com.banter.fluid-stt.smoke-<random> and
 #     re-signed. The server keys its temp directory, caches and log subsystem by
 #     bundle identifier, and its temp directory is the per-user Darwin one
@@ -39,6 +40,9 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE="$REPO/services/fluid"
 PORT="${FLUID_SMOKE_PORT:-18767}"
 MODEL="parakeet-unified-0.6b"
+REAL_ID="com.banter.fluid-stt"
+SMOKE_PREFIX="$REAL_ID.smoke-"
+SCRATCH_PARENT="/var/tmp"
 SENTENCE="The quick brown fox jumps over the lazy dog."
 EXPECTED="fox"
 IDLE_MS=4000
@@ -47,7 +51,6 @@ KEEP=false
 [[ "${1:-}" == "--keep" ]] && KEEP=true
 
 source "$REPO/scripts/install-artifacts.sh"
-JQ="$(platform_find_jq)"
 BUN="$(platform_find_bun)"
 
 log() { echo "[fluid-smoke] $*"; }
@@ -55,9 +58,22 @@ ok() { echo "[fluid-smoke] ok   $*"; }
 
 SCRATCH=""
 SERVER_PID=""
-SMOKE_ID="com.banter.fluid-stt.smoke-$(uuidgen | tr '[:upper:]' '[:lower:]' | cut -c1-8)"
-SMOKE_TEMP="$(getconf DARWIN_USER_TEMP_DIR)$SMOKE_ID"
-SMOKE_CACHES="$HOME/Library/Caches/$SMOKE_ID"
+SMOKE_ID=""
+SMOKE_TEMP=""
+SMOKE_CACHES=""
+
+# Removes a path only when it is non-empty and named by this run: under the
+# scratch parent with the scratch prefix, or ending in the smoke identifier.
+remove_own() {
+  local path="$1"
+  [[ -n "$path" ]] || return 0
+  case "$path" in
+    "$SCRATCH_PARENT"/fluid-smoke.?*) ;;
+    */"$SMOKE_PREFIX"?*) ;;
+    *) echo "[fluid-smoke] refusing to remove $path" >&2; return 0 ;;
+  esac
+  rm -rf "$path"
+}
 
 cleanup() {
   local status=$?
@@ -70,24 +86,23 @@ cleanup() {
     kill -KILL "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
-  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  if [[ -n "$SERVER_PID" ]] && command -v lsof >/dev/null 2>&1 \
+      && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "[fluid-smoke] warning: port $PORT is still listening after cleanup" >&2
   fi
-  if [[ $status -eq 1 && -f "$SCRATCH/server.log" ]]; then
+  if [[ $status -eq 1 && -n "$SCRATCH" && -f "$SCRATCH/server.log" ]]; then
     echo "[fluid-smoke] last lines of the server log:" >&2
     tail -n 20 "$SCRATCH/server.log" >&2
   fi
-  if [[ -n "$SCRATCH" && -d "$SCRATCH" ]]; then
-    if $KEEP; then
-      log "kept the scratch deploy at $SCRATCH"
-    else
-      rm -rf "$SCRATCH"
+  if $KEEP; then
+    [[ -n "$SCRATCH" ]] && log "kept the scratch deploy at $SCRATCH"
+  else
+    if [[ -n "$SCRATCH" && -d "$SCRATCH" ]]; then
+      remove_own "$SCRATCH"
       log "removed the scratch deploy"
     fi
-  fi
-  # Named by the smoke identifier alone, so these can only be this run's.
-  if ! $KEEP; then
-    rm -rf "$SMOKE_TEMP" "$SMOKE_CACHES"
+    remove_own "$SMOKE_TEMP"
+    remove_own "$SMOKE_CACHES"
   fi
   exit $status
 }
@@ -104,14 +119,20 @@ skip() {
   exit 3
 }
 
+[[ "$(uname -s)" == "Darwin" ]] || skip "fluid-stt runs on macOS only"
 command -v say >/dev/null 2>&1 || skip "no 'say' to speak the test sentence"
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+JQ="$(platform_find_jq)" || skip "jq is not installed"
+if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   fail "port $PORT is in use; set FLUID_SMOKE_PORT to a free one"
 fi
 
 "$REPO/scripts/fluid-build.sh"
 
-SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/fluid-smoke.XXXXXX")"
+SMOKE_ID="$SMOKE_PREFIX$(uuidgen | tr '[:upper:]' '[:lower:]' | cut -c1-8)"
+SMOKE_TEMP="$(getconf DARWIN_USER_TEMP_DIR)$SMOKE_ID"
+SMOKE_CACHES="$HOME/Library/Caches/$SMOKE_ID"
+
+SCRATCH="$(mktemp -d "$SCRATCH_PARENT/fluid-smoke.XXXXXX")"
 mkdir -p "$SCRATCH/install"
 
 # The scratch registry: the example's fluid-stt service and roster, installing

@@ -5,8 +5,9 @@
 set -euo pipefail
 
 UID_NUM="$(id -u)"
+SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPTS_DIR/deploy-env.sh"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
-SHARD_LABEL="com.banter.control-shard"
 
 echo "[shard] Disabling agent..."
 launchctl disable "gui/$UID_NUM/$SHARD_LABEL" 2>/dev/null || true

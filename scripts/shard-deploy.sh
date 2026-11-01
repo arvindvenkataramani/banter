@@ -13,7 +13,6 @@ source "$(dirname "$0")/deploy-env.sh"
 PROD="$BANTER_SHARD_PROD"
 LAUNCHD_AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
-SHARD_LABEL="com.banter.control-shard"
 SCRIPTS_DIR="$REPO/scripts"
 
 # Temporary directories to remove on exit, under one trap: bash keeps only one
@@ -33,7 +32,7 @@ FORCE_REF="${1:-}"
 
 if [[ -n "$FORCE_REF" ]]; then
   if [[ "$FORCE_REF" == "main" ]]; then
-    SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); CLEANUP_DIRS+=("$SRC")
+    SRC=$(platform_stage_dir); CLEANUP_DIRS+=("$SRC")
     echo "[shard-deploy] Extracting main from git archive..."
     git -C "$REPO" archive main | tar -x -C "$SRC"
   elif [[ "$FORCE_REF" != "dev" ]]; then
@@ -56,14 +55,14 @@ else
       case "$choice" in
         2) ;;
         3) echo "[shard-deploy] Aborted."; exit 0 ;;
-        *) SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); CLEANUP_DIRS+=("$SRC")
+        *) SRC=$(platform_stage_dir); CLEANUP_DIRS+=("$SRC")
            echo "[shard-deploy] Extracting main from git archive..."
            git -C "$REPO" archive main | tar -x -C "$SRC"
            ;;
       esac
     else
       echo "[shard-deploy] Non-interactive session: defaulting to main."
-      SRC=$(platform_stage_dir "$BANTER_UNIT-shard"); CLEANUP_DIRS+=("$SRC")
+      SRC=$(platform_stage_dir); CLEANUP_DIRS+=("$SRC")
       echo "[shard-deploy] Extracting main from git archive..."
       git -C "$REPO" archive main | tar -x -C "$SRC"
     fi

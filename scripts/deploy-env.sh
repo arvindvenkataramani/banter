@@ -44,6 +44,9 @@ BANTER_SHARD_PROD="${BANTER_SHARD_PROD:-$HOME/services/banter}"
 # The shard's event log, where installs are recorded alongside everything else.
 # Same variable the shard itself reads.
 BANTER_SHARD_EVENTS_PATH="${BANTER_SHARD_EVENTS_PATH:-$BANTER_SHARD_PROD/logs/events.jsonl}"
+# The shard's launchd label. The plist template names it literally, so this is
+# a fixed value, not a setting.
+SHARD_LABEL="com.banter.control-shard"
 
 # Where a deploy stages an extracted tree before copying it into place.
 #
@@ -54,15 +57,13 @@ BANTER_SHARD_EVENTS_PATH="${BANTER_SHARD_EVENTS_PATH:-$BANTER_SHARD_PROD/logs/ev
 # copy behind forever.
 BANTER_STAGE_DIR="${BANTER_STAGE_DIR:-/var/tmp/banter-deploy-$(id -u)}"
 
-# Stage a deploy source tree and echo its path. An optional name keeps two
-# deploys that share a unit name, the control plane and the shard on one
-# machine, out of each other's way; it defaults to the unit.
+# Stage a deploy source tree and echo its path.
 #
-# One fixed path per name, cleared on entry rather than a fresh random directory
+# One fixed path per unit, cleared on entry rather than a fresh random directory
 # each run. A deploy killed before its trap fires would otherwise leave a full
 # tree behind that the next run never touches, accumulating a copy per failure.
 platform_stage_dir() {
-  local dir="$BANTER_STAGE_DIR/${1:-$BANTER_UNIT}"
+  local dir="$BANTER_STAGE_DIR/$BANTER_UNIT"
   rm -rf "$dir"
   mkdir -p "$dir"
   echo "$dir"
