@@ -52,7 +52,7 @@ describe("idle keepalive", () => {
     const loop = startIdleLoop([svc], new Map(), collectEvictions(evicted), eventsPath, 20);
 
     await new Promise(r => setTimeout(r, 80));
-    loop.stop();
+    await loop.stop();
 
     expect(evicted).toEqual(["stt-fluid"]);
   });
@@ -67,7 +67,7 @@ describe("idle keepalive", () => {
 
     await new Promise(r => setTimeout(r, 120));
     clearInterval(heartbeat);
-    loop.stop();
+    await loop.stop();
 
     expect(evicted).toEqual([]);
   });
@@ -83,7 +83,7 @@ describe("idle keepalive", () => {
     expect(evicted).toEqual([]);                     // still held
 
     await new Promise(r => setTimeout(r, 140));      // heartbeat stopped
-    loop.stop();
+    await loop.stop();
 
     expect(evicted).toEqual(["stt-fluid"]);
   });
@@ -97,7 +97,7 @@ describe("idle keepalive", () => {
     const loop = startIdleLoop([svc], new Map(), collectEvictions(evicted), eventsPath, 20);
 
     await new Promise(r => setTimeout(r, 80));
-    loop.stop();
+    await loop.stop();
 
     expect(evicted).toEqual([]);
   });

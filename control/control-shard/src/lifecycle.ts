@@ -41,7 +41,7 @@ interface ShardShutdownDeps {
   eventsPath: string;
   runFn: RunFn;
   stopHealth: () => void;
-  stopIdle: () => void;
+  stopIdle: () => void | Promise<void>;
   stopServer: () => void;
 }
 
@@ -54,7 +54,8 @@ export async function shardShutdown(deps: ShardShutdownDeps): Promise<void> {
   // it would outlive the shard.
   stopServer();
   stopHealth();
-  stopIdle();
+  // Waits for an eviction already under way, so it cannot race the stop loop.
+  await stopIdle();
 
   for (const svc of registryState.services) {
     if (svc.lifecycle?.shutdown !== true) continue;

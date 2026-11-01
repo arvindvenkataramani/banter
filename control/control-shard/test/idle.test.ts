@@ -43,9 +43,9 @@ async function runLoop(services: Service[], pings: Map<string, number>, ms = 50,
     evicted.push(svc.id);
     svc.state = { ...svc.state, loadTime: undefined };
   }, eventsPath, 10);
-  if (stopFirst) loop.stop();
+  if (stopFirst) await loop.stop();
   await new Promise(r => setTimeout(r, ms));
-  loop.stop();
+  await loop.stop();
   return evicted;
 }
 
