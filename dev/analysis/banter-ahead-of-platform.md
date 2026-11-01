@@ -21,8 +21,18 @@ Most of these come from Banter having to run on setups platform doesn't: a singl
 
 ### Registry error messages
 
-- **Banter:** `control/shared/src/registry.ts` error messages include the bad value, for example `network.scheme must be "http" or "https", got "ftp"` (lines 289, 313, 390).
+- **Banter:** `control/shared/src/registry.ts` error messages include the bad value, for example `network.scheme must be "http" or "https", got "ftp"` (lines 272, 317, 396). Platform's messages stop at "must be".
 - Two earlier claims here are withdrawn after platform's `2b5b76b` and `f8995ef`. Platform now validates the whole file on every patch, so Banter's endpoint re-derivation on patch is unnecessary. The `--port` check behaves the same in both, since only process runners have `main`.
+
+### The API reference documents five more endpoints
+
+- **Banter:** `control/control-plane/src/routes.ts` (lines 396–526) defines OpenAPI routes for `PATCH /api/gateway/defaultAgent`, `PATCH /api/gateway/lastSession`, `PATCH /api/voice/selection`, `POST /api/config/reload` and `POST /api/debug/mic-sample`. Nothing registers them at runtime (the handlers live in `gateway-config.ts`, as on platform), but `scripts/generate-api-docs.ts` registers every exported route, so `docs/api-reference.md` documents those endpoints.
+- **Platform:** has the same handlers and no definitions, so its API reference omits them.
+
+### `Shard.endpoint` is required
+
+- **Banter:** `shared/types.ts` line 122 declares `endpoint: string`; the loader always derives it.
+- **Platform:** declares it optional, which leaves `control-plane/src/app.ts` (the `/api/shards` handler) and `shard-poller.ts` (lines 54–56) passing `string | undefined` where a string is required: four type errors when Banter tried platform's form.
 
 ### Shard paths in one testable file
 
@@ -71,10 +81,21 @@ Most of these come from Banter having to run on setups platform doesn't: a singl
 ### Installing the control plane
 
 - **Banter:** `scripts/control-install-services.sh`.
-  - Lines 48–51 render `ops/systemd/banter.service.template` with `__PROD__` and `__UNIT__`, so a non-default install location gets a correct unit.
-  - Line 100 calls `install_service_artifacts` against `localhost` and the port read from the registry, not a fixed Tailscale URL.
-  - Line 85 skips `systemctl daemon-reload` where there is no systemd, as on macOS.
+  - Lines 49–52 render `ops/systemd/banter.service.template` with `__PROD__` and `__UNIT__`, so a non-default install location gets a correct unit.
+  - Line 101 calls `install_service_artifacts` against `localhost` and the port read from the registry, not a fixed Tailscale URL.
+  - Line 87 runs `systemctl daemon-reload` only where systemd exists, so the script also runs on macOS.
 - `scripts/shard-install-services.sh` likewise targets the shard's own `localhost` port.
+
+### Scripts read the registry the shard reads
+
+- **Banter:** `scripts/shard-registry.sh` resolves the shard's live registry the same way `control/control-shard/src/paths.ts` does: `BANTER_SHARD_REGISTRY_PATH`, then `BANTER_SHARD_ROOT`, then `~/services`, falling back to an existing `~/Services`. `shard-install-services.sh` and `service-control.sh` source it, and the install fails with a clear message when no registry is found.
+- **Why:** a script reading a different file from the shard is how Banter's shard install came to skip its plist and artifact steps silently. It read the repo's untracked copy, which a stage extracted from git doesn't have.
+- **Platform:** keeps the shard registry inside the deployed tree, so its scripts and shard already agree. This item matters to platform only if it moves the registry out of the tree (an open decision on the Banter side).
+
+### Staging and dev cleanup
+
+- **Banter:** `platform_stage_dir` in `scripts/deploy-env.sh` (line 64) takes an optional name, and the shard deploy stages under `<unit>-shard`, so a control plane and a shard deployed from one Mac don't share a staging tree. Platform's helper takes no name.
+- **Banter:** `scripts/shard-dev.sh` (line 53) restores the production shard agent from one idempotent trap on EXIT, INT and TERM, so a dev run that fails to start doesn't leave production stopped.
 
 ## Dashboard
 
