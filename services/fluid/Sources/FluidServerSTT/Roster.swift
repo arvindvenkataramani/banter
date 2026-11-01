@@ -9,7 +9,7 @@ import Foundation
 /// quietly missing from the listing.
 ///
 /// Contract: `schemas/platform.schema.json#/$defs/sttModel`. Design record:
-/// `dev/design/model-roster.md`.
+/// `docs/design/model-roster.md`.
 
 /// What a model can do. The roster declares this; the server checks it against
 /// what the code can actually build for that key.

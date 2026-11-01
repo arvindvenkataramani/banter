@@ -108,25 +108,13 @@ Platform commits: `de44bd6`, `bdeef42`, `b4d13ea`. This is a pass of its own, ta
 - **Human review:** the deploy and config scripts, and the probe's reading of `.env.secrets` and its narrower gateway scopes, are on CONTRIBUTING's human-review list.
 - **Dependencies:** none new. Zod `4.3.6` is already pinned.
 
-### 2. Docs
+### 2. Docs that follow live config
 
-Banter takes platform's docs layout, which is where the code's citations point. Twelve Banter files cite `components/voice-turn-taking.md`, and others cite `voice-system.md`, `model-roster.md`, `service-install.md` and `control-shard.md`. Banter has none of these.
+These describe config and deploy, so they are brought up to date once live config lands.
 
-- **Port:**
-  - `components/voice-turn-taking.md`, `components/stt.md` and `components/tts.md`.
-  - `design/`: `voice-system.md`, `turn-taking.md`, `voice-floor.md`, `voice-loop-streaming-stt.md`, `voice-speech-output.md`, `voice-tone-crackle.md`, `fluid-server-streaming-and-structure.md`, `fluidserver-model-lifecycle.md`, `lifecycle-executor.md`, `config-reload.md`, `service-install.md` and `live-config.md`.
-  - `services/fluid/STT.md` and `openclaw/tool-call-handling.md`.
-  - Move `dev/design/model-roster.md`, `fluid-server-app-identity.md` and `fluid-stt-on-demand-load.md` to `docs/design/`, taking platform's text.
-- **Strip and port:**
-  - `pages/voice-interface.md`, without Home and media.
-  - `components/dashboard.md`, `dashboard-views.md` and `components/index.md`.
-  - `OPERATIONS.md`, without the Pi, NAS and personal machines.
-  - `control-shard.md`, replacing `docs/architecture/control-shard.md`.
-- **Refresh against platform:**
-  - `control-plane-api.md`, `registry.md` and `service-lifecycle.md`.
-  - The OpenClaw protocol notes.
-  - `gateway-tool-and-message-events.md`, which has diverged: Banter's is 496 lines, platform's 285.
-- **Replace:** `docs/architecture/voice-pipeline.md` describes `useVoiceLoop`, `useMicLoop`, `LlmStore` and an arbiter, none of which exist, and `README.md:345` cites the arbiter. The voice docs above replace it.
+- **Strip and port:** `OPERATIONS.md`, without the Pi, NAS and personal machines.
+- **Refresh against platform and the new layout:** `control-plane-api.md`, `registry.md`, `service-lifecycle.md`, `event-log.md`, `control-shard.md`, `shard-setup.md`, `stt-setup.md` and `voices-and-models.md`.
+- **`docs/architecture/README.md`** says a tailnet is the only configuration; Banter defaults to http.
 
 ### Lint
 

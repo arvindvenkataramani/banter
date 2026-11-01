@@ -19,9 +19,10 @@ wire protocol; that's covered in depth, and kept current, by:
   `content` string-or-blocks union, `caps`, `__openclaw.id` anchoring,
   reconnect-as-new-projection.
 
-The voice pipeline (mic loop, playback engine, playback arbiter, turn
-manager) is described in `../architecture/voice-pipeline.md`. This doc only
-covers how Chat *wires into* that pipeline, not its internals.
+The voice pipeline (mic loop, playback engine, turn manager, and the
+`voiceSystem` that runs a voice session) is described in
+`voice-turn-taking.md`. This doc only covers how Chat *wires into* that
+pipeline, not its internals.
 
 ---
 
@@ -46,8 +47,8 @@ useSessionManager()        bridges both classes into React via
 `dashboard/src/lib/gateway-connection.ts`, `gateway-context.tsx`,
 `session-manager.ts`, `session.ts`, `use-session-manager.ts`.
 
-There is exactly one `GatewayConnection` for the whole dashboard — Home,
-Services, and Chat all share it via `GatewayProvider`. `SessionManager` is
+There is exactly one `GatewayConnection` for the whole dashboard — Services
+and Chat share it via `GatewayProvider`. `SessionManager` is
 per-connection; `Session` is per-sessionKey, cached in a `SessionStore` map
 so switching back to a previously-visited session reuses its in-memory
 transcript rather than rebuilding it.
@@ -113,7 +114,7 @@ One instance per sessionKey. Owns `_messages`, `_isStreaming`, `_isTyping`,
 
 History rows are anchored on `__openclaw.id` (falling back to `seq`, then
 positional index) so identity survives pagination and reload, matching the
-protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `turn-manager.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
+protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `lib/voice/agent/speech-chunker.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
 
 ### Run signalling — what opens a run, and what must not end one
 
@@ -161,74 +162,58 @@ what `ChatPage` destructures directly.
 
 ## `ChatPage`
 
-Owns UI-local state only: scroll position, and the voice *service*
-lifecycle (`voiceStatus: 'off'|'loading'|'ready'|'error'`, endpoints,
-`speechEnabled`). Everything about the conversation itself —
-messages, streaming state, agent/model/session — comes from
-`useSessionManager()`.
+Owns UI-local state only: scroll position and the voice chrome. Everything
+about the conversation itself — messages, streaming state,
+agent/model/session — comes from `useSessionManager()`. The voice session
+is not page state: it is the module-level `voiceSystem`
+(`lib/voice/system/`), and the page reads it through two stores.
+
+- `useVoiceSystemStore` — `phase` (`off`, `starting`, `live`, `ending`),
+  `reconfiguring` (a saved provider change is readying a service under a
+  live session) and `lastEnd` (why the last session ended).
+- `useVoiceSessionStore` — what outlives a session: `voiceConfig`,
+  `voiceSelection`, the service endpoints, and the gateway session the page
+  publishes with `publishSession`.
 
 ### Voice vs. text input
 
-A single derived flag: `voiceLoopEnabled = speechEnabled && voiceStatus === 'ready'`.
+A single derived flag: `voiceLoopEnabled = phase === 'live' && !reconfiguring`.
+While `phase === 'starting'`, or `live` and `reconfiguring`, the composer
+shows its waiting state and the voice-on chrome is held back.
 
 `ChatComposer` always renders and carries both text entry and the voice
 on/off control, so there is no swap between a text input and a voice one.
-When the loop is live, `VoiceControlsMobile` renders *in addition* as a fixed
-control block on mobile; the desktop controls live in the composer itself,
-chosen by CSS breakpoint rather than JS device detection.
+When `voiceLoopEnabled`, `VoiceControlsMobile` renders *in addition* as a
+fixed control block on mobile; the desktop controls live in the composer
+itself, chosen by CSS breakpoint rather than JS device detection.
 
-`useVoiceLoop()` is always called; its own `enabled` option gates whether the
-mic/VAD/playback machinery actually spins up.
+The voice control calls `voiceOn()` from `lib/media-voice-mode.ts`, which
+calls `voiceSystem.voiceOn()`. The mic is acquired by `acquire()` in
+`lib/system/devices.ts`, which `voiceSystem` calls synchronously from the
+tap, before any `await`: iOS Safari drops the user-activation context across
+an await, so `getUserMedia` has to run in the same tick as the tap.
 
-Mic permission is requested *synchronously* inside the toggle's click
-handler, before any `await` — iOS Safari drops the user-activation context
-across an await, so the `MediaStream` has to be acquired in the same tick
-as the tap. It's stored and handed to `useVoiceLoop` for `MicLoop` to
-consume on first start.
-
-`useVoiceLoop({ session: activeSession, messages, isStreaming, ... })` is
-fed straight from `useSessionManager()` — this is the whole connection
-between the gateway session and the voice pipeline. The composer and the
-mobile control block are pure presentation; neither calls `useVoiceLoop` nor
-touches the pipeline — they only render the props `ChatPage` passes down.
-
-### Chat-launch (cross-page handoff)
-
-Another page (e.g. Home's "Talk about this") can call
-`setPendingChatLaunch()` before navigating to `/chat`. On mount, if a
-launch is pending, `ChatPage` runs once: switch to the main agent/session,
-start a new session, enable speech if needed, then send the opening
-message. Gated on the gateway and voice config both being ready, so it
-can't fire early.
+The page publishes its active `Session` to `useVoiceSessionStore`; the
+voice system reads the gateway session from there. This is the whole
+connection between the gateway session and the voice pipeline. The composer
+and the mobile control block are pure presentation: they only render the
+props `ChatPage` passes down. When `lastEnd.reason` is `held` (another
+client holds the transcription slot), the page shows a dialog whose Take
+over action calls `voiceOn({ takeover: true })`.
 
 ### Voice settings
 
-`VoiceSettings` is a config *editor*, not a live control — it stages
-provider/model/voice/speed/chunking choices locally, and only on Save does
-it PATCH the selection server-side and report back via callbacks.
-`ChatPage`'s save handler is what actually hot-swaps the live TTS/STT
-service; `VoiceSettings` itself never touches `useVoiceLoop`.
-
----
-
-## `ChatFab`
-
-Lives in the shared `components/` dir, not `features/chat/` — mounted once
-in `App.tsx` outside the route switch, so it renders on every route except
-`/chat` itself. Pure navigation shortcut to `/chat`; does not use
-chat-launch.
+The settings dialog (`features/settings/*`) is a config *editor*, not a live
+control: `useVoiceSettings` stages provider/model/voice/speed/chunking
+choices locally, and only on Save does it PATCH the selection server-side.
+It then calls `applySavedVoiceSettings()` (`lib/voice/apply-voice-settings.ts`),
+which merges the PATCH result into `useVoiceSessionStore` and calls
+`voiceSystem.reconfigure(...)` to ready the services it now names.
 
 ---
 
 ## Known gaps in the protocol docs
 
-Found while mapping this — worth fixing there, not here:
-
-- `gateway-session-lifecycle.md` states protocol version 3; code
-  (`CONNECT_PROTOCOL = 4`) and `openclaw-gateway-protocol.md` both say 4.
-- `gateway-session-lifecycle.md` describes device-signed auth as skipped in
-  favor of a token-only path. The dashboard implements full Ed25519
-  device auth (`device-identity.ts`) — that path is live, not skipped.
 - `models.list` (used by `SessionManager.initialize()`) isn't documented in
   `openclaw-gateway-protocol.md`.
 - `sessions.list`'s `includeDerivedTitles`/`includeLastMessage` params

@@ -1,7 +1,5 @@
 # fluid-stt and fluid-tts as identified macOS applications
 
-**Stage:** Built.
-
 ## What it is
 
 `fluid-stt` and `fluid-tts` are plain Swift Package Manager executables, ad-hoc signed, with no Info.plist. macOS therefore identifies each by its file name, and every per-application location the system derives follows that name. CoreML's runtime cache is the visible case: it lives at `~/Library/Caches/<identity>/com.apple.e5rt.e5bundlecache/`, so each rename of the binaries (`fluidserver`, `fluid-server-stt`, `fluidttsserver`) started a new cache and orphaned the old one.
@@ -20,19 +18,15 @@ The plist carries `CFBundleIdentifier`, `CFBundleName`, `CFBundleExecutable`, `C
 
 Every location a server owns derives from its bundle identifier through `FileManager`'s standard directories. A server creates what it needs at startup and fails naming the path if it cannot.
 
-**Caches:** `~/Library/Caches/<bundle id>/`. CoreML writes its runtime cache here without being told, which is the whole of what this directory holds today. Nothing the server writes itself belongs here yet.
+**Caches:** `~/Library/Caches/<bundle id>/`. CoreML writes its runtime cache here without being told, which is the whole of what this directory holds. Nothing the server writes itself belongs here.
 
-**Temporary files:** `<user temp directory>/<bundle id>/`. The batch STT upload and the TTS audio file currently go straight into the shared user temp directory. They move into the server's own subdirectory, which the server empties at startup, so a crash no longer leaves anonymous files behind.
+**Temporary files:** `<user temp directory>/<bundle id>/`. The batch STT upload and the TTS audio file go into the server's own subdirectory of the user temp directory, which the server empties at startup, so a crash leaves no anonymous files behind.
 
-**Application Support:** `~/Library/Application Support/<bundle id>/`, for state the server owns and must keep across restarts. The servers hold none today. Model weights are not server state and do not go here; where models live is a separate change, moving them into the Hugging Face cache.
+**Application Support:** `~/Library/Application Support/<bundle id>/`, for state the server owns and must keep across restarts. The servers hold none. Model weights are not server state and do not go here.
 
 **Configuration:** the platform registry, passed with `--registry`, stays the only configuration. It is shared with the shard and owned by the platform, so it cannot move into a per-application location, and a second configuration source beside it would let the two disagree. The servers do not read `UserDefaults`.
 
 **Logs:** stdout continues to reach the shard runner's log files under the install directory. Each server also logs through unified logging with its bundle identifier as the subsystem, so `log stream --predicate 'subsystem == "<bundle id>"'` and Console.app show it alongside the rest of the system.
-
-## Migration
-
-The first start under the new identity finds an empty cache, so each model pays one slow first load per server, once. The orphaned `~/Library/Caches/fluid-stt/` and `~/Library/Caches/fluid-tts/` are removed after the new build has run.
 
 ## Verification
 

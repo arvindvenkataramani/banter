@@ -1,0 +1,48 @@
+# Text to speech
+
+What turns the agent's reply into audio. The shard registers the TTS services
+below; voice mode's active service, model and voice are `voice.tts.selection`
+in `config.json`, changed through `PATCH /api/voice/selection`, never by
+editing the file.
+
+| Service | Models | Role |
+|---|---|---|
+| `fluid-tts` | Pocket-TTS, Kokoro (ANE), LuxTTS | Swift server from the `services/fluid` package, CoreML/ANE |
+| `tts-kokoro` | Kokoro-82M | PyTorch server in `services/tts/kokoro`, the speech option on Linux |
+| `tts-neutts-air` | NeuTTS-Air | PyTorch server in `services/tts/neutts-air`, with voice cloning |
+
+All of them expose OpenAI-compatible `/v1/audio/speech`, so failover needs no
+client change. Install and registry snippets are in
+[`../tts-setup.md`](../tts-setup.md) and
+[`../linux-speech-servers.md`](../linux-speech-servers.md); the shard registry
+holds the service definitions and starts them on demand.
+
+`fluid-tts` listens on 8769. It is built against a FluidAudio fork carrying
+Banter's Pocket-TTS patches, see `services/fluid/patches/README.md`. An upgrade
+that skips reapplying the patches is silent: the service starts and serves
+degraded output.
+
+Kokoro-82M is the fastest engine measured and the cheapest to keep resident,
+which suits it to high-volume output where voice identity does not matter.
+Cloned voices in voice mode go to Pocket-TTS or NeuTTS-Air.
+
+## Voices
+
+Preset voices come with the model. Cloned voices are conditioned on reference
+clips, held as WAV plus transcript pairs in the directory the shard registry's
+roster names, the same set across every cloning engine so quality is comparable
+between them. [`../voices-and-models.md`](../voices-and-models.md) describes
+how a voice, a model and a provider relate.
+
+Kokoro also carries generated voice tensors, converted to `.safetensors` and
+installed locally. They are not clones: the generator produces a voice
+embedding directly.
+
+## A trap
+
+**A missing `model` field routes to whichever model is loaded** on a server that
+hosts several. No error, just the wrong voice answering.
+
+## Request shapes
+
+Request and response shapes are in [`../speech-server-api.md`](../speech-server-api.md).

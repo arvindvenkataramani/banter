@@ -4,8 +4,8 @@ import {
 } from './mute-store'
 import { useTurnManagerStore, resetTurnManager } from '../store/turn-manager-store'
 
-// The mute coupling in docs/architecture/voice-pipeline.md ("Mute") and
-// `store/mute-store.ts`. Each
+// The mute coupling in the "Human turn" section of
+// docs/components/voice-turn-taking.md and `mute-store.ts`. Each
 // transition is asserted on the store and on the controls report the floor
 // last received, which is what the loop and the player reconcile against.
 

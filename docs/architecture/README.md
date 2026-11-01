@@ -38,7 +38,7 @@ primary polls it and merges its services into one view. The shard adds idle
 eviction, Tailscale Serve management, and memory reporting on top of that base.
 Its own code is platform-neutral; the macOS coupling sits in the supervisor, the
 launchd deploy path, and the free-memory probe. See
-[control-shard.md](./control-shard.md).
+[control-shard.md](../control-shard.md).
 
 **Dashboard.** A React SPA served directly by the control plane. Two pages: chat
 (the root route) and services. Everything voice-related happens here, in the

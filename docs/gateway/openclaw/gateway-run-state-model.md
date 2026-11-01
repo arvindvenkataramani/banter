@@ -37,3 +37,12 @@ A run ends only on a chat terminal (`final` / `aborted` / `error`) or a `lifecyc
 ## Ordering and reconnect
 
 Two independent sequence spaces: the outer WebSocket `seq` (resets on reconnect) and `agent.payload.seq` (per `runId`). The reducer doesn't currently do gap detection itself — `unknown` events (unrecognized `stream` values) pass through and only affect `activity`, never the finish/flush path, so an unfamiliar event can't silently break either.
+
+## Upstream guidance a reducer should respect
+
+- The `agent` event envelope is `{ runId, seq, stream, ts, data }`. `stream` is any non-empty string and `data` is an open record, so preserve unknown streams and data and version-gate any detailed `data` parsing.
+- The payload may carry `spawnedBy` and `isHeartbeat`. Heartbeat events should not drive speaking, tool or thinking transitions.
+- `thinking` is best-effort: some providers do not expose reasoning. A run that is active with no recognized stream is `active`, not `thinking`.
+- A gap or reconnect makes the run's state unknown, not idle. After one, re-subscribe, reload `chat.history`, inspect `activeRunIds`, and only then accept new agent events. For speech, flush or stop what is pending on a gap and resume on authoritative state or new assistant output.
+- Correlate on `sessionKey`, not on a client-generated run id: the id a client sends differs from the server's engine `runId`.
+- `@openclaw/gateway-client` (with `@openclaw/gateway-protocol`) is a published reference client for transport, handshake, reconnect and transcript projection, and its `/browser` entry serves web UIs. It provides no run-state reducer. Banter keeps its own connection layer in `dashboard/src/lib/gateway-connection.ts`, which is paired and tested.

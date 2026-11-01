@@ -342,7 +342,7 @@ Most of `scripts/` is maintenance and deploy tooling rather than day-to-day dev 
 ### Where to start reading
 
 - [docs/architecture/](docs/architecture/README.md) — the three-plane structure, and how the control plane and shard relate
-- [docs/architecture/voice-pipeline.md](docs/architecture/voice-pipeline.md) — the mic and playback loops, the arbiter, and the settings model
+- [docs/design/voice-system.md](docs/design/voice-system.md) and [docs/components/voice-turn-taking.md](docs/components/voice-turn-taking.md) — how a voice session starts and ends, and how the human, agent and system sides share the floor
 - [docs/gateway/](docs/gateway/) — agent backend protocols, one directory per vendor: [OpenClaw](docs/gateway/openclaw/) is what Banter speaks, [OpenCode](docs/gateway/opencode/) is a second server it could attach to. The place to start if you want to point this at a different agent harness
 - [dashboard/UI.md](dashboard/UI.md) and [dashboard/ui-design-system.md](dashboard/ui-design-system.md) — the visual system
 

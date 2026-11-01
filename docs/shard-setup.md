@@ -103,4 +103,4 @@ The worker's model servers need the dashboard's origin in their CORS allowlists,
 
 The primary polls the shard and the shard cannot push, so urgent events — memory pressure, load failures — surface at the next poll rather than immediately. Cold-start times for demand-loaded models have never been benchmarked, which makes the default idle timeouts estimates.
 
-For the design detail, see [architecture/control-shard.md](./architecture/control-shard.md).
+For the design detail, see [control-shard.md](./control-shard.md).

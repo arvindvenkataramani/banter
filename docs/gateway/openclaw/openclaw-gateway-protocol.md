@@ -10,18 +10,13 @@ Official docs, all three worth reading before client work:
 - [`/gateway/clients`](https://docs.openclaw.ai/gateway/clients) — **building a client**: pairing, device identity, caps, reconnect, events
 - [`/gateway/external-apps`](https://docs.openclaw.ai/gateway/external-apps) — integration overview and RPC entry points
 
-`/gateway/clients` is the one that documents `GATEWAY_CLIENT_CAPS` and the
-pairing flow. It did not exist when this document was started.
+`/gateway/clients` is the one that documents `GATEWAY_CLIENT_CAPS` and the pairing flow. It did not exist when this document was started.
 
-*Created: 2026-04-07 · Updated: 2026-08-20*
-*Validated against OpenClaw 2026.7.1 (commit `2d2ddc4`), protocol v4.*
+*Created: 2026-04-07 · Updated: 2026-08-31* *Validated against OpenClaw 2026.7.1 (commit `2d2ddc4`), protocol v4. Re-checked against 2026.8.1 (`ea80657`) on 2026-08-31, and the run-signalling events re-measured from a wire capture on 2026-09-01 — see "Changes at 2026.8.1"; claims not listed there were not re-verified.*
 
-Verify before trusting: `openclaw --version` against the version above. The
-clone at `~/code/openclaw` drifts from the installed CLI — check it out to the
-matching commit before reading its source.
+Verify before trusting: `openclaw --version` against the version above. The clone at `~/code/openclaw` drifts from the installed CLI — check it out to the matching commit before reading its source.
 
-**Every upstream source describes a build ahead of the one you are
-running.** Observed three times now, in three different channels:
+**Every upstream source describes a build ahead of the one you are running.** Observed three times now, in three different channels:
 
 | Source | Claimed | Actual on 2026.7.1 |
 |--------|---------|--------------------|
@@ -29,11 +24,7 @@ running.** Observed three times now, in three different channels:
 | npm `latest` | usable client package | `0.0.0` stub; real code on `beta` |
 | Upstream help bot | `@openclaw/gateway-client/browser` published | not on `latest` |
 
-Treat upstream as authoritative on **intent and design**, and as
-unreliable on **what exists in your version**. Design guidance transfers;
-factual claims about the present need checking against the installed
-build before you act on them. One command settles the package class:
-`npm view <pkg> version dist-tags`.
+Treat upstream as authoritative on **intent and design**, and as unreliable on **what exists in your version**. Design guidance transfers; factual claims about the present need checking against the installed build before you act on them. One command settles the package class: `npm view <pkg> version dist-tags`.
 
 ---
 
@@ -102,15 +93,11 @@ Key fields:
 - `scopes`: permissions the client is requesting.
 - `auth`: either `{ "token": "<token>" }` or `{ "password": "<password>" }`.
 - `client.id`, `client.version`, `client.platform`: identify the connecting application. For Banter, something like `{ "id": "banter", "version": "0.1.0", "platform": "server" }`.
-- `caps`: **operator clients must send this too.** It gates which event
-  families the connection receives — see "Capability-gated event families"
-  below. `commands` and `permissions` are node-only.
+- `caps`: **operator clients must send this too.** It gates which event families the connection receives — see "Capability-gated event families" below. `commands` and `permissions` are node-only.
 
 ### 3. Gateway responds with hello-ok
 
-On the wire (observed 2026-08-07 against 2026.7.1), the reply is a normal
-`res` frame answering the connect request; the hello-ok object is its
-payload, not a separate frame type:
+On the wire (observed 2026-08-07 against 2026.7.1), the reply is a normal `res` frame answering the connect request; the hello-ok object is its payload, not a separate frame type:
 
 ```json
 {
@@ -133,9 +120,7 @@ payload, not a separate frame type:
 }
 ```
 
-A client should key on the `res` for its connect request (accepting a bare
-`hello-ok` frame defensively costs nothing). After it arrives, the
-connection is live and RPCs can be sent.
+A client should key on the `res` for its connect request (accepting a bare `hello-ok` frame defensively costs nothing). After it arrives, the connection is live and RPCs can be sent.
 
 ### Heartbeat
 
@@ -426,7 +411,7 @@ Key differences from `chat.send`: uses `key` instead of `sessionKey`, `idempoten
 
 Abort-and-replace, not mid-run injection. Verified in source at 2026.7.1 (`2d2ddc4`), `src/gateway/server-methods/sessions.ts`: `sessions.steer` is the same handler as `sessions.send` with `interruptIfActive: true`. If a run is active it calls `chat.abort`, **clears all queued follow-up messages** for the session, waits for the run to end, then dispatches a fresh `chat.send` with the new message.
 
-Scope caution: this establishes the `sessions.steer`/`sessions.send` RPC path only. A queue-mode system (`steer | followup | collect | interrupt`) with mid-run injection machinery reportedly exists at the embedded-runner level (`handle.queueMessage`); whether any path our clients hit resolves to genuine mid-run injection is **unresolved** — the webchat UI observably queues. See `platform/plans/voice-interaction-design-ideas.md` § Gateway facts.
+Scope caution: this establishes the `sessions.steer`/`sessions.send` RPC path only. A queue-mode system (`steer | followup | collect | interrupt`) with mid-run injection machinery reportedly exists at the embedded-runner level (`handle.queueMessage`); whether any path our clients hit resolves to genuine mid-run injection is **unresolved** — the webchat UI observably queues.
 
 By contrast, `sessions.send` during an active run queues the message; the queue is delivered after the run completes (this is the queue that steer discards).
 
@@ -567,7 +552,7 @@ When `chat.send` (or `sessions.send`) triggers an agent run, response tokens str
     "runId":        "<string>",
     "sessionKey":   "<string>",
     "seq":          <integer>,
-    "state":        "delta" | "final" | "aborted" | "error",
+    "state":        "delta" | "final" | "status" | "aborted" | "error",
     "message":      <content>,
     "errorMessage": "<string, optional>",
     "usage":        <object, optional>,
@@ -580,49 +565,48 @@ When `chat.send` (or `sessions.send`) triggers an agent run, response tokens str
 
 - `"delta"` — partial response. `message` contains the incremental token(s). These arrive in `seq` order.
 - `"final"` — generation complete. `message` contains the full assembled response. `usage` and `stopReason` may be populated.
+- `"status"` — **2026.8.1.** Run progress, carrying no content: `message` is empty. Observed three times per run, interleaved before the first `delta`. A client that treats any non-`delta`/`final` state as terminal will mistake these for the end of a run.
 - `"aborted"` — run was cancelled (e.g., via `chat.abort`).
 - `"error"` — run failed. `errorMessage` describes what went wrong.
 
-**Event subscription:** `chat` events flow automatically after `chat.send` —
-no subscription, no capability. Every other event family must be asked for.
-See "Capability-gated event families".
+**Event subscription:** `chat` events flow automatically after `chat.send` — no subscription, no capability. Every other event family must be asked for. See "Capability-gated event families".
 
 ### Other event families
 
 - `session.message` — message-granular transcript updates
 - `session.tool` — session-scoped structured tool lifecycle
 - `agent` (`stream: "tool"`) — run-scoped structured tool lifecycle
+- `agent` (`stream: "run_status"`) — **2026.8.1.** Run preparation phases, before any token is generated
 - `sessions.changed` — session index/metadata changes
 
-The three streams that carry an agent run, and which to use for what, are
-covered in `gateway-tool-and-message-events.md`.
+The three streams that carry an agent run, and which to use for what, are covered in `gateway-tool-and-message-events.md`.
 
 ---
 
+## Cross-agent reach is two independent gates [SOURCE]
+
+*Validated against 2026.8.1.*
+
+`sessions_send` and `sessions_spawn` are gated **separately**. Closing one does not close the other.
+
+- **`sessions_send`** is governed by `tools.agentToAgent`. The installed schema describes `allow` as a *target* allowlist — "Allowlist of target agent IDs permitted for agent_to_agent calls" — which reads as directional. The prose docs at `/gateway/config-tools` instead say the policy is symmetric, requiring both requester and target to match. **The disagreement is unresolved**; a test attempting to settle it was confounded because the model under test chose different tools across runs. Treat directionality as unverified and do not rely on it as the only fence.
+- **`sessions_spawn`** is governed by `subagents.allowAgents` (at `agents.defaults.subagents.allowAgents` or per-agent under `agents.entries.*.subagents.allowAgents`), enforced in `subagent-spawn-ownership`. With `allowAgents` unset entirely, spawn targets are still restricted — an attempt returned `agentId is not allowed for sessions_spawn (allowed: other-agent)`, a set derived rather than configured. `"*"` in the list means allow-any.
+
+`tools.sessions.visibility` (`self` | `tree` | `agent` | `all`) is a third, orthogonal control: it scopes which sessions `sessions_list`/`sessions_history`/`sessions_search`/`sessions_send` may target, and its own description notes that **cross-agent access still requires `tools.agentToAgent`** regardless of visibility. Default is `tree`, not `all`.
+
+The practical consequence: an agent-isolation boundary built on any single one of these is incomplete. Denying the *tool* (`tools.deny: ["sessions_send"]`) is the only fence that holds without depending on the unresolved directionality question, because deny wins over allow at every level.
+
 ## Capability-gated event families
 
-Some event families are delivered **only** to connections that asked for
-them. Asking has two separate mechanisms, and missing either one produces
-silence rather than an error.
+Some event families are delivered **only** to connections that asked for them. Asking has two separate mechanisms, and missing either one produces silence rather than an error.
 
-**1. `caps` in the connect params.** `GATEWAY_CLIENT_CAPS` in 2026.7.1
-contains exactly one entry, `tool-events`. Omit it and the gateway never
-registers the connection as a recipient for structured tool events. The
-handshake succeeds, `hello-ok` looks normal, and no tool events arrive.
+**1. `caps` in the connect params.** `GATEWAY_CLIENT_CAPS` in 2026.7.1 contains exactly one entry, `tool-events`. Omit it and the gateway never registers the connection as a recipient for structured tool events. The handshake succeeds, `hello-ok` looks normal, and no tool events arrive.
 
-**2. Explicit subscription RPCs.** `sessions.subscribe` (session events,
-including `session.tool`) and `sessions.messages.subscribe` (per-session
-`session.message`). Both are per-connection, both fire-and-forget.
+**2. Explicit subscription RPCs.** `sessions.subscribe` (session events, including `session.tool`) and `sessions.messages.subscribe` (per-session `session.message`). Both are per-connection, both fire-and-forget.
 
-`chat` events are the exception — they flow as a side effect of `chat.send`
-with no subscription and no capability. That asymmetry is the trap: the one
-stream that arrives unbidden is the one that teaches you streams arrive
-unbidden.
+`chat` events are the exception — they flow as a side effect of `chat.send` with no subscription and no capability. That asymmetry is the trap: the one stream that arrives unbidden is the one that teaches you streams arrive unbidden.
 
-**Consequence for investigation:** you cannot discover these families by
-watching your own traffic. A client that never advertised `tool-events` sees
-an event stream that looks complete and is not. Enumerate the surface from
-source before concluding anything about what the gateway sends:
+**Consequence for investigation:** you cannot discover these families by watching your own traffic. A client that never advertised `tool-events` sees an event stream that looks complete and is not. Enumerate the surface from source before concluding anything about what the gateway sends:
 
 | What | Where |
 |------|-------|
@@ -631,8 +615,7 @@ source before concluding anything about what the gateway sends:
 | Method / event name list | `src/gateway/server-methods-list.ts` |
 | Tool event payload types | `src/infra/agent-events.ts` |
 
-This cost us three weeks once — see the postmortem in
-`gateway-tool-and-message-events.md`.
+This cost us three weeks once — see the postmortem in `gateway-tool-and-message-events.md`.
 
 ---
 
@@ -674,141 +657,156 @@ Talk Mode's loop: listen for speech → submit transcript via `chat.send` agains
 
 The `talk.speak` RPC supports voice configuration (voice ID, speed, stability, output format) and provider-specific settings (ElevenLabs params, etc.). Audio format defaults to pcm_44100 on macOS/iOS and pcm_24000 on Android.
 
-Banter's approach differs: it runs its own STT (Parakeet) and TTS (three-tier provider registry) and only uses the gateway for LLM chat via `chat.send`. This gives Banter control over the voice pipeline while still sharing the session with WebChat and other clients.
+Banter's approach differs: it runs its own STT and TTS services (registered in the shard's registry) and only uses the gateway for LLM chat via `chat.send`. This gives Banter control over the voice pipeline while still sharing the session with WebChat and other clients.
 
 ---
 
-## Future refinements
+## Voice selection
 
-### Per-agent TTS voice assignment
-
-Currently `use-speech.ts` voices all `assistant` messages with a single globally-selected voice, regardless of which agent produced them. In a multi-agent session this is fine for the receiving agent's responses, but there's no way to give different agents distinct voices.
-
-**Proposed config shape** (under `voice.tts` in `config.json`):
-```json
-"agents": {
-  "banter":  { "serviceId": "tts-mlx-audio", "model": "...", "voice": "neutral_male" },
-  "researcher": { "serviceId": "tts-mlx-audio", "model": "...", "voice": "neutral_female" }
-}
-```
-
-**What would change:**
-- `VoiceConfig` gains an optional `agents` map: `Record<string, VoiceSelection>`
-- `use-speech.ts` receives the active `currentAgent` and uses `agents[currentAgent]` selection, falling back to `default`
-- The voice settings UI would show per-agent overrides
-- User per-session localStorage overrides remain supported on top
-
-**Deferred because:** The immediate TTS bug (inconsistent voicing when inter-agent messages arrive) is a message-tracking issue, not a routing issue — fixing that comes first.
+Banter voices every `assistant` message with one TTS selection, whichever agent produced it. The selection is a `VoiceSelection` (`dashboard/src/lib/voice/voice-config.ts`): a roster `serviceId`, `model`, `voice` and `speed`, optional `params`, resolved against the roster into a `modelKey`, `voiceKey` and `responseFormat`. `AgentVoice` (`dashboard/src/lib/voice/agent/agent-voice.ts`) holds it as `ttsSelection` and sends it with each chunk it speaks. There is no per-agent voice mapping.
 
 ---
 
 ## Client requirements learned in practice
 
-Things the official docs don't state, or state for a newer release than
-stable. All verified against 2026.7.1 on 2026-08-06 while fixing the
-dashboard's history rendering.
+Things the official docs don't state, or state for a newer release than stable. All verified against 2026.7.1 on 2026-08-06 while fixing the dashboard's history rendering.
 
-**`content` is a union** — `string | ContentBlock[]`, documented above. Typed
-user messages arrive as plain strings; assistant messages are always block
-arrays. Handling only the array form renders every user message blank on
-reload. The union is not in the official docs.
+**`content` is a union** — `string | ContentBlock[]`, documented above. Typed user messages arrive as plain strings; assistant messages are always block arrays. Handling only the array form renders every user message blank on reload. The union is not in the official docs.
 
-**Declare `caps` or lose tool events silently.** Without `tool-events` in the
-connect params no live tool events arrive and the handshake reports no error.
-`GATEWAY_CLIENT_CAPS` in 2026.7.1 contains only `tool-events`; the docs list
-around ten, describing a newer build. This is one instance of a general rule —
-see "Capability-gated event families".
+**Declare `caps` or lose tool events silently.** Without `tool-events` in the connect params no live tool events arrive and the handshake reports no error. `GATEWAY_CLIENT_CAPS` holds `tool-events` and, from 2026.8.1, `exec-approvals`; the docs list around ten, describing a newer build. This is one instance of a general rule — see "Capability-gated event families".
 
-**The official client packages are stubs on `latest`, real on `beta`.**
-`/gateway/clients` recommends `@openclaw/gateway-client` and
-`@openclaw/gateway-protocol`. Checked 2026-08-07:
+**The official client packages publish real releases on `latest`.** `/gateway/clients` recommends `@openclaw/gateway-client` and `@openclaw/gateway-protocol`. Checked 2026-08-31:
 
 ```
-@openclaw/gateway-client  latest: 0.0.0   beta: 2026.7.2-beta.7
-@openclaw/gateway-protocol latest: 0.0.0
+@openclaw/gateway-client    latest: 2026.8.1  reserved: 0.0.0  beta: 2026.9.1-beta.1
+@openclaw/gateway-protocol  latest: 2026.8.1  reserved: 0.0.0  beta: 2026.9.1-beta.1
 ```
 
-So `npm install` gets the placeholder; the real package exists only on a
-beta tag *ahead of the installed CLI* (2026.7.1). Upstream will describe
-the beta as available — it is, but not on a version you are running.
+`latest` matches the installed CLI and the `0.0.0` stub is parked on `reserved`, so the package can be installed without taking a beta ahead of your CLI.
 
-The in-repo package is `private: true`, built `--platform node`, and
-depends on `ws`, so it would not run in a browser regardless. A
-`@openclaw/gateway-client/browser` subpath is said to exist on the beta;
-unverified. Build against the WebSocket protocol directly.
-`protocol.schema.json` inside the repo is still the machine-readable
-contract.
+The in-repo package is `private: true`, built `--platform node`, and depends on `ws`, so it would not run in a browser regardless. A `@openclaw/gateway-client/browser` subpath is said to exist on the beta; unverified. Build against the WebSocket protocol directly. `protocol.schema.json` inside the repo is still the machine-readable contract.
 
-Note the monorepo's own web UI does **not** use the client package — it
-has an independent `GatewayBrowserClient` on the native WebSocket
-(`ui/src/api/gateway.ts`). There is no shared client between CLI/SDK and
-browser.
+Note the monorepo's own web UI does **not** use the client package — it has an independent `GatewayBrowserClient` on the native WebSocket (`ui/src/api/gateway.ts`). There is no shared client between CLI/SDK and browser.
 
-**`chat.history` is display-normalized.** Directive tags and tool-call XML are
-stripped, envelopes removed from user rows, and user rows whose text strips to
-empty are dropped entirely — the assistant branch deliberately isn't
-symmetric. Media-only rows arrive as `content: ""` with a sibling `MediaPath`.
-Base64 image data is replaced with `{omitted: true, bytes: N}`.
+**`chat.history` is display-normalized.** Directive tags and tool-call XML are stripped, envelopes removed from user rows, and user rows whose text strips to empty are dropped entirely — the assistant branch deliberately isn't symmetric. Media-only rows arrive as `content: ""` with a sibling `MediaPath`. Base64 image data is replaced with `{omitted: true, bytes: N}`.
 
-**Anchor history on `__openclaw.id`**, not array position — ids must survive a
-reload to reconcile against live events. Page with `hasMore` / `nextOffset`;
-a single response caps at 200 messages.
+**Anchor history on `__openclaw.id`**, not array position — ids must survive a reload to reconcile against live events. Page with `hasMore` / `nextOffset`; a single response caps at 200 messages.
 
-**Reconnect is a new projection**, not a resumption: re-subscribe and re-fetch
-history rather than trusting in-memory state.
+**Reconnect is a new projection**, not a resumption: re-subscribe and re-fetch history rather than trusting in-memory state.
 
-**Subscribe, don't poll** — `sessions.subscribe` once per connection, then
-merge `sessions.changed` by `sessionKey`.
+**Subscribe, don't poll** — `sessions.subscribe` once per connection, then merge `sessions.changed` by `sessionKey`.
 
-**Device naming** — send `client.displayName` in the connect params. It is
-persisted into the pairing record and shown by `openclaw devices list`;
-without it devices appear as anonymous hex. Written once at pairing and never
-refreshed, so it must not carry anything that goes stale. `operatorLabel` and
-`devices rename` are documented upstream but absent from 2026.7.1.
+**Device naming** — send `client.displayName` in the connect params. It is persisted into the pairing record and shown by `openclaw devices list`; without it devices appear as anonymous hex. Written once at pairing and never refreshed, so it must not carry anything that goes stale. `operatorLabel` and `devices rename` are documented upstream but absent from 2026.7.1.
 
-**Pairing approval takes the request id, not the device id.** A first
-connect from an unpaired device fails with "pairing required: device is
-not approved yet" and leaves a pending request; approve it with
-`openclaw devices approve <request-uuid>` (the UUID from
-`openclaw devices list`), then reconnect.
+**Pairing approval takes the request id, not the device id.** A first connect from an unpaired device fails with "pairing required: device is not approved yet" and leaves a pending request; approve it with `openclaw devices approve <request-uuid>` (the UUID from `openclaw devices list`), then reconnect.
 
-**`openclaw-probe` is a first-class client id** (`GATEWAY_CLIENT_IDS.PROBE`,
-client mode `probe` in `client-info.d.ts`) — measurement clients can
-identify honestly instead of masquerading as a UI. The platform probe at
-`control/probe/` uses it.
+**`openclaw-probe` is a first-class client id** (`GATEWAY_CLIENT_IDS.PROBE`, client mode `probe` in `client-info.d.ts`) — measurement clients can identify honestly instead of masquerading as a UI. Banter's probe at `control/probe/` uses it.
 
-**Derived session titles** come from the first user message, which for some
-sessions is an injected metadata envelope rather than anything typed. Titles
-arrive whitespace-collapsed and truncated, so a fenced block often loses its
-closing fence.
+**Derived session titles** come from the first user message, which for some sessions is an injected metadata envelope rather than anything typed. Titles arrive whitespace-collapsed and truncated, so a fenced block often loses its closing fence.
 
-**`protocol.schema.json`** ships in `@openclaw/gateway-protocol` and is the
-machine-readable contract. Generating types from it would turn shape
-mismatches into compile errors.
+**`protocol.schema.json`** ships in `@openclaw/gateway-protocol` and is the machine-readable contract. Generating types from it would turn shape mismatches into compile errors.
 
-**Two different credentials share the name "token."** The `auth.token` sent in
-connect params is a long-lived gateway token, configured out of band; it is
-what `config.json` holds. The `auth.deviceToken` returned in `hello-ok` is
-per-device, issued at pairing, and is what `openclaw devices` manages. Rotating
-one does not touch the other.
+**Two different credentials share the name "token."** The `auth.token` sent in connect params is a long-lived gateway token, configured out of band; it is what `config.json` holds. The `auth.deviceToken` returned in `hello-ok` is per-device, issued at pairing, and is what `openclaw devices` manages. Rotating one does not touch the other.
 
-**Rotation is a CLI operation, not an RPC** (2026.7.1): `openclaw devices
-rotate --device <id> --role <role> [--scope <scope>...]`, with `revoke` as the
-companion. Both take `--device` and `--role` rather than a token value, so
-rotation is per device-role — there is no single call that rolls every
-credential at once. `openclaw devices list` shows the device table, including
-entries whose tokens are already `(revoked)`.
+**Rotation is a CLI operation, not an RPC** (2026.7.1): `openclaw devices rotate --device <id> --role <role> [--scope <scope>...]`, with `revoke` as the companion. Both take `--device` and `--role` rather than a token value, so rotation is per device-role — there is no single call that rolls every credential at once. `openclaw devices list` shows the device table, including entries whose tokens are already `(revoked)`.
 
 ---
 
 ## Still open
 
-1. **`chat.send` vs `sessions.send`:** Which should Banter use? `chat.send`
-   has required idempotency and delivery routing fields. `sessions.send` is
-   simpler. The native apps and Talk Mode use `chat.send`. We use `chat.send`.
-2. **Abort behavior on history:** When a run is aborted, does the partial
-   response stay in the transcript, get truncated, or get removed?
-3. ~~**`sessions.steer` for barge-in:** Better fit than abort + new send for
-   voice interruptions?~~ Answered 2026-08-08: steer *is* abort + send in one
-   RPC, plus queue-clearing (see §sessions.steer). Whether mid-run injection
-   exists on any path remains open — see the scope caution in that section.
+1. **`chat.send` vs `sessions.send`:** Which should Banter use? `chat.send` has required idempotency and delivery routing fields. `sessions.send` is simpler. The native apps and Talk Mode use `chat.send`. We use `chat.send`.
+2. **Abort behavior on history:** When a run is aborted, does the partial response stay in the transcript, get truncated, or get removed?
+3. **`sessions.steer` for barge-in:** steer is abort + send in one RPC, plus queue-clearing (see §sessions.steer). Whether mid-run injection exists on any path remains open — see the scope caution in that section.
+
+## Changes at 2026.8.1
+
+Verified against the `v2026.8.1` tag (`ea80657`) and the shipped package on
+2026-08-31. Only these were re-checked; everything else in this document still
+carries its 2026.7.1 validation.
+
+The entries marked **on the wire** were measured from a probe capture of one
+complete run (`control/probe/captures/2026-09-01T01-22-46.jsonl`, scenario
+`text-slow-tool-text`), not read from source. That capture is the evidence for
+the run-signalling changes below.
+
+**Unchanged.** The `content` string-or-blocks union, `__openclaw` metadata on
+transcript messages, `hasMore`/`nextOffset` paging, and the 200-message default
+page cap (`chat-history-handler.ts`).
+
+**`GATEWAY_CLIENT_CAPS` gained a second entry.** It now holds `tool-events` and
+`exec-approvals`. The capability-gating rule is unchanged — an undeclared cap
+still degrades silently.
+
+**`sessions.steer` is no longer its own handler.** Steering is now a
+`queueMode: "steer"` on the `chat.send` path
+(`chat-send-admission.ts`, `chat-send-agent-dispatch.ts`). Whether the
+abort-and-replace semantics recorded above survived the move was not verified.
+
+**New `chat.send` rejection.** Transcripts can be rewound and forked, so a send
+against a session whose branch moved returns `INVALID_REQUEST` with
+`"active branch changed; review and retry"` (`chat-send-pre-admission.ts`). A
+client that sends into a session the user has rewound must handle it.
+
+**New `chat.history` substitution.** Oversized messages are replaced with
+`"[chat.history omitted: message too large]"` (`chat-history-budget.ts`), a
+budget path separate from the existing base64-image omission. Anything parsing
+history text should expect it.
+
+**New `agent` stream `run_status`, on the wire.** A run now announces its
+preparation before generating anything. Three events arrive in order, each
+`{"phase": ...}` and nothing else:
+
+```
+preparing_workspace → preparing_context → starting_model
+```
+
+They carry `runId`, `sessionKey`, `agentId`, and `seq` in the usual places —
+the envelope is unchanged, the stream name is new. A client that switches on
+`stream` and has no `run_status` case sees them as unknown events and shows no
+activity for the entire preparation window, which on a cold local model is the
+longest silent stretch of a run.
+
+**New `chat` state `status`, on the wire.** Described in §ChatEvent above.
+Three arrived in the captured run, all with an empty `message`, all before the
+first `delta`. These are the `chat`-family counterpart to `run_status`.
+
+Together these two are how 2026.8.1 fills the pre-generation silence. Both are
+additive — no existing event changed shape — so a client that ignores them
+still works, but shows nothing while a run prepares.
+
+**`lifecycle:end` gained `terminalReply` and `terminalReceipt`, on the wire.**
+The final lifecycle event now carries the complete assembled reply
+(`terminalReply.text`, with a `disposition`) and a receipt naming the model
+actually used:
+
+```json
+"terminalReceipt": {
+  "runId": "...", "sessionId": "...", "turnId": "...",
+  "requested": {"provider": "lmstudio", "model": "qwen/qwen3-coder-30b"},
+  "effective": {"provider": "lmstudio", "model": "qwen/qwen3-coder-30b",
+                "responseModel": "meta/muse-glimmer"},
+  "successfulToolNames": [], "rerouted": true,
+  "terminalDisposition": "visible"
+}
+```
+
+`rerouted: true` with a differing `effective.responseModel` is a fallback
+having fired — the only place the wire says which model actually answered.
+
+**`chat.history` splits one stored event into two rows sharing one
+`__openclaw.id`, on the wire.** When an assistant turn contains commentary text
+before a tool call, history serves the text as its own row carrying
+`openclawStreamFallback: {replacementText, source, itemId}` and the remaining
+`thinking`/`toolCall` blocks as a second row. Both rows carry the *same*
+`__openclaw.id` and `seq`, so `seq` is not strictly ascending on the wire even
+though it is in storage.
+
+Measured: 116 rows in one session held 9 `openclawStreamFallback` rows and
+exactly 9 duplicated ids, 1:1. SQLite holds a single event for each
+(`thinking,text,toolCall`); the split happens at serve time.
+
+**Anchoring on `__openclaw.id` alone is therefore no longer sufficient** — the
+guidance in §Client requirements needs `itemId` as a tiebreak for rows carrying
+`openclawStreamFallback`. Deduping on the id alone silently drops one of the
+two rows.
+

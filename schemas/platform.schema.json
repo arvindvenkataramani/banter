@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:banter:schemas:platform",
   "title": "Banter schemas",
-  "description": "Banter's configuration contracts, in one file. Each top-level entry under $defs that names a file or an API response is a contract something validates against; the rest are shared building blocks. Extend this file rather than adding siblings — one place, so a type cannot be defined twice and drift. Currently covers the model roster (design record: dev/design/model-roster.md). Still to be added: the service registry, and the control plane's config.",
+  "description": "Banter's configuration contracts, in one file. Each top-level entry under $defs that names a file or an API response is a contract something validates against; the rest are shared building blocks. Extend this file rather than adding siblings — one place, so a type cannot be defined twice and drift. Currently covers the model roster (design record: docs/design/model-roster.md). Still to be added: the service registry, and the control plane's config.",
   "$defs": {
     "nodeRoster": {
       "title": "Node roster",

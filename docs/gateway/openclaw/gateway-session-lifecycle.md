@@ -3,8 +3,8 @@
 How Banter connects to the OpenClaw gateway and manages a conversation session. This covers every gateway interaction in the order it happens — from opening the WebSocket to resetting a conversation.
 
 *Created: 2026-04-07 · Updated: 2026-04-08 (verified against openclaw source + working implementation)*
-*Last validated against OpenClaw 2026.4.x. Describes our implementation, not
-upstream's — see openclaw-gateway-protocol.md for the wire contract.*
+
+*Last validated against OpenClaw 2026.4.x. Describes our implementation, not upstream's — see openclaw-gateway-protocol.md for the wire contract.*
 
 ---
 
@@ -12,7 +12,7 @@ upstream's — see openclaw-gateway-protocol.md for the wire contract.*
 
 **Structure:** Operations in chronological order of a session's life. Each section is one gateway interaction, with the exact messages to send and expect.
 
-**Source of truth:** Verified against the [openclaw/openclaw](https://github.com/openclaw/openclaw) source code, the [openclaw-studio](https://github.com/grp06/openclaw-studio) web client, and a working implementation in Banter's own dashboard.
+**Source of truth:** Verified against the [openclaw/openclaw](https://github.com/openclaw/openclaw) source code, the [openclaw-studio](https://github.com/grp06/openclaw-studio) web client, and a working implementation in the Banter dashboard.
 
 **When to update:** When implementation reveals the actual behavior differs from what's described here, or when we add new gateway interactions.
 
@@ -34,9 +34,16 @@ Respond with a connect request. **This must be the first `req` frame on the conn
     "id": "1",
     "method": "connect",
     "params": {
-      "minProtocol": 3,
-      "maxProtocol": 3,
-      "client": { "id": "webchat-ui", "version": "0.1.0", "platform": "web", "mode": "webchat" },
+      "minProtocol": 4,
+      "maxProtocol": 4,
+      "client": {
+        "id": "webchat-ui",
+        "displayName": "<browser description>",
+        "version": "0.1.0",
+        "platform": "web",
+        "mode": "webchat",
+        "deviceFamily": "browser"
+      },
       "role": "operator",
       "scopes": [
         "operator.admin",
@@ -47,7 +54,7 @@ Respond with a connect request. **This must be the first `req` frame on the conn
       ],
       "caps": ["tool-events"],
       "auth": { "token": "<configured-auth-token>" },
-      "locale": "en"
+      "device": { ... }
     }
   }
 ```
@@ -62,8 +69,8 @@ The connection is now live.
 
 ### Key details (verified)
 
-- **Protocol version is currently `4`** — check `CONNECT_PROTOCOL` in `gateway-connection.ts` for the live value rather than trusting this number. `minProtocol` and `maxProtocol` in the connect request must match whatever that is.
-- **Client `id` and `mode`** are stable identity labels (e.g., `webchat-ui`/`webchat`, `gateway-client`/`backend`). Known IDs get specific gateway behavior but custom IDs may work in general WS usage.
+- **Protocol version is `4`** — `CONNECT_PROTOCOL` in `gateway-connection.ts`. `minProtocol` and `maxProtocol` in the connect request are both set to it.
+- **Client `id` and `mode`** are stable identity labels (the dashboard sends `webchat-ui`/`webchat`). Known IDs get specific gateway behavior but custom IDs may work in general WS usage.
 - **Device auth fields** (`device.id`, `publicKey`, `signature`, `signedAt`, `nonce`) are tied to the challenge nonce and signed with a locally-generated, persisted Ed25519 keypair (`device-identity.ts` on the dashboard side). Full device auth is implemented and live — this is not skipped via a token-only path.
 - **`role` should be `"operator"`** for any client that needs to send chat messages. The `"node"` role can only call 7 node-specific methods and **cannot call `chat.send`**.
 - **Scopes are required** — `operator.write` is needed for `chat.send`, `operator.read` for `chat.history` and session operations.
@@ -80,8 +87,8 @@ Add the dashboard's origin(s) to the allowlist:
 "gateway": {
   "controlUi": {
     "allowedOrigins": [
-      "https://control-host.your-tailnet.ts.net",
-      "http://control-host.your-tailnet.ts.net:4200"
+      "http://control-host.your-tailnet.ts.net:4200",
+      "https://control-host.your-tailnet.ts.net"
     ]
   }
 }

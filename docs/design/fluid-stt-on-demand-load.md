@@ -1,12 +1,12 @@
 # fluid-stt: models load on demand and unload when idle
 
-The fluid-stt process runs for as long as the shard does. The model it serves is loaded by the first request that needs it and dropped after a configured interval without work. An explicit load through the model-lifecycle endpoint still works as before; it is no longer the only way a model becomes resident.
+The fluid-stt process runs for as long as the shard does. The model it serves is loaded by the first request that needs it and dropped after a configured interval without work. An explicit load through the model-lifecycle endpoint also loads a model.
 
 The case that forces this is Deepgram's `/listen`. A Deepgram client has no notion of loading a model, so with the server starting empty, Anarlog's first request always failed. The shard cannot do the loading either: fluid-stt is registered never to be idle-unloaded, because the shard's idle unload stops the process, and the process is what has to stay up.
 
 ## The rule that does not change
 
-A request never replaces a resident model. It loads only into an empty slot. When a different model is resident, a request naming another one is refused with the existing mismatch error, exactly as today; when the resident model cannot serve the request at all (the streaming-only Nemotron, asked for a batch transcription), the existing refusal stands. The dashboard's voice mode loads its model explicitly and relies on nothing switching under it, and the benchmark harness relies on no load landing inside a timed transcription. Both hold because the only thing a request can do to an occupied slot is use it.
+A request never replaces a resident model. It loads only into an empty slot. When a different model is resident, a request naming another one is refused with the existing mismatch error; when the resident model cannot serve the request at all (the streaming-only Nemotron, asked for a batch transcription), the existing refusal stands. The dashboard's voice mode loads its model explicitly and relies on nothing switching under it, and the benchmark harness relies on no load landing inside a timed transcription. Both hold because the only thing a request can do to an occupied slot is use it.
 
 One extension sits inside the rule. A model that serves both modes and is resident in one of them gains the other when a request needs it, as an explicit load already does: the weights are shared, so this adds an encoder and evicts nothing. A batch `/listen` arriving while the dashboard holds the unified model in streaming mode therefore adds the batch half, if the slot is free; while a socket holds the session, it is refused busy, as any second operation is.
 
@@ -64,8 +64,8 @@ Each route says which mode it needs and passes through the model it was given, i
 
 A WebSocket is accepted before the load begins, and audio arriving during the load waits in the socket. This matters for Anarlog: its client gives the WebSocket handshake five seconds, retries three times, and waits for nothing after the connection opens. Its batch client sets no timeout.
 
-The dashboard's batch client sends its model name, as its streaming client already does. Without it, a batch transcription after an idle unload would load the roster default, not the model the voice config names; today they are the same model, and the name keeps them from drifting apart.
+The dashboard's batch client sends its model name, as its streaming client already does. Without it, a batch transcription after an idle unload would load the roster default, not the model the voice config names. Naming the model keeps the two from drifting apart.
 
 ## Out of scope
 
-The shard's lifecycle for fluid-stt is unchanged: the process is still demand-loaded and idle-stopped by the shard; the in-process unload is separate, and releases the model while the process stays up. A deployed registry picks up the default and the interval only when it is edited; the example registry carries both.
+The shard's lifecycle for fluid-stt is unchanged: started with the shard, never idle-unloaded.

@@ -1,18 +1,10 @@
 # Model roster — how availability is declared
 
-## What is there now
+## Why one declaration
 
-The STT server's model list is a Swift array of eight ids. One of them, `parakeet-tdt-ctc-110m`, has no weights on disk and never has. It is reported by the listing endpoint anyway, because nothing checks and code has no way to know. Adding a ninth model means a rebuild and a deploy for what is a fact about this installation.
+A server's model list, the shard's voice entries, the control plane's config and the dashboard's own lists can each assert what the system can do. When several places assert it and none verifies it, they drift: a model is listed that has no weights on disk, a voice exists in one list and not another, and a preset and a cloning reference for the same person live under different names in different files. A list in a Swift array is also a fact about one installation that costs a rebuild to change, and a list of model ids tends to describe the shape of the library's code (one model listed twice because two classes load it, or once per chunk size) rather than models as someone choosing one would identify them.
 
-`bettany-hughes.wav` is written down five times: once in the shard's voice entry, and four more times as `ref_audio` under separate models in the control plane's config. Both files declare `pocket-tts`; the shard gives it eight voices, the control plane seven, and neither list is a subset of the other. They were edited independently and nothing noticed.
-
-The dashboard compiles its own two lists — which streaming models exist, which STT services to offer — because no endpoint tells it.
-
-And `af_nicole` is a Kokoro preset while `nicole.wav` is a cloning reference for a different model. They are the same person. Nothing in the current shape can say so, which is why they live in different files under different names.
-
-The eight ids are also not eight models. `parakeet-unified-0.6b` and `parakeet-unified-0.6b-streaming` are one model with one set of weights, listed twice because two Swift classes load it. The three `nemotron-streaming-en-0.6b` entries are one model listed three times, because a chunk size is baked into each id. `parakeet-tdt-ctc-110m` is there because someone enumerated an enum's cases, which is also why `tdtJa` — the same kind of thing — is absent. What the list actually describes is the shape of FluidAudio's code, transcribed upward.
-
-These are five faces of one defect: **several places each assert what the platform can do, and no place verifies any of it.** Moving a list from Swift to JSON would move the assertion without checking it, and a thoughtlessly built list is no better in a config file. What is needed is a declaration that describes models as someone choosing one would identify them, can be validated, and is held where the validation is possible.
+Moving a list from Swift to JSON would move the assertion without checking it. What is needed is a declaration that describes models as someone choosing one would identify them, can be validated, and is held where the validation is possible. That declaration is the roster.
 
 ---
 
@@ -56,7 +48,7 @@ Voices merge by id. The same person offered on two machines is one voice with th
 
 **Role** — choose from the roster. They hold selections, never definitions.
 
-**Ownership** — which model is selected, which voice speaks which slot, and tuning that belongs to a use rather than to a model: chunk strategy, VAD thresholds, turn-taking curves.
+**Ownership** — which model and voice are selected, and tuning that belongs to a use rather than to a model: chunk strategy, VAD thresholds, turn-taking curves.
 
 **Relationships** — read the assembled roster; write selections that reference roster ids.
 
@@ -123,20 +115,20 @@ A voice is a conceptual identity: a person, with a name. It is not a property of
 Each voice carries the recordings it was built from and the models that provide it. A recording states what it is — its file, its transcript where one exists, its duration and sample rate. A model entry states how that model reaches this voice: by naming the model's own built-in identifier for her, or by cloning from one of her recordings.
 
 ```
-voice: nicole
-  name: Nicole
+voice: example
+  name: Example
   references:
     - audio, transcript, duration, sample rate
     - audio, duration, sample rate          (a shorter cut, no transcript)
   models:
-    - model: Kokoro       key: af_nicole    (the model's own name for her)
+    - model: Kokoro       key: af_heart    (the model's own name for her)
     - model: pocket-tts   key: clone        (use a reference below)
 
 model: pocket-tts
   cloning: available, maximum length, transcript required or not
 ```
 
-**Why one shape for both.** A model may have a voice baked in, or may clone her from a recording, and the same voice can be available both ways. Treating preset and clone as two kinds of entry makes that case unrepresentable, which is why it is currently split across two files under two names.
+**Why one shape for both.** A model may have a voice baked in, or may clone her from a recording, and the same voice can be available both ways. Treating preset and clone as two kinds of entry would make that case unrepresentable.
 
 ### Compatibility is derived
 
@@ -150,7 +142,7 @@ Recording facts are declared, not probed. Voices change rarely; a filesystem rea
 
 The roster states what exists and what each model can take. Which recording to use when several qualify, and which model when several provide a voice, are decisions — and decisions live with whoever is making the request. The control plane's `config.json` holds only those decisions and the settings a dialog edits; it declares no provider, model or voice.
 
-The roster names no default voice. Voice mode's voice is a selection, held in `config.json` under `voice.tts.selection`.
+The roster names no default voice. A default is a selection, which the control plane resolves from its configuration and always sends to the shard. A dispatch naming no voice is refused.
 
 ---
 

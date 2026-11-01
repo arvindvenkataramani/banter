@@ -1,0 +1,45 @@
+flowchart TB
+  UI["Chat UI<br/><i>voice button, composer,<br/>settings</i>"]
+
+  subgraph SYS["VoiceSystem — owns the session and the player"]
+    VS["VoiceSystem<br/><i>phase, session id, services + heartbeat,<br/>transcription connection + reconnects</i>"]
+    Player["Player<br/><i>writes speech and tones<br/>to the one audio element</i>"]
+  end
+
+  Store["Session store<br/><i>config, selection,<br/>gateway session, endpoints</i>"]
+  Dev["Devices<br/><i>audio element, mic</i>"]
+  Tones["Tone queue"]
+
+  TM(["Turn manager<br/><i>who has the floor</i>"])
+  Mute["Mute store"]
+
+  Human["Human side<br/><i>mic loop + STT transport</i>"]
+  Agent["Agent side<br/><i>text → speech requests</i>"]
+  Conv["Conversation<br/><i>gateway session</i>"]
+
+  UI -->|voice on / off| VS
+  UI -->|saves settings, publishes session| Store
+  UI -->|mute| Mute
+
+  VS -->|acquire / release| Dev
+  VS -->|attempted, started, ended| Tones
+  VS -->|init, reset, release| Player
+  Tones -->|plays tones through| Player
+  Agent -->|plays speech through| Player
+  Player -->|plays on| Dev
+  Player -.->|agent utterance| TM
+  TM -.->|snapshot| Player
+  VS -->|builds, attaches, stops| Human
+  VS -->|builds, attaches, detaches| Agent
+  Store -.->|config, session changes| VS
+  Mute -.->|mic muted| VS
+
+  VS -.->|mode| TM
+  Mute -.->|controls| TM
+  Human -.->|utterances| TM
+  Agent -.->|run activity| TM
+  TM -.->|snapshot| Human
+  TM -.->|snapshot| UI
+
+  TM -->|sends human turn, aborts run| Conv
+  Conv -->|agent's text| Agent
