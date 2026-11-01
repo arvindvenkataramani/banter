@@ -135,13 +135,13 @@ SMOKE_CACHES="$HOME/Library/Caches/$SMOKE_ID"
 SCRATCH="$(mktemp -d "$SCRATCH_PARENT/fluid-smoke.XXXXXX")"
 mkdir -p "$SCRATCH/install"
 
-# The scratch registry: the example's fluid-stt service and roster, installing
+# The scratch registry: the fluid-stt service and roster from the fluid example, installing
 # into the scratch directory, with an idle unload short enough to wait for.
 "$JQ" --arg wd "$SCRATCH/install" --argjson idle "$IDLE_MS" '
   {
     services: [.services[] | select(.id == "fluid-stt") | .ops.env.workingDirectory = $wd],
     roster: {providers: {"fluid-stt": (.roster.providers["fluid-stt"] | .idleUnloadMs = $idle)}}
-  }' "$REPO/control/control-plane/data/registry.example.json" > "$SCRATCH/registry.json"
+  }' "$REPO/services/fluid/registry.fluid.example.json" > "$SCRATCH/registry.json"
 
 install_service_artifacts "$REPO" "$SCRATCH/registry.json" "http://127.0.0.1:9" "$SCRATCH/events.jsonl" \
   || fail "the install reported a problem"

@@ -4,7 +4,9 @@
 #
 # Builds only. Installing them is control-install-services.sh on a single
 # machine, or shard-install-services.sh on a shard; both read the fluid-stt and
-# fluid-tts entries' ops.install from that node's registry:
+# fluid-tts entries' ops.install from that node's registry. The entries a registry
+# needs for them (services, roster providers and voices) are in
+# services/fluid/registry.fluid.example.json:
 #
 #   scripts/fluid-build.sh && scripts/control-install-services.sh
 #

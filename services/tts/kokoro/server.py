@@ -3,10 +3,11 @@ Kokoro TTS server (PyTorch / KPipeline)
 Exposes /v1/audio/speech (OpenAI-compatible), GET /health, and POST/DELETE
 /v1/models for the load/unload the dashboard drives.
 Models download to ~/.cache/huggingface on first run.
-CORS is permissive and needs no configuration.
+CORS is an allowlist read from KOKORO_CORS_ORIGINS; unset allows no origin.
 """
 
 import io
+import os
 import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, HTTPException
@@ -17,18 +18,18 @@ from kokoro import KPipeline
 
 app = FastAPI()
 
-# CORS — permissive, like mlx-audio and neutts-air. The dashboard calls this
-# server directly from the browser, and the origin it calls from is whatever the
-# registry's host and port resolve to. Making that a second thing to configure
-# only creates a way to get it wrong: the symptom is a synthesis failure that
-# looks like the service being down, on a service whose health check passes.
-# This binds to localhost by default, so the reachable surface is the tailnet.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS — opt-in via KOKORO_CORS_ORIGINS, a comma-separated list of the origins
+# that may call this server (the dashboard calls it directly from the browser).
+# Unset adds no CORS headers, so a browser on another origin is refused.
+_cors_env = os.getenv("KOKORO_CORS_ORIGINS", "").strip()
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Lazy-loaded pipeline — initialised on first request
 _pipeline: KPipeline | None = None

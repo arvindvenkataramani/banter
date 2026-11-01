@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # First-time setup: everything the README's Install section covers up through
-# a running, reachable control plane. On Apple Silicon, this script goes on to
-# offer building the fluid speech servers too; on Linux, it points at the
-# README's "Connect your speech servers" section and docs/linux-speech-servers.md
-# once it finishes, since nothing here builds for you on that platform.
+# a running, reachable control plane. It installs no speech servers and no
+# Python packages: the example registry declares stt-faster-whisper and
+# tts-kokoro, and each folder under services/ has a README for installing it.
+# Fluid (Apple Silicon) is optional and built by scripts/fluid-build.sh.
 #
 # Usage: scripts/install.sh
 #
@@ -65,6 +65,7 @@ REGISTRY="$BANTER_REGISTRY_PATH"
 CONFIG="$BANTER_CONFIG_PATH"
 OLD_DATA="$BANTER_PROD/control/control-plane/data"
 
+SEEDED=""
 if [[ -f "$REGISTRY" || -f "$CONFIG" ]]; then
   log "$REGISTRY and $CONFIG already exist — leaving them as-is."
 elif [[ -f "$OLD_DATA/registry.json" || -f "$OLD_DATA/config.json" ]]; then
@@ -111,9 +112,8 @@ else
     "$CONFIG" > "$TMP_CONFIG"
   mv "$TMP_CONFIG" "$CONFIG"
   log "Wrote gateway URL and token to $CONFIG."
+  SEEDED=1
 fi
-
-log "registry.json ships with fluid-stt and fluid-tts already declared, but their binaries aren't built yet — the control plane itself doesn't need them to start."
 
 # --- install as a service -------------------------------------------------------
 
@@ -169,36 +169,6 @@ case "$OS" in
     ;;
 esac
 
-# --- offer to build the fluid speech servers (Apple Silicon only) -----------
-
-FLUID_BUILT=""
-if [[ "$OS" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
-  BUILD_FLUID=""
-  if [[ -t 0 ]]; then
-    echo ""
-    read -rp "Build the fluid speech servers now? [y/N] " REPLY
-    [[ "$REPLY" =~ ^[Yy]$ ]] && BUILD_FLUID=1
-  fi
-
-  if [[ -n "$BUILD_FLUID" ]]; then
-    # fluid-build.sh checks its own prerequisites (Swift 6, libopus) and dies
-    # naming what's missing — that's a reason to skip the build, not to fail
-    # an install that already succeeded.
-    if scripts/fluid-build.sh; then
-      log "Installing the built binaries into the deployed tree..."
-      if scripts/control-install-services.sh; then
-        FLUID_BUILT=1
-      else
-        log "warning: fluid-build.sh succeeded but control-install-services.sh did not."
-        log "Run it by hand once you've looked at the output above: scripts/control-install-services.sh"
-      fi
-    else
-      log "warning: scripts/fluid-build.sh did not complete — see its output above."
-      log "Run it by hand once resolved, then scripts/control-install-services.sh."
-    fi
-  fi
-fi
-
 # --- done -------------------------------------------------------------------
 
 echo ""
@@ -207,16 +177,12 @@ log "Your OpenClaw gateway refuses browser origins it doesn't list: add"
 log "\"http://localhost:$BANTER_PORT\" to gateway.controlUi.allowedOrigins in openclaw.json"
 log "(and any https://…ts.net origin you open the dashboard from), then restart the gateway."
 
-if [[ "$OS" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
-  if [[ -n "$FLUID_BUILT" ]]; then
-    log "fluid-stt and fluid-tts are built and installed."
-  else
-    log "Next: build the fluid speech servers with scripts/fluid-build.sh, then"
-    log "scripts/control-install-services.sh to install the binaries."
-  fi
-elif [[ "$OS" == "Linux" ]]; then
-  log "Next: the fluid speech servers don't build on Linux — see"
-  log "docs/linux-speech-servers.md for a server that runs here."
+if [[ -n "$SEEDED" ]]; then
+  log "The example registry registers a speech-to-text and a text-to-speech server as process"
+  log "runners; install them from services/stt/faster-whisper/README.md and"
+  log "services/tts/kokoro/README.md, or register your own (see services/README.md). They start"
+  log "on demand, so the control plane doesn't need them to run. On Apple Silicon, the fluid"
+  log "servers are an option: scripts/fluid-build.sh, then services/fluid/README.md."
 fi
 log "To customise voices and models, or connect a different speech server, see"
 log "docs/voices-and-models.md. See the README's \"Connect your speech servers\" section for the rest."

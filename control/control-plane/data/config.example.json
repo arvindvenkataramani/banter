@@ -16,8 +16,8 @@
     "enabled": true,
     "tts": {
       "selection": {
-        "serviceId": "fluid-tts",
-        "model": "kokoro-ane",
+        "serviceId": "tts-kokoro",
+        "model": "kokoro-82m",
         "voice": "heart",
         "speed": 1
       },
@@ -30,9 +30,8 @@
       "modelPrefs": {}
     },
     "stt": {
-      "serviceId": "fluid-stt",
-      "model": "parakeet-unified-0.6b",
-      "preferStreaming": true,
+      "serviceId": "stt-faster-whisper",
+      "preferStreaming": false,
       "maxRecordingMs": 300000,
       "settleOnStopMs": 1500,
       "pauseFlushMs": 1500,

@@ -1,0 +1,626 @@
+{
+  "_comment": "The fluid speech servers (Apple Silicon), as registry entries to add to your registry.json. Append the two services to services, the two providers to roster.providers, and the voices to roster.voices; nothing in it collides with the default registry, because the voice ids carry a fluid- prefix and the model ids (kokoro-ane, pocket-tts, luxtts) differ from the default ones. Set each service's hostId to a host in your registry (this-machine in the control-plane example). Build with scripts/fluid-build.sh, install with scripts/control-install-services.sh, and set FLUID_CORS_ORIGINS to your dashboard origins. scripts/fluid-smoke.sh reads this file.",
+  "services": [
+    {
+      "id": "fluid-stt",
+      "name": "Fluid STT",
+      "notes": "Transcription from the services/fluid package. Shares FluidServerKit with fluid-tts and pins the patched FluidAudio fork.",
+      "capabilityId": "stt",
+      "hostId": "this-machine",
+      "permissions": {
+        "enabled": true,
+        "protected": false
+      },
+      "runner": {
+        "type": "process",
+        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/services/fluid/fluid-stt",
+          "variables": {
+            "PATH": "/opt/homebrew/bin:$PATH",
+            "FLUID_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173"
+          }
+        },
+        "install": {
+          "artifacts": [
+            {
+              "from": "services/fluid/.build/release/fluid-stt.app",
+              "to": "fluid-stt.app"
+            }
+          ]
+        }
+      },
+      "network": {
+        "port": 8767,
+        "healthPath": "/healthz"
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
+      }
+    },
+    {
+      "id": "fluid-tts",
+      "name": "Fluid TTS",
+      "notes": "Synthesis over HTTP and WebSocket from the services/fluid package. AAC by default, WAV on request.",
+      "capabilityId": "tts",
+      "hostId": "this-machine",
+      "permissions": {
+        "enabled": true,
+        "protected": false
+      },
+      "runner": {
+        "type": "process",
+        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry {registry} --provider fluid-tts"
+      },
+      "ops": {
+        "env": {
+          "workingDirectory": "~/services/fluid/fluid-tts",
+          "variables": {
+            "PATH": "/opt/homebrew/bin:$PATH",
+            "FLUID_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173"
+          }
+        },
+        "install": {
+          "artifacts": [
+            {
+              "from": "services/fluid/.build/release/fluid-tts.app",
+              "to": "fluid-tts.app"
+            }
+          ]
+        }
+      },
+      "network": {
+        "port": 8769,
+        "healthPath": "/healthz"
+      },
+      "lifecycle": {
+        "loadStrategy": "demand",
+        "autoStart": false,
+        "shutdown": true,
+        "idleUnload": true,
+        "idleTimeout": 1800000,
+        "restartOnCrash": true,
+        "maxRestarts": 3
+      }
+    }
+  ],
+  "roster": {
+    "providers": {
+      "fluid-tts": {
+        "responseFormat": "aac",
+        "sessions": true,
+        "ttsModels": [
+          {
+            "id": "pocket-tts",
+            "name": "Pocket-TTS",
+            "key": "pocket-tts",
+            "cloning": {
+              "available": true,
+              "requiresText": false
+            },
+            "chunkProfile": {
+              "words": 75,
+              "chars": 400
+            },
+            "realtime": true,
+            "streaming": true
+          },
+          {
+            "id": "kokoro-ane",
+            "name": "Kokoro 82M (ANE)",
+            "key": "kokoro-ane",
+            "presetVoices": [
+              {
+                "id": "af_alloy",
+                "name": "Alloy"
+              },
+              {
+                "id": "af_aoede",
+                "name": "Aoede"
+              },
+              {
+                "id": "af_bella",
+                "name": "Bella"
+              },
+              {
+                "id": "af_heart",
+                "name": "Heart"
+              },
+              {
+                "id": "af_jessica",
+                "name": "Jessica"
+              },
+              {
+                "id": "af_kore",
+                "name": "Kore"
+              },
+              {
+                "id": "af_nicole",
+                "name": "Nicole"
+              },
+              {
+                "id": "af_nova",
+                "name": "Nova"
+              },
+              {
+                "id": "af_river",
+                "name": "River"
+              },
+              {
+                "id": "af_sarah",
+                "name": "Sarah"
+              },
+              {
+                "id": "af_sky",
+                "name": "Sky"
+              },
+              {
+                "id": "am_adam",
+                "name": "Adam"
+              },
+              {
+                "id": "am_echo",
+                "name": "Echo"
+              },
+              {
+                "id": "am_eric",
+                "name": "Eric"
+              },
+              {
+                "id": "am_fenrir",
+                "name": "Fenrir"
+              },
+              {
+                "id": "am_liam",
+                "name": "Liam"
+              },
+              {
+                "id": "am_michael",
+                "name": "Michael"
+              },
+              {
+                "id": "am_onyx",
+                "name": "Onyx"
+              },
+              {
+                "id": "am_puck",
+                "name": "Puck"
+              },
+              {
+                "id": "am_santa",
+                "name": "Santa"
+              },
+              {
+                "id": "bf_alice",
+                "name": "Alice"
+              },
+              {
+                "id": "bf_emma",
+                "name": "Emma"
+              },
+              {
+                "id": "bf_isabella",
+                "name": "Isabella"
+              },
+              {
+                "id": "bf_lily",
+                "name": "Lily"
+              },
+              {
+                "id": "bm_daniel",
+                "name": "Daniel"
+              },
+              {
+                "id": "bm_fable",
+                "name": "Fable"
+              },
+              {
+                "id": "bm_george",
+                "name": "George"
+              },
+              {
+                "id": "bm_lewis",
+                "name": "Lewis"
+              }
+            ],
+            "realtime": true,
+            "streaming": false
+          },
+          {
+            "id": "luxtts",
+            "name": "LuxTTS",
+            "key": "luxtts",
+            "cloning": {
+              "available": true,
+              "requiresText": true
+            },
+            "realtime": true,
+            "streaming": false
+          }
+        ]
+      },
+      "fluid-stt": {
+        "sessions": true,
+        "defaultModel": "parakeet-unified-0.6b",
+        "idleUnloadMs": 1800000,
+        "sttModels": [
+          {
+            "id": "parakeet-tdt-v3",
+            "name": "Parakeet TDT v3",
+            "key": "parakeet-tdt-v3",
+            "kind": "batch"
+          },
+          {
+            "id": "parakeet-unified-0.6b",
+            "name": "Parakeet Unified 0.6B",
+            "key": "parakeet-unified-0.6b",
+            "kind": "both"
+          },
+          {
+            "id": "nemotron-streaming-en-0.6b",
+            "name": "Nemotron Streaming EN 0.6B",
+            "key": "nemotron-streaming-en-0.6b",
+            "kind": "streaming",
+            "params": [
+              {
+                "name": "chunkMs",
+                "values": [
+                  560,
+                  1120,
+                  2240
+                ]
+              }
+            ],
+            "variants": [
+              {
+                "id": "560ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 560
+                  }
+                ]
+              },
+              {
+                "id": "1120ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 1120
+                  }
+                ]
+              },
+              {
+                "id": "2240ms",
+                "params": [
+                  {
+                    "name": "chunkMs",
+                    "value": 2240
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "voices": [
+      {
+        "id": "fluid-alloy",
+        "name": "Alloy (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_alloy"
+          }
+        ]
+      },
+      {
+        "id": "fluid-aoede",
+        "name": "Aoede (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_aoede"
+          }
+        ]
+      },
+      {
+        "id": "fluid-bella",
+        "name": "Bella (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_bella"
+          }
+        ]
+      },
+      {
+        "id": "fluid-heart",
+        "name": "Heart (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_heart"
+          }
+        ]
+      },
+      {
+        "id": "fluid-jessica",
+        "name": "Jessica (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_jessica"
+          }
+        ]
+      },
+      {
+        "id": "fluid-kore",
+        "name": "Kore (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_kore"
+          }
+        ]
+      },
+      {
+        "id": "fluid-nicole",
+        "name": "Nicole (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_nicole"
+          }
+        ]
+      },
+      {
+        "id": "fluid-nova",
+        "name": "Nova (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_nova"
+          }
+        ]
+      },
+      {
+        "id": "fluid-river",
+        "name": "River (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_river"
+          }
+        ]
+      },
+      {
+        "id": "fluid-sarah",
+        "name": "Sarah (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_sarah"
+          }
+        ]
+      },
+      {
+        "id": "fluid-sky",
+        "name": "Sky (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "af_sky"
+          }
+        ]
+      },
+      {
+        "id": "fluid-adam",
+        "name": "Adam (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_adam"
+          }
+        ]
+      },
+      {
+        "id": "fluid-echo",
+        "name": "Echo (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_echo"
+          }
+        ]
+      },
+      {
+        "id": "fluid-eric",
+        "name": "Eric (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_eric"
+          }
+        ]
+      },
+      {
+        "id": "fluid-fenrir",
+        "name": "Fenrir (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_fenrir"
+          }
+        ]
+      },
+      {
+        "id": "fluid-liam",
+        "name": "Liam (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_liam"
+          }
+        ]
+      },
+      {
+        "id": "fluid-michael",
+        "name": "Michael (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_michael"
+          }
+        ]
+      },
+      {
+        "id": "fluid-onyx",
+        "name": "Onyx (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_onyx"
+          }
+        ]
+      },
+      {
+        "id": "fluid-puck",
+        "name": "Puck (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_puck"
+          }
+        ]
+      },
+      {
+        "id": "fluid-santa",
+        "name": "Santa (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "am_santa"
+          }
+        ]
+      },
+      {
+        "id": "fluid-alice",
+        "name": "Alice (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_alice"
+          }
+        ]
+      },
+      {
+        "id": "fluid-emma",
+        "name": "Emma (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_emma"
+          }
+        ]
+      },
+      {
+        "id": "fluid-isabella",
+        "name": "Isabella (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_isabella"
+          }
+        ]
+      },
+      {
+        "id": "fluid-lily",
+        "name": "Lily (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bf_lily"
+          }
+        ]
+      },
+      {
+        "id": "fluid-daniel",
+        "name": "Daniel (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_daniel"
+          }
+        ]
+      },
+      {
+        "id": "fluid-fable",
+        "name": "Fable (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_fable"
+          }
+        ]
+      },
+      {
+        "id": "fluid-george",
+        "name": "George (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_george"
+          }
+        ]
+      },
+      {
+        "id": "fluid-lewis",
+        "name": "Lewis (Fluid)",
+        "models": [
+          {
+            "serviceId": "fluid-tts",
+            "model": "kokoro-ane",
+            "key": "bm_lewis"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -89,9 +89,9 @@
       }
     },
     {
-      "id": "fluid-stt",
-      "name": "Fluid STT",
-      "notes": "Transcription from the services/fluid package. Shares FluidServerKit with fluid-tts and pins the patched FluidAudio fork.",
+      "id": "stt-faster-whisper",
+      "name": "Faster-Whisper STT",
+      "notes": "Batch transcription with faster-whisper (CPU or NVIDIA GPU) from services/stt/faster-whisper. Install it first: that folder's README covers it.",
       "capabilityId": "stt",
       "hostId": "gpu-machine",
       "permissions": {
@@ -100,27 +100,20 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt"
+        "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
       },
       "ops": {
         "env": {
-          "workingDirectory": "~/services/fluid/fluid-stt",
+          "workingDirectory": "~/services/stt/faster-whisper",
           "variables": {
-            "PATH": "/opt/homebrew/bin:$PATH",
-            "FLUID_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
+            "FASTER_WHISPER_MODEL": "turbo",
+            "FASTER_WHISPER_DEVICE": "auto",
+            "FASTER_WHISPER_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
           }
-        },
-        "install": {
-          "artifacts": [
-            {
-              "from": "services/fluid/.build/release/fluid-stt.app",
-              "to": "fluid-stt.app"
-            }
-          ]
         }
       },
       "network": {
-        "port": 8767,
+        "port": 8766,
         "healthPath": "/healthz",
         "tailscaleServe": true
       },
@@ -130,14 +123,15 @@
         "shutdown": true,
         "idleUnload": true,
         "idleTimeout": 1800000,
+        "startupTime": 180000,
         "restartOnCrash": true,
         "maxRestarts": 3
       }
     },
     {
-      "id": "fluid-tts",
-      "name": "Fluid TTS",
-      "notes": "Synthesis over HTTP and WebSocket from the services/fluid package. AAC by default, WAV on request.",
+      "id": "tts-kokoro",
+      "name": "Kokoro TTS",
+      "notes": "Synthesis with Kokoro (PyTorch, CPU or GPU) from services/tts/kokoro, answering in WAV. Install it first: that folder's README covers it.",
       "capabilityId": "tts",
       "hostId": "gpu-machine",
       "permissions": {
@@ -146,28 +140,19 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry {registry} --provider fluid-tts"
+        "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
       },
       "ops": {
         "env": {
-          "workingDirectory": "~/services/fluid/fluid-tts",
+          "workingDirectory": "~/services/tts/kokoro",
           "variables": {
-            "PATH": "/opt/homebrew/bin:$PATH",
-            "FLUID_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
+            "KOKORO_CORS_ORIGINS": "https://home-server.your-tailnet.ts.net:4200,https://home-server.your-tailnet.ts.net:5173"
           }
-        },
-        "install": {
-          "artifacts": [
-            {
-              "from": "services/fluid/.build/release/fluid-tts.app",
-              "to": "fluid-tts.app"
-            }
-          ]
         }
       },
       "network": {
-        "port": 8769,
-        "healthPath": "/healthz",
+        "port": 8002,
+        "healthPath": "/health",
         "tailscaleServe": true
       },
       "lifecycle": {
@@ -176,6 +161,7 @@
         "shutdown": true,
         "idleUnload": true,
         "idleTimeout": 1800000,
+        "startupTime": 90000,
         "restartOnCrash": true,
         "maxRestarts": 3
       }
@@ -186,29 +172,13 @@
   },
   "roster": {
     "providers": {
-      "fluid-tts": {
-        "responseFormat": "aac",
-        "sessions": true,
+      "tts-kokoro": {
+        "responseFormat": "wav",
         "ttsModels": [
           {
-            "id": "pocket-tts",
-            "name": "Pocket-TTS",
-            "key": "pocket-tts",
-            "cloning": {
-              "available": true,
-              "requiresText": false
-            },
-            "chunkProfile": {
-              "words": 75,
-              "chars": 400
-            },
-            "realtime": true,
-            "streaming": true
-          },
-          {
-            "id": "kokoro-ane",
-            "name": "Kokoro 82M (ANE)",
-            "key": "kokoro-ane",
+            "id": "kokoro-82m",
+            "name": "Kokoro 82M",
+            "key": "kokoro-82m",
             "presetVoices": [
               {
                 "id": "af_alloy",
@@ -289,117 +259,20 @@
               {
                 "id": "am_santa",
                 "name": "Santa"
-              },
-              {
-                "id": "bf_alice",
-                "name": "Alice"
-              },
-              {
-                "id": "bf_emma",
-                "name": "Emma"
-              },
-              {
-                "id": "bf_isabella",
-                "name": "Isabella"
-              },
-              {
-                "id": "bf_lily",
-                "name": "Lily"
-              },
-              {
-                "id": "bm_daniel",
-                "name": "Daniel"
-              },
-              {
-                "id": "bm_fable",
-                "name": "Fable"
-              },
-              {
-                "id": "bm_george",
-                "name": "George"
-              },
-              {
-                "id": "bm_lewis",
-                "name": "Lewis"
               }
             ],
-            "realtime": true,
-            "streaming": false
-          },
-          {
-            "id": "luxtts",
-            "name": "LuxTTS",
-            "key": "luxtts",
-            "cloning": {
-              "available": true,
-              "requiresText": true
-            },
-            "realtime": true,
+            "realtime": false,
             "streaming": false
           }
         ]
       },
-      "fluid-stt": {
-        "sessions": true,
-        "defaultModel": "parakeet-unified-0.6b",
-        "idleUnloadMs": 1800000,
+      "stt-faster-whisper": {
         "sttModels": [
           {
-            "id": "parakeet-tdt-v3",
-            "name": "Parakeet TDT v3",
-            "key": "parakeet-tdt-v3",
+            "id": "faster-whisper",
+            "name": "Whisper (faster-whisper)",
+            "key": "faster-whisper",
             "kind": "batch"
-          },
-          {
-            "id": "parakeet-unified-0.6b",
-            "name": "Parakeet Unified 0.6B",
-            "key": "parakeet-unified-0.6b",
-            "kind": "both"
-          },
-          {
-            "id": "nemotron-streaming-en-0.6b",
-            "name": "Nemotron Streaming EN 0.6B",
-            "key": "nemotron-streaming-en-0.6b",
-            "kind": "streaming",
-            "params": [
-              {
-                "name": "chunkMs",
-                "values": [
-                  560,
-                  1120,
-                  2240
-                ]
-              }
-            ],
-            "variants": [
-              {
-                "id": "560ms",
-                "params": [
-                  {
-                    "name": "chunkMs",
-                    "value": 560
-                  }
-                ]
-              },
-              {
-                "id": "1120ms",
-                "params": [
-                  {
-                    "name": "chunkMs",
-                    "value": 1120
-                  }
-                ]
-              },
-              {
-                "id": "2240ms",
-                "params": [
-                  {
-                    "name": "chunkMs",
-                    "value": 2240
-                  }
-                ]
-              }
-            ]
           }
         ]
       }
@@ -410,8 +283,8 @@
         "name": "Alloy",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_alloy"
           }
         ]
@@ -421,8 +294,8 @@
         "name": "Aoede",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_aoede"
           }
         ]
@@ -432,8 +305,8 @@
         "name": "Bella",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_bella"
           }
         ]
@@ -443,8 +316,8 @@
         "name": "Heart",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_heart"
           }
         ]
@@ -454,8 +327,8 @@
         "name": "Jessica",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_jessica"
           }
         ]
@@ -465,8 +338,8 @@
         "name": "Kore",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_kore"
           }
         ]
@@ -476,8 +349,8 @@
         "name": "Nicole",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_nicole"
           }
         ]
@@ -487,8 +360,8 @@
         "name": "Nova",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_nova"
           }
         ]
@@ -498,8 +371,8 @@
         "name": "River",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_river"
           }
         ]
@@ -509,8 +382,8 @@
         "name": "Sarah",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_sarah"
           }
         ]
@@ -520,8 +393,8 @@
         "name": "Sky",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "af_sky"
           }
         ]
@@ -531,8 +404,8 @@
         "name": "Adam",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_adam"
           }
         ]
@@ -542,8 +415,8 @@
         "name": "Echo",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_echo"
           }
         ]
@@ -553,8 +426,8 @@
         "name": "Eric",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_eric"
           }
         ]
@@ -564,8 +437,8 @@
         "name": "Fenrir",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_fenrir"
           }
         ]
@@ -575,8 +448,8 @@
         "name": "Liam",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_liam"
           }
         ]
@@ -586,8 +459,8 @@
         "name": "Michael",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_michael"
           }
         ]
@@ -597,8 +470,8 @@
         "name": "Onyx",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_onyx"
           }
         ]
@@ -608,8 +481,8 @@
         "name": "Puck",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_puck"
           }
         ]
@@ -619,97 +492,9 @@
         "name": "Santa",
         "models": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "serviceId": "tts-kokoro",
+            "model": "kokoro-82m",
             "key": "am_santa"
-          }
-        ]
-      },
-      {
-        "id": "alice",
-        "name": "Alice",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bf_alice"
-          }
-        ]
-      },
-      {
-        "id": "emma",
-        "name": "Emma",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bf_emma"
-          }
-        ]
-      },
-      {
-        "id": "isabella",
-        "name": "Isabella",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bf_isabella"
-          }
-        ]
-      },
-      {
-        "id": "lily",
-        "name": "Lily",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bf_lily"
-          }
-        ]
-      },
-      {
-        "id": "daniel",
-        "name": "Daniel",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bm_daniel"
-          }
-        ]
-      },
-      {
-        "id": "fable",
-        "name": "Fable",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bm_fable"
-          }
-        ]
-      },
-      {
-        "id": "george",
-        "name": "George",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bm_george"
-          }
-        ]
-      },
-      {
-        "id": "lewis",
-        "name": "Lewis",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "bm_lewis"
           }
         ]
       }

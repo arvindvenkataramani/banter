@@ -69,6 +69,7 @@ Banter changes that platform lacks. They stay.
 - **`CONTRIBUTING.md`:** the testing table and the human-review list.
 - **Open-source files with no platform counterpart:** `LICENSE`, `NOTICE`, `SECURITY.md`, `.github/`, `.nvmrc`, `install.sh`, `render-plist.sh`, `dashboard/scripts/fetch-models.ts` and the `setup` script, the example registries and config, `services/README.md`, `services/fluid/README.md` and `DEVELOPING.md`.
 - **Harness-agnostic docs:** `docs/gateway/dsh/` and `docs/gateway/opencode/`.
+- **Cross-platform example services:** the example registries register Banter's own `services/stt/faster-whisper` and `services/tts/kokoro` adapters; the fluid servers are an Apple Silicon option in `services/fluid/registry.fluid.example.json`. Every Python adapter reads its CORS allowlist from a `*_CORS_ORIGINS` variable and sends no CORS headers without one.
 
 ## Banter is behind: port from platform
 
@@ -105,7 +106,8 @@ Live config's git-backed history of the live files (`history.ts`).
   - `extraOrigins`
   - the `/svc/` endpoint rewrite
   - whisper's loopback bind
-- **The PyTorch Kokoro and NeuTTS-Air adapters stay**, as the Linux speech options. Platform has retired them.
+- **The Kokoro and NeuTTS-Air adapters stay**, as cross-platform speech options. Platform has retired them.
+- **Banter installs no Python.** `install.sh` seeds the registry and points at each adapter's README, which tells a user how to install it.
 - **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
 - **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
