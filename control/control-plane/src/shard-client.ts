@@ -310,7 +310,7 @@ export async function fetchShardRoster(endpoint: string): Promise<NodeRoster | n
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Shard returned ${res.status}`);
+    if (!res.ok) throw await shardResponseError(endpoint, res);
     const body = await res.json();
     if (!isRecord(body) || !isRecord(body.providers) || !Array.isArray(body.voices)) return null;
     return body as unknown as NodeRoster;

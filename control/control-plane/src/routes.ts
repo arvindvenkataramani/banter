@@ -469,15 +469,41 @@ const VoiceSelectionPatchSchema = z.object({
   chunkStrategy: z.string().nullable().optional(),
   minChunkWords: z.number().nullable().optional(),
   maxChunkWords: z.number().nullable().optional(),
+  modelPrefs: z.record(
+    z.string(),
+    z.record(
+      z.string(),
+      z.object({
+        chunking: z.object({
+          mode: z.string().optional(),
+          minWords: z.number().optional(),
+          maxWords: z.number().optional(),
+        }).optional(),
+      }).nullable(),
+    ),
+  ).optional().openapi({ description: "Per-model chunking preferences, keyed by serviceId then model; null clears an entry" }),
   settingsScope: z.enum(["global", "per-model"]).optional(),
   sttServiceId: z.string().optional(),
+  saveMicSamples: z.boolean().optional(),
+  takeover: z.enum(["ask", "always"]).optional(),
+  vad: z.object({
+    minSpeechDurationS: z.number().optional(),
+    minSpeechProb: z.number().optional(),
+  }).optional().openapi({ description: "Merged field by field into voice.stt.vad; probabilities within [0, 1], durations non-negative" }),
+  turnTaking: z.object({
+    pauseThresholdMs: z.number().optional(),
+    commitMinDelayMs: z.number().optional(),
+    commitMaxDelayMs: z.number().optional(),
+    smartTurnThreshold: z.number().optional(),
+    smartTurnLowCutoff: z.number().optional(),
+  }).optional().openapi({ description: "Merged field by field into voice.stt.turnTaking; probabilities within [0, 1], durations non-negative" }),
 }).openapi("VoiceSelectionPatch");
 
 export const patchVoiceSelection = createRoute({
   method: "patch",
   path: "/api/voice/selection",
   tags: ["Config"],
-  summary: "Update the active TTS/STT selection",
+  summary: "Update the voice selection and tuning",
   request: {
     body: {
       content: { "application/json": { schema: VoiceSelectionPatchSchema } },
@@ -497,28 +523,43 @@ export const patchVoiceSelection = createRoute({
     },
     503: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Voice not configured",
+      description: "Voice not configured, or a named serviceId cannot be checked because a shard has never been polled",
     },
   },
 });
+
+const PartResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().optional().openapi({ description: "Present when ok is false" }),
+}).openapi("ReloadPartResult");
+
+const ReloadWarningSchema = z.object({
+  kind: z.enum(["provider-changed", "service-removed", "shards-changed", "intervals-changed"]),
+  serviceId: z.string().optional(),
+  message: z.string(),
+}).openapi("ReloadWarning");
+
+const ControlPlaneReloadResponseSchema = z.object({
+  config: PartResultSchema,
+  registry: PartResultSchema,
+  shards: z.record(z.string(), PartResultSchema).openapi({ description: "One result per shard, keyed by hostId" }),
+  warnings: z.array(ReloadWarningSchema),
+}).openapi("ControlPlaneReloadResponse");
 
 export const postConfigReload = createRoute({
   method: "post",
   path: "/api/config/reload",
   tags: ["Config"],
-  summary: "Reload config.json from disk without restarting the process",
+  summary: "Reload config.json, the registry and every shard's registry from disk without restarting",
+  description: "Reload applies what it can and names what it cannot in warnings; it never restarts a service. The body has the same shape whether or not every part succeeded. A shard serves the same path for its own registry and answers { registry, warnings }.",
   responses: {
     200: {
-      content: {
-        "application/json": {
-          schema: z.object({ ok: z.boolean(), version: z.number() }),
-        },
-      },
-      description: "Config reloaded",
+      content: { "application/json": { schema: ControlPlaneReloadResponseSchema } },
+      description: "Every part reloaded",
     },
     500: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Config path not set, or reload failed",
+      content: { "application/json": { schema: ControlPlaneReloadResponseSchema } },
+      description: "At least one part failed; its entry carries the error",
     },
   },
 });

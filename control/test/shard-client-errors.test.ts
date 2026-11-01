@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { fetchShardServices } from "../control-plane/src/shard-client"
+import { fetchShardServices, fetchShardService, fetchShardEvents, fetchShardRoster } from "../control-plane/src/shard-client"
 
 // A shard behind a TLS terminator answers a plaintext request with a bare 400.
 // The status alone reads like the shard rejected the request; the body is what
@@ -115,6 +115,19 @@ describe("shard client: non-ok responses", () => {
         const err = await fetchShardServices(endpoint).catch((e: Error) => e)
         expect(err).toBeInstanceOf(Error)
         expect((err as Error).message.length).toBeLessThan(300)
+      },
+    )
+  })
+
+  it("every shard read carries the body, not just the services list", async () => {
+    await withServer(
+      () => new Response("registry is locked", { status: 503 }),
+      async (endpoint) => {
+        const reads = [() => fetchShardService(endpoint, "svc1"), () => fetchShardEvents(endpoint), () => fetchShardRoster(endpoint)]
+        for (const read of reads) {
+          const err = (await read().catch((e: Error) => e)) as Error
+          expect(err.message).toMatch(/503: registry is locked/)
+        }
       },
     )
   })

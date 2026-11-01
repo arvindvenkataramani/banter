@@ -319,7 +319,7 @@ Record the last-used session name for an agent
 
 ### `PATCH` /api/voice/selection
 
-Update the active TTS/STT selection
+Update the voice selection and tuning
 
 **Request body:**
 → [VoiceSelectionPatch](#voiceselectionpatch)
@@ -330,21 +330,20 @@ Update the active TTS/STT selection
   → [Error](#error)
 - **500** — Config path not set
   → [Error](#error)
-- **503** — Voice not configured
+- **503** — Voice not configured, or a named serviceId cannot be checked because a shard has never been polled
   → [Error](#error)
 
 ---
 
 ### `POST` /api/config/reload
 
-Reload config.json from disk without restarting the process
+Reload config.json, the registry and every shard's registry from disk without restarting
 
 **Responses:**
-- **200** — Config reloaded
-  - `ok`: boolean
-  - `version`: number
-- **500** — Config path not set, or reload failed
-  → [Error](#error)
+- **200** — Every part reloaded
+  → [ControlPlaneReloadResponse](#controlplanereloadresponse)
+- **500** — At least one part failed; its entry carries the error
+  → [ControlPlaneReloadResponse](#controlplanereloadresponse)
 
 ---
 
@@ -501,8 +500,37 @@ Extends: [Service](#service)
 | `chunkStrategy` | string \| null | no |  |
 | `minChunkWords` | number \| null | no |  |
 | `maxChunkWords` | number \| null | no |  |
+| `modelPrefs` | object | no | Per-model chunking preferences, keyed by serviceId then model; null clears an entry |
 | `settingsScope` | `global` \| `per-model` | no |  |
 | `sttServiceId` | string | no |  |
+| `saveMicSamples` | boolean | no |  |
+| `takeover` | `ask` \| `always` | no |  |
+| `vad` | object | no | Merged field by field into voice.stt.vad; probabilities within [0, 1], durations non-negative |
+| `turnTaking` | object | no | Merged field by field into voice.stt.turnTaking; probabilities within [0, 1], durations non-negative |
+
+### ControlPlaneReloadResponse
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `config` | → ReloadPartResult | yes |  |
+| `registry` | → ReloadPartResult | yes |  |
+| `shards` | object | yes | One result per shard, keyed by hostId |
+| `warnings` | ReloadWarning[] | yes |  |
+
+### ReloadPartResult
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ok` | boolean | yes |  |
+| `error` | string | no | Present when ok is false |
+
+### ReloadWarning
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `kind` | `provider-changed` \| `service-removed` \| `shards-changed` \| `intervals-changed` | yes |  |
+| `serviceId` | string | no |  |
+| `message` | string | yes |  |
 
 ### Success
 
