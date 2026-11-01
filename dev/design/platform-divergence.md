@@ -72,11 +72,7 @@ Banter changes that platform lacks. They stay.
 
 In porting order. Platform commits are named so each port can be diffed.
 
-### 1. Dependency ranges
-
-The `package.json` files take platform's caret ranges in place of exact pins. Run the full test suites, since the lockfile may resolve differently.
-
-### 2. Live config
+### 1. Live config
 
 Platform commits: `de44bd6`, `bdeef42`, `b4d13ea`. This is a pass of its own, taken as platform has it.
 
@@ -112,7 +108,7 @@ Platform commits: `de44bd6`, `bdeef42`, `b4d13ea`. This is a pass of its own, ta
 - **Human review:** the deploy and config scripts, and the probe's reading of `.env.secrets` and its narrower gateway scopes, are on CONTRIBUTING's human-review list.
 - **Dependencies:** none new. Zod `4.3.6` is already pinned.
 
-### 3. Docs
+### 2. Docs
 
 Banter takes platform's docs layout, which is where the code's citations point. Twelve Banter files cite `components/voice-turn-taking.md`, and others cite `voice-system.md`, `model-roster.md`, `service-install.md` and `control-shard.md`. Banter has none of these.
 
@@ -154,5 +150,7 @@ Banter takes platform's docs layout, which is where the code's citations point. 
 - **The PyTorch Kokoro and NeuTTS-Air adapters stay**, as the Linux speech options. Platform has retired them.
 - **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
-- **Dependencies are pinned only where a specific version is required**, with the reason beside the pin. Everything else takes platform's ranges, and `bun.lock` keeps installs reproducible. The FluidAudio fork pin is required, since Banter's patches depend on it.
+- **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
+  - `onnxruntime-web` 1.18.0, in the dashboard: 1.19 and later drop single-threaded WASM and the `/experimental` export path that the voice activity detector loads.
+  - The FluidAudio fork, at a commit: Banter's patches depend on it.
 - **OpenClaw tools stay** (see above).
