@@ -50,7 +50,7 @@ function makeService(overrides: Record<string, any> = {}): Service {
     hostId: "host",
     permissions: { enabled: true },
     network: { port: 8080, healthPath: "/health", endpoint: "http://localhost:8080", healthTimeout: 5000, tailscaleServe: true, ...network },
-    runner: { type: "process", main: "./server --port 8080", ...runner },
+    runner: { type: "process", main: "./server --port {port}", ...runner },
     ops: { env: { workingDirectory: "/tmp/test-svc" } },
     lifecycle: { startupTime: 30000, serveRetryDelay: 1, ...lifecycle },
     ...rest,
@@ -76,6 +76,7 @@ class FakeNode {
   commandError: string | null = null;
   polls: { url: string; timeout: number; acceptsAnyResponse?: boolean }[] = [];
   spawned: string[][] = [];
+  spawnEnvs: (Record<string, string> | undefined)[] = [];
   kills = 0;
   private exits: ((code: number) => void)[] = [];
 
@@ -109,7 +110,8 @@ class FakeNode {
     return this.healthy;
   };
 
-  spawnFn: SpawnFn = (cmd) => {
+  spawnFn: SpawnFn = (cmd, opts) => {
+    this.spawnEnvs.push(opts?.env);
     this.log.push("spawn");
     this.spawned.push(cmd);
     let exit!: (code: number) => void;
@@ -150,10 +152,10 @@ describe("commands each runner type issues", () => {
   const systemd = makeService({ runner: { type: "systemd", unit: "embedding" } });
   const launchd = makeService({ runner: { type: "launchd", label: "com.example.svc" } });
   const managed = makeService({ runner: MANAGED });
-  const process_ = makeService({ runner: { type: "process", main: ".venv/bin/uvicorn server:app --port 8080" } });
+  const process_ = makeService({ runner: { type: "process", main: ".venv/bin/uvicorn server:app --port {port}" } });
 
   const TABLE: [string, (s: Service) => string[] | null, Service, string[] | null][] = [
-    ["process start", deriveStartCmd, process_, [".venv/bin/uvicorn", "server:app", "--port", "8080"]],
+    ["process start, with {port} filled from network.port", deriveStartCmd, process_, [".venv/bin/uvicorn", "server:app", "--port", "8080"]],
     ["process stop (the held child is killed instead)", deriveStopCmd, process_, null],
     ["systemd start", deriveStartCmd, systemd, ["systemctl", "--user", "start", "embedding.service"]],
     ["systemd stop", deriveStopCmd, systemd, ["systemctl", "--user", "stop", "embedding.service"]],
@@ -167,6 +169,12 @@ describe("commands each runner type issues", () => {
   ];
   it.each(TABLE)("%s", (_, derive, svc, expected) => {
     expect(derive(svc)).toEqual(expected);
+  });
+
+  it("hands a spawned process its port as PORT, beside its declared variables", async () => {
+    const node = new FakeNode();
+    await node.start(makeService({ ops: { env: { workingDirectory: "/tmp/test-svc", variables: { LOG_LEVEL: "debug" } } } }));
+    expect(node.spawnEnvs).toEqual([{ LOG_LEVEL: "debug", PORT: "8080" }]);
   });
 
   it("runs enable, disable and restart through those commands", async () => {

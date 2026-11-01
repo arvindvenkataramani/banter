@@ -79,7 +79,7 @@ A service entry answers four questions: what it is, where it runs, how to start 
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002"
+    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
   },
   "ops": {
     "env": { "workingDirectory": "~/services/tts/kokoro" }
@@ -107,7 +107,7 @@ Use `external` for anything you manage yourself: another machine's service, a co
 
 The `control` entry's `unitFile` points at `banter.service.template`, not a plain `.service` file — it has `__PROD__`/`__UNIT__` placeholders because the deploy path isn't known until install time. The install script fills those in and installs the result *before* it reads the registry at all, so this entry's `unitFile` is never copied as-is by the registry-driven step (which skips `id: "control"` for exactly that reason); it's declared here only because `unit`/`unitFile` are required together, and `service-control.sh` needs `unit` to restart the control plane by hand.
 
-`runner.main` carries its own `--port`, independent of `network.port`. They must agree; the control plane warns on load if they differ.
+The service's port is written once, in `network.port`. A `process` runner's `runner.main` marks where it goes with `{port}` (for example `--port {port}`), and the runner also gets `PORT` in its environment. The registry refuses at load a literal port in `runner.main` and a `PORT` in `ops.env.variables`.
 
 ### Demand-loading
 

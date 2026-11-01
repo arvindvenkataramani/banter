@@ -88,11 +88,11 @@ Concrete processes. Each service belongs to one host and implements one capabili
 
 | Field | Description |
 |-------|-------------|
-| `port` | Port the service listens on. Required unless `runner.type` is `managed` |
+| `port` | Port the service listens on. Required unless `runner.type` is `managed`. The only place the port is written: a `process` runner receives it as `{port}` in `main` and as `PORT` in its environment |
 | `healthPath` | Path to probe (e.g. `/health`). Required unless `runner.type` is `managed` |
 | `healthExpect` | `"ok"` (default) requires a 2xx response; `"reachable"` accepts any HTTP response, for services whose health path answers non-2xx by design (e.g. an endpoint that returns 406 to a plain GET) |
 | `healthTimeout` | Per-request timeout for routine health checks (ms). Default: `5000` |
-| `endpoint` | **Derived at load time** from `scheme` + (`listenAddress` or the host's hostname) + `port` — never stored in JSON. Not derived at all for `managed` runners, which have no HTTP health surface |
+| `endpoint` | **Derived at load time** from `scheme` + (`listenAddress` or the host's hostname) + `port` — never stored in JSON. Derived for any service with a port, whatever its runner |
 | `listenAddress` | Address used in the derived endpoint instead of the host's hostname (e.g. `"localhost"` for local-only services). Address only — it does not change the scheme |
 | `tailscaleServe` | Whether to register with Tailscale Serve when started. Default: `false`. This is a lifecycle concern only — it does not by itself decide the endpoint's scheme |
 | `scheme` | `"http"` or `"https"`, defaulting to `http`. The only thing that decides the endpoint's protocol — set it explicitly for a service behind a reverse proxy, a self-signed cert, or Tailscale Serve |
@@ -106,7 +106,7 @@ Declares how the registry's lifecycle module manages this service. Commands are 
 ```json
 "runner": {
   "type": "process",
-  "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002"
+  "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
 }
 ```
 
@@ -155,7 +155,7 @@ Health-monitored but not managed. Start/stop API calls return 400.
 }
 ```
 
-`startCmd`/`stopCmd` run as argv with no shell; `healthCmd` runs via `sh -c` and its exit code alone is the health signal. Unlike the other runner types, `managed` has no HTTP health surface — `network.port`/`healthPath` are not required, and no `endpoint` is derived even if `network.port` is set for reference.
+`startCmd`/`stopCmd` run as argv with no shell; `healthCmd` runs via `sh -c` and its exit code alone is the health signal. Unlike the other runner types, `managed` has no HTTP health surface — `network.port`/`healthPath` are not required, and its health is `healthCmd`. A `network.port` still gives it an `endpoint`.
 
 #### `ops.env` (for `process`-type runners)
 
@@ -213,7 +213,8 @@ On load:
 - All `hostId` references resolve to a known host
 - Required fields present on all objects
 - Runner type is one of: `process`, `systemd`, `launchd`, `external`, `managed`
-- `process` runner requires `main`
+- `process` runner requires `main`, which may not write a port (`--port 8002`); it uses `{port}`
+- `ops.env.variables` may not set `PORT`, which a process receives from `network.port`
 - `systemd` runner requires `unit` and `unitFile`
 - `launchd` runner requires `label` and `plist`
 - `managed` runner requires `startCmd`, `stopCmd`, and `healthCmd`

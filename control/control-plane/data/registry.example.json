@@ -60,7 +60,7 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
+        "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
       },
       "ops": {
         "env": {
@@ -105,7 +105,7 @@
       },
       "runner": {
         "type": "process",
-        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts"
+        "main": "fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts"
       },
       "ops": {
         "env": {

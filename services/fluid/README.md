@@ -60,8 +60,8 @@ FluidAudio is pinned to a fork carrying fixes for Pocket TTS; `swift build` fetc
 The control plane starts each server on demand, using the `runner.main` line in its registry entry:
 
 ```
-fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
-fluid-tts.app/Contents/MacOS/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
+fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
+fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
 ```
 
 - `--registry` and `--provider` are required: the server reads that provider's models from the registry's `roster` section, and refuses to start if it can't find or validate them. On a shard, `--registry` points at the shard's own `~/services/shard/registry.json`.

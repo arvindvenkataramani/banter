@@ -100,9 +100,9 @@ describe("explicit scheme", () => {
 })
 
 describe("managed runners", () => {
-  it("derives no endpoint even when a port is declared", async () => {
-    // A managed runner has no HTTP surface — health comes from its healthCmd.
-    // Synthesizing an endpoint would wrongly imply one exists.
+  it("derives an endpoint when a port is declared, health staying on healthCmd", async () => {
+    // A port gives a service an address whatever its runner. A managed runner
+    // is still health-checked by its healthCmd, not by the endpoint.
     await writeFile(registryPath, JSON.stringify({
       version: 2,
       type: "control",
@@ -117,7 +117,7 @@ describe("managed runners", () => {
       shards: [],
     }))
     const registry = await loadRegistry(registryPath)
-    expect(registry.services[0]!.network.endpoint).toBeUndefined()
+    expect(registry.services[0]!.network.endpoint).toBe("http://box.example.com:9009")
   })
 })
 

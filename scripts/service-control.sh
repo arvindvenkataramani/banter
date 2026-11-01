@@ -197,7 +197,7 @@ SERVICE_ID=$(resolve_service "$SERVICE_QUERY") || exit 1
 svc_json=$(jq -e --arg id "$SERVICE_ID" '.services[] | select(.id == $id)' "$REGISTRY")
 
 RUNNER_TYPE=$(echo "$svc_json" | jq -r '.runner.type // "external"')
-RUNNER_MAIN=$(echo "$svc_json" | jq -r '.runner.main // empty')
+RUNNER_MAIN=$(echo "$svc_json" | jq -r '.network.port as $p | (.runner.main // "") | gsub("{port}"; ($p // "" | tostring))')
 RUNNER_UNIT=$(echo "$svc_json" | jq -r '.runner.unit // empty')
 RUNNER_LABEL=$(echo "$svc_json" | jq -r '.runner.label // empty')
 RUNNER_PLIST=$(echo "$svc_json" | jq -r '.runner.plist // empty')
@@ -283,7 +283,8 @@ do_start() {
         [[ -n "$key" ]] && export "$key=$(eval echo "$val")"
       done < <(echo "$svc_json" | jq -r '.ops.env.variables // {} | to_entries[] | "\(.key)=\(.value)"')
 
-      # Start the process
+      # Start the process, with its port as the control plane passes it
+      [[ -n "$PORT" ]] && export PORT
       local log_dir="${WORK_DIR:-/tmp}"
       nohup $RUNNER_MAIN > "$log_dir/server.log" 2>&1 &
       local pid=$!

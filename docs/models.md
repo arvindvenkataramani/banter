@@ -41,7 +41,7 @@ Add this entry to `registry.json`'s `services`:
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002"
+    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
   },
   "ops": { "env": { "workingDirectory": "~/services/tts/kokoro" } },
   "network": { "port": 8002, "healthPath": "/health" },
@@ -107,7 +107,7 @@ Add this entry to `registry.json`'s `services`. Replace the CORS origin below wi
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".venv/bin/parakeet-server --model mlx-community/parakeet-tdt-0.6b-v3 --host 127.0.0.1 --port 8765"
+    "main": ".venv/bin/parakeet-server --model mlx-community/parakeet-tdt-0.6b-v3 --host 127.0.0.1 --port {port}"
   },
   "ops": {
     "env": {
@@ -178,7 +178,7 @@ These models are recommended because they're suitable for realtime or near-realt
 
 **Kokoro.** [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), 82M parameters, built on StyleTTS 2 with an ISTFTNet vocoder. Covered in the [Quick start](#quick-start) above.
 
-**NeuTTS Air.** `requirements.txt` covers the adapter's own dependencies; NeuTTS itself is installed per [neuphonic/neutts](https://github.com/neuphonic/neutts) upstream instructions, editable from source — see that project's own docs for CPU/CUDA/ROCm setup.
+**NeuTTS Air.** `requirements.txt` covers the adapter's own dependencies; NeuTTS itself is installed editable from a patched checkout of [neuphonic/neutts](https://github.com/neuphonic/neutts), as described in [`services/tts/neutts-air/README.md`](../services/tts/neutts-air/README.md); stock upstream rejects the `max_context` argument the adapter passes. See the upstream project's docs for CPU/CUDA/ROCm setup.
 
 **Voxtral.** Not set up in this repo — listed for reference. `mlx-audio` can serve its MLX weights (`mlx-community/Voxtral-4B-TTS-2603-mlx-6bit` and siblings) if you want to try it. Apple Silicon only.
 

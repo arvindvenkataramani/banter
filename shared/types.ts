@@ -37,7 +37,7 @@ export interface ServiceNetwork {
 
 export interface ProcessRunner {
   type: "process";
-  main: string;           // Command to spawn (split on spaces)
+  main: string;           // Command to spawn, split on spaces; {port} is filled from network.port
 }
 
 export interface SystemdRunner {

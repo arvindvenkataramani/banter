@@ -21,7 +21,7 @@ The `fluid-stt` entry is already in `control/control-plane/data/registry.example
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
+    "main": "fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt"
   },
   "ops": {
     "env": {
@@ -74,7 +74,7 @@ Add this entry to `registry.json`'s `services`:
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766"
+    "main": ".venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port {port}"
   },
   "ops": {
     "env": {

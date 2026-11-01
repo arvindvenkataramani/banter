@@ -16,7 +16,7 @@ Install:
 cp -r <banter>/services/tts/neutts-air ~/services/tts/neutts-air
 cd ~/services/tts/neutts-air
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
-# then install NeuTTS itself per neuphonic/neutts upstream instructions (github.com/neuphonic/neutts)
+# then install NeuTTS itself from the patched clone in services/tts/neutts-air/README.md (stock upstream rejects max_context)
 ```
 
 Add this entry to `registry.json`'s `services`:
@@ -30,7 +30,7 @@ Add this entry to `registry.json`'s `services`:
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port 8004"
+    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
   },
   "ops": { "env": { "workingDirectory": "~/services/tts/neutts-air" } },
   "network": { "port": 8004, "healthPath": "/health" },
@@ -94,7 +94,7 @@ Add this entry to `registry.json`'s `services`:
   "permissions": { "enabled": true, "protected": false },
   "runner": {
     "type": "process",
-    "main": ".venv/bin/mlx_audio.server --host 127.0.0.1 --port 8001 --allowed-origins http://localhost:4200"
+    "main": ".venv/bin/mlx_audio.server --host 127.0.0.1 --port {port} --allowed-origins http://localhost:4200"
   },
   "ops": { "env": { "workingDirectory": "~/services/tts/mlx-audio" } },
   "network": { "port": 8001, "healthPath": "/v1/models" },

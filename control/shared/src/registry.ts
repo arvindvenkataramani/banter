@@ -167,7 +167,7 @@ function validateRegistry(data: unknown): Registry {
       }
       if (groupKey === "network") {
         if ("tailscaleServe" in group && typeof group.tailscaleServe !== "boolean") throw new Error("defaults.network.tailscaleServe must be boolean");
-        if ("scheme" in group && !isScheme(group.scheme)) throw new Error('defaults.network.scheme must be "http" or "https"');
+        if ("scheme" in group && !isScheme(group.scheme)) throw new Error(`defaults.network.scheme must be "http" or "https", got ${JSON.stringify(group.scheme)}`);
       }
       if (groupKey === "lifecycle") {
         if ("loadStrategy" in group && !["startup", "demand"].includes(group.loadStrategy as string)) throw new Error("defaults.lifecycle.loadStrategy must be 'startup' or 'demand'");
@@ -269,31 +269,26 @@ function validateRegistry(data: unknown): Registry {
     }
 
     if (net.scheme !== undefined && !isScheme(net.scheme)) {
-      throw new Error(`service ${svc.id}: network.scheme must be "http" or "https", got "${net.scheme}"`);
+      throw new Error(`service ${svc.id}: network.scheme must be "http" or "https", got ${JSON.stringify(net.scheme)}`);
     }
 
     validateInstall(svc);
 
-    // A process runner carries its port twice: in the command line it binds and
-    // in network.port, which is what health checks and routing use. Nothing
-    // keeps them in step, and runner.main is spawned verbatim so the value
-    // cannot be injected. Disagreement means the service starts fine on one
-    // port while being polled on another — warn rather than reject, since the
-    // command line is the authority on what it actually binds.
-    const mainCmd = (svc.runner as Record<string, unknown>).main;
-    if (typeof mainCmd === "string" && net.port) {
-      const declared = mainCmd.match(/--port[= ](\d+)/);
-      if (declared && Number(declared[1]) !== net.port) {
-        console.warn(
-          `registry: service ${svc.id} binds --port ${declared[1]} in runner.main but declares network.port ${net.port} — health checks will use ${net.port}`
-        );
-      }
+    // network.port is the only place a service's port is written. A process
+    // receives it as {port} in runner.main and as PORT in its environment, so
+    // a second copy in either could only drift from it.
+    const mainCmd = runner.main;
+    if (typeof mainCmd === "string" && /--port[= ]\d/.test(mainCmd)) {
+      throw new Error(`service ${svc.id}: runner.main writes a port; use {port}, which is filled from network.port`);
+    }
+    const variables = (svc.ops as { env?: { variables?: Record<string, unknown> } } | undefined)?.env?.variables;
+    if (variables && "PORT" in variables) {
+      throw new Error(`service ${svc.id}: ops.env.variables sets PORT; a process receives PORT from network.port`);
     }
 
-    // Managed runners never get a derived endpoint, even if network.port is set for
-    // reference — they have no HTTP health surface, and a synthesized endpoint would
-    // wrongly imply one exists.
-    if (net.port && runnerType !== "managed") {
+    // A port gives a service an address whatever its runner. How its health is
+    // checked is the runner's business: a managed runner uses healthCmd.
+    if (net.port) {
       const listenAddr = net.listenAddress as string | undefined;
       const hostname = listenAddr ?? hostMap.get(svc.hostId as string);
       net.endpoint = `${net.scheme ?? defaultScheme(hostname)}://${hostname}:${net.port}`;
@@ -314,7 +309,7 @@ function validateRegistry(data: unknown): Registry {
         throw new Error(`shard: hostId "${shard.hostId}" references nonexistent host`);
       }
       if (shard.scheme !== undefined && !isScheme(shard.scheme)) {
-        throw new Error(`shard ${shard.hostId}: scheme must be "http" or "https", got "${shard.scheme}"`);
+        throw new Error(`shard ${shard.hostId}: scheme must be "http" or "https", got ${JSON.stringify(shard.scheme)}`);
       }
       const shardHostname = hostMap.get(shard.hostId as string)!;
       shard.endpoint = `${shard.scheme ?? defaultScheme(shardHostname)}://${shardHostname}:${shard.port}`;
@@ -393,7 +388,7 @@ export async function updateService(
           throw new Error("network.tailscaleServe must be a boolean");
         }
         if ("scheme" in networkPatch && networkPatch.scheme !== undefined && !isScheme(networkPatch.scheme)) {
-          throw new Error(`network.scheme must be "http" or "https", got "${networkPatch.scheme}"`);
+          throw new Error(`network.scheme must be "http" or "https", got ${JSON.stringify(networkPatch.scheme)}`);
         }
         updated.network = applyGroupPatch(
           updated.network as unknown as Record<string, unknown>,

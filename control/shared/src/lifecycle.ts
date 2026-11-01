@@ -75,7 +75,7 @@ function getRunner(svc: Service): ServiceRunner {
 export function deriveStartCmd(svc: Service): string[] | null {
   const r = getRunner(svc);
   switch (r.type) {
-    case "process": return r.main.split(" ");
+    case "process": return r.main.split(" ").map(arg => arg.replaceAll("{port}", String(svc.network.port)));
     case "systemd": return ["systemctl", "--user", "start", `${r.unit}.service`];
     case "launchd": return ["launchctl", "bootstrap", `gui/${process.getuid?.() ?? 501}`, `${process.env.HOME}/Library/LaunchAgents/${r.label}.plist`];
     case "external": return null;
@@ -292,7 +292,7 @@ export async function startService(
       spawnOpts.cwd = svc.ops.env.workingDirectory;
       spawnOpts.logDir = `${svc.ops.env.workingDirectory}/logs`;
     }
-    if (svc.ops?.env?.variables) spawnOpts.env = svc.ops.env.variables;
+    spawnOpts.env = { ...svc.ops?.env?.variables, PORT: String(svc.network.port) };
     const child = spawnFn(startCmd, spawnOpts);
     children.set(svc.id, child);
     watchForExit(runFn, svc, eventsPath, child, pollHealthFn, spawnFn);

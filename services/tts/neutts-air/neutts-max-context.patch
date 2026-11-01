@@ -1,0 +1,18 @@
+diff --git a/neutts/neutts.py b/neutts/neutts.py
+index 1b65092..15378f2 100644
+--- a/neutts/neutts.py
++++ b/neutts/neutts.py
+@@ -76,11 +76,12 @@ class NeuTTS:
+         codec_repo="neuphonic/neucodec",
+         codec_device="cpu",
+         language=None,
++        max_context=2048,
+     ):
+ 
+         # Consts
+         self.sample_rate = 24_000
+-        self.max_context = 2048
++        self.max_context = max_context
+         self.hop_length = 480
+         self.streaming_overlap_frames = 1
+         self.streaming_frames_per_chunk = 25

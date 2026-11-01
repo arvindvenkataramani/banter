@@ -1,2 +1,6 @@
 fastapi
 uvicorn
+lameenc
+numpy
+soundfile
+pyyaml

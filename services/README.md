@@ -15,23 +15,23 @@ Two kinds of entries here:
 |---|---|---|---|
 | `stt/whisper` | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
 | `tts/kokoro` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt` |
-| `tts/neutts-air` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt`, then install NeuTTS itself per [neuphonic/neutts](https://github.com/neuphonic/neutts) upstream instructions — it's editable-installed from source, not on PyPI, so there's no pip name to add to `requirements.txt` |
+| `tts/neutts-air` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `python -m venv .venv && .venv/bin/pip install -r requirements.txt`, then install NeuTTS itself from the patched clone described in [`tts/neutts-air/README.md`](tts/neutts-air/README.md) — it's editable-installed from source, not on PyPI, so there's no pip name to add to `requirements.txt` |
 | `fluid` (`fluid-stt`) | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`, `WS /v1/audio/stream`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — `scripts/fluid-build.sh` |
 | `fluid` (`fluid-tts`) | TTS | `GET /healthz`, `POST /v1/audio/speech`, `WS /v1/audio/stream`; optional CORS via `FLUID_CORS_ORIGINS` | Swift — `scripts/fluid-build.sh` |
 
-Registry `runner.main` examples (Python adapters run under a venv's interpreter directly; ports are whatever you choose — these match each server's own default):
+Registry `runner.main` examples (Python adapters run under a venv's interpreter directly; the port is written only in `network.port` and reaches the command through `{port}`):
 
 ```
-.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002          # kokoro
-.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8004          # neutts-air
-.venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port 8766   # whisper
+.venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}          # kokoro
+.venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}          # neutts-air
+.venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port {port}   # whisper
 ```
 
 `services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags — what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/voices-and-models.md](../docs/voices-and-models.md)). The shipped example registry runs them as:
 
 ```
-fluid-stt.app/Contents/MacOS/fluid-stt --port 8767 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
-fluid-tts.app/Contents/MacOS/fluid-tts --port 8769 --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
+fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-stt
+fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry ~/services/banter/control/control-plane/data/registry.json --provider fluid-tts
 ```
 
 ## Third-party, pip-installable
