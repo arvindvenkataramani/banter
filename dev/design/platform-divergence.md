@@ -17,7 +17,7 @@ Banter always keeps its own styling. UI components, layout and behaviour converg
 
 UI and features are tested in platform before they are ported, so a clean port of shared chat and voice code needs no human test here. Review is for the Banter-specific delta: code adapted rather than copied, Banter's own surroundings the code relies on (theme tokens, config), flows platform never runs, and the live-state and exposure items in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
-Differences the rule doesn't settle are under [Open decisions](#open-decisions), with the position Banter holds until they are decided.
+Differences the rule doesn't settle are recorded under [Decided](#decided). A new one is raised with the maintainer, and Banter keeps its current form until it is decided.
 
 ## How to audit
 
@@ -158,15 +158,12 @@ Banter takes platform's docs layout, which is where the code's citations point. 
 
 `turn-manager.ts` has two `prefer-const` errors and `media-engine.ts` an unused exemption. Both files match platform's, so the fix would start in Banter.
 
-## Open decisions
-
-Banter holds its current position on each until it is decided.
-
-1. **Naming.**
-   - Banter's own names: `BANTER_` env prefixes, `com.banter` bundle and plist IDs, "Banter" in titles and device labels, and generic host and person names in tests, examples and comments (`gpu-machine`, `home-server`, `example`, `alex`).
-   - Platform names still in Banter: `@platform/shared`, the `platform_find_jq` helpers, and `PLATFORM_DIR` in `shard-runner.swift`.
-
 ## Decided
+
+- **Naming follows who sees the name.**
+  - **Names a user sees are Banter's:** `BANTER_` env variables, `com.banter` bundle and plist IDs, "Banter" in titles and device labels, and the schema file's `$id` and title.
+  - **Example hosts and people are generic** in tests, examples and comments (`gpu-machine`, `home-server`, `example`, `alex`).
+  - **Internal names are platform's, and a port never renames them:** the `@platform/*` packages, the `platform_*` shell helpers, `PlatformConfig`, and `PLATFORM_DIR` in `shard-runner.swift`.
 
 - **Config, registry and state live inside each node's deployment folder.** No config files sit outside the install. `deploy.conf`, which names the folder, lives in the checkout and is copied in.
 - **The control port** is read from the registry's `control` entry, and `BANTER_CONTROL_PORT` overrides it.
