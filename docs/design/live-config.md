@@ -70,7 +70,7 @@ The deploy runs `control/scripts/deploy-config.ts`, which `control-deploy.sh` an
 
 ## First deploy on a node
 
-With no live file, a first deploy seeds it from the old paths if present: `$BANTER_PROD/control/control-plane/data/config.json` and `registry.json` on a control plane, `~/services/shard/registry.json` on a shard. Otherwise it seeds it from the example. `shipped/` starts empty, so the merge keeps every value the node has, and the runtime state moves out of the configuration into `state/state.json` by the repair rule on first load.
+With no live file, a first deploy seeds it from these files when they exist: `$BANTER_PROD/control/control-plane/data/config.json` and `registry.json` on a control plane, `~/services/shard/registry.json` on a shard. Otherwise it seeds it from the example. `shipped/` starts empty, so the merge keeps every value the node has, and the runtime state moves out of the configuration into `state/state.json` by the repair rule on first load.
 
 A fresh install gets its live files from `scripts/install.sh`, which writes them at the top of the deployment folder from the examples (filling in the gateway URL and token) before the first deploy; the deploy then merges the examples into them.
 

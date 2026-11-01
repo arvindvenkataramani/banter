@@ -23,7 +23,7 @@ For the inherited behavior, see the component docs:
 - Health checker behavior: [`components/health-checker.md`](components/health-checker.md)
 - API shape: [`components/control-plane-api.md`](components/control-plane-api.md)
 
-A shard is optional. A single-machine install does not need one, and the control plane runs standalone with an empty `shards` array. [`shard-setup.md`](shard-setup.md) covers installing one.
+A shard is optional. A single-machine install does not need one, and the control plane runs standalone with an empty `shards` array. [`setup/shard.md`](setup/shard.md) covers installing one.
 
 ---
 
@@ -127,7 +127,7 @@ The shard extends the shared API with shard-specific endpoints (`/status`, `/pin
 
 TypeScript, Bun. Consistent with the control plane.
 
-**Deployment:** the shard is supervised by the compiled `shard-runner` Swift binary, managed by launchd. The installer, `scripts/shard-deploy.sh`, therefore runs on macOS only; [`shard-setup.md`](shard-setup.md) covers what a Linux shard needs. Nothing in the shard's own TypeScript depends on launchd, and a shard on another OS needs an equivalent supervisor, such as a systemd unit, to get the same crash-restart and Serve teardown behavior.
+**Deployment:** the shard is supervised by the compiled `shard-runner` Swift binary, managed by launchd. The installer, `scripts/shard-deploy.sh`, therefore runs on macOS only; [`setup/shard.md`](setup/shard.md) covers what a Linux shard needs. Nothing in the shard's own TypeScript depends on launchd, and a shard on another OS needs an equivalent supervisor, such as a systemd unit, to get the same crash-restart and Serve teardown behavior.
 
 The `shard-runner` binary:
 - Tears down stale Tailscale Serve on the shard's port, read from the registry
@@ -174,4 +174,4 @@ A reload that cannot read or validate the file, or a shard started with no regis
 
 ## Security
 
-**Tailscale Serve only, never Funnel.** Shard services are internal to the tailnet when Serve is used. There is no shard-specific exception and no separate authentication layer (see Authentication and trust, above); the network boundary is the security boundary. [`remote-access.md`](remote-access.md) covers reaching Banter from other devices and why https is safer than plain http.
+**Tailscale Serve only, never Funnel.** Shard services are internal to the tailnet when Serve is used. There is no shard-specific exception and no separate authentication layer (see Authentication and trust, above); the network boundary is the security boundary. [`setup/remote-access.md`](setup/remote-access.md) covers reaching Banter from other devices and why https is safer than plain http.

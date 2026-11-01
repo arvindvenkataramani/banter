@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# First-time setup: everything the README's Install section covers up through
+# First-time setup: everything docs/setup/install.md covers up through
 # a running, reachable control plane. It installs no speech servers and no
 # Python packages: the example registry declares stt-faster-whisper and
 # tts-kokoro, and each folder under services/ has a README for installing it.
@@ -8,7 +8,7 @@
 # Usage: scripts/install.sh
 #
 # Run from the repo root, after cloning. Prompts for the OpenClaw gateway URL
-# and token; everything else follows the README's defaults.
+# and token; everything else follows the defaults in docs/setup/install.md.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,13 +28,13 @@ command -v jq  >/dev/null 2>&1 || die "jq is required"
 OS="$(uname -s)"
 case "$OS" in
   Linux)
-    command -v systemctl >/dev/null 2>&1 || die "systemd (systemctl) not found — this script's Linux path needs it. Follow the README's manual macOS/no-systemd path instead."
+    command -v systemctl >/dev/null 2>&1 || die "systemd (systemctl) not found — this script's Linux path needs it. Follow the macOS and no-systemd steps in docs/setup/install.md instead."
     ;;
   Darwin)
-    log "macOS detected. The systemd install step is expected to fail here — see the README's \"macOS, or Linux without systemd\" section, which this script follows."
+    log "macOS detected. The systemd install step is expected to fail here — see \"macOS, or Linux without systemd\" in docs/setup/install.md, which this script follows."
     ;;
   *)
-    die "unsupported OS '$OS' — follow the README's manual install steps instead."
+    die "unsupported OS '$OS' — follow the manual steps in docs/setup/install.md instead."
     ;;
 esac
 
@@ -153,7 +153,7 @@ case "$OS" in
     nohup "$PROD/scripts/control-runner.sh" > "$PROD/install-run.log" 2>&1 &
     RUNNER_PID=$!
     log "Started control-runner.sh (pid $RUNNER_PID). This does not survive a reboot or logout —"
-    log "see the README's \"macOS, or Linux without systemd\" section for supervising it yourself"
+    log "see \"macOS, or Linux without systemd\" in docs/setup/install.md for supervising it yourself"
     log "(a launchd agent, or whatever you use)."
 
     log "Waiting for the control plane to respond on :$BANTER_PORT..."
@@ -185,4 +185,4 @@ if [[ -n "$SEEDED" ]]; then
   log "servers are an option: scripts/fluid-build.sh, then services/fluid/README.md."
 fi
 log "To customise voices and models, or connect a different speech server, see"
-log "docs/voices-and-models.md. See the README's \"Connect your speech servers\" section for the rest."
+log "docs/setup/voices-and-models.md. docs/setup/speech-servers.md covers the rest."

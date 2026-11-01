@@ -52,7 +52,7 @@ Harness-agnostic means Banter can work with other harnesses, not that it drops O
 
 The agnostic work is adding seams so another harness can sit beside OpenClaw. A port should not spread OpenClaw assumptions into shared code that doesn't need them. Shared code that names OpenClaw, worth revisiting when a second harness arrives:
 
-- `scripts/deploy-preserve-config.sh` names `.integrations.openclaw.lastSessionByAgent`. The live-config port replaces it with a harness-neutral `state.json`, leaving only the one-time repair rule `moveRuntimeState` in `live-config/rules.ts`.
+- `moveRuntimeState` in `control/shared/src/live-config/rules.ts` reads `integrations.openclaw.defaultAgent` and `lastSessionByAgent`, to move them into the harness-neutral `state.json`.
 - "Voice chat platform for OpenClaw" in `dashboard/index.html`, `manifest.webmanifest` and `scripts/generate-api-docs.ts`.
 
 [agent-backend-abstraction.md](agent-backend-abstraction.md) covers what a second backend costs.
@@ -73,15 +73,7 @@ Banter changes that platform lacks. They stay.
 
 ## Banter is behind: port from platform
 
-In porting order. Platform commits are named so each port can be diffed.
-
-### Docs that follow live config
-
-These describe config and deploy, and still describe the old layout.
-
-- **Strip and port:** `OPERATIONS.md`, without the Pi, NAS and personal machines.
-- **Refresh against platform and the new layout:** `control-plane-api.md`, `registry.md`, `service-lifecycle.md`, `event-log.md`, `control-shard.md`, `shard-setup.md`, `stt-setup.md` and `voices-and-models.md`.
-- **`docs/architecture/README.md`** says a tailnet is the only configuration; Banter defaults to http.
+Against platform `0b16270`, every code change is ported apart from the items below.
 
 ### Not taken yet
 

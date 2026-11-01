@@ -5,7 +5,7 @@ Two files per node, both at the top of its deployment folder (`~/services/banter
 - **`registry.json`** — hosts and services
 - **`config.json`** — gateway credentials and voice settings
 
-The repo tracks `config.example.json` and `registry.example.json` (under `control/control-plane/data/`; the shard's registry example is under `control/control-shard/data/`), not the live files. `scripts/install.sh` seeds the live files from them, and every later deploy merges the examples into them; see [Deployment](#deployment). Beside the two files the folder holds `shipped/` (what the last deploy shipped, the merge base) and `state/state.json` (the last agent used and the last session per agent). [design/live-config.md](design/live-config.md) describes how these files are kept.
+The repo tracks `config.example.json` and `registry.example.json` (under `control/control-plane/data/`; the shard's registry example is under `control/control-shard/data/`), not the live files. `scripts/install.sh` seeds the live files from them, and every later deploy merges the examples into them; see [Deployment](#deployment). Beside the two files the folder holds `shipped/` (what the last deploy shipped, the merge base) and `state/state.json` (the last agent used and the last session per agent). [design/live-config.md](../design/live-config.md) describes how these files are kept.
 
 A normal run needs no environment variables.
 
@@ -35,7 +35,7 @@ This is everything required to get a working single-machine deploy. Nothing else
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "type": "control",
   "hosts": [
     { "id": "box", "name": "box", "hostname": "box.local", "role": "control" }
@@ -83,7 +83,10 @@ A service entry answers four questions: what it is, where it runs, how to start 
     "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
   },
   "ops": {
-    "env": { "workingDirectory": "~/services/tts/kokoro" }
+    "env": {
+      "workingDirectory": "~/services/tts/kokoro",
+      "variables": { "KOKORO_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173" }
+    }
   },
   "network": { "port": 8002, "healthPath": "/health" },
   "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
@@ -92,7 +95,7 @@ A service entry answers four questions: what it is, where it runs, how to start 
 
 `capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and `voice.tts.selection.serviceId` both refer to these.
 
-A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry with at least one model and one voice able to reach it. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` list is still how a server that reads one, such as `fluid-stt`, declares what it can load. See [docs/voices-and-models.md#adding-another-model-or-another-speech-server](voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
+A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry with at least one model and one voice able to reach it. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` list is still how a server that reads one declares what it can load (`fluid-stt`, for example). See [voices-and-models.md#adding-another-model-or-another-speech-server](voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
 
 ### Choosing a runner
 
@@ -132,23 +135,23 @@ If most of your services are https, set it once for the whole registry:
 
 The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
 
-Each speech server takes its allowlist from an environment variable, set under the service's `ops.env.variables`. The [fluid servers](../services/fluid/README.md) read one comma-separated variable, `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all — not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` fills in every `*_CORS_ORIGINS` variable it finds in a fresh registry from the registry's own `control` service port, covering `http://localhost` and `http://127.0.0.1` on that port and on Vite's `5173`:
+Each speech server takes its allowlist from an environment variable, set under the service's `ops.env.variables`. Every Python adapter in this repo reads a comma-separated `*_CORS_ORIGINS` variable (`FASTER_WHISPER_CORS_ORIGINS`, `KOKORO_CORS_ORIGINS`, `NEUTTS_CORS_ORIGINS`, `WHISPER_CORS_ORIGINS`), and the [fluid servers](../../services/fluid/README.md) read `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all: not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` fills in every `*_CORS_ORIGINS` variable it finds in a fresh registry from the registry's own `control` service port, covering `http://localhost` and `http://127.0.0.1` on that port and on Vite's `5173`:
 
 ```json
 "ops": {
   "env": {
-    "variables": { "FLUID_CORS_ORIGINS": "http://localhost:4200,http://127.0.0.1:4200,http://localhost:5173,http://127.0.0.1:5173" }
+    "variables": { "KOKORO_CORS_ORIGINS": "http://localhost:4200,http://127.0.0.1:4200,http://localhost:5173,http://127.0.0.1:5173" }
   }
 }
 ```
 
-Other servers vary: some are permissive and need no configuration, others take a variable or flag (for example `WHISPER_CORS_ORIGINS` for `stt/whisper`, `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`, `--allowed-origins` for `mlx-audio`). Check a server's own docs for the name.
+Third-party servers vary: some take a variable or flag (for example `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`, `--allowed-origins` for `mlx-audio`), others are permissive or have no setting. Check a server's own docs for the name. [speech-servers.md](speech-servers.md#cors) has a check you can run against any server.
 
 The origins `install.sh` writes cover only the machine itself. Opening the dashboard from another address, such as a LAN IP (`http://192.168.1.20:4200`) or an https hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder https tailnet origins; replace them with the origins you use.
 
 A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
 
-**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `scripts/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open the dashboard from, such as a LAN address, too. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/gateway/openclaw/gateway-session-lifecycle.md](gateway/openclaw/gateway-session-lifecycle.md#browser-origin-check).
+**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `scripts/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open the dashboard from, such as a LAN address, too. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/gateway/openclaw/gateway-session-lifecycle.md](../gateway/openclaw/gateway-session-lifecycle.md#browser-origin-check).
 
 ---
 
@@ -172,7 +175,7 @@ The primary polls that endpoint and merges the worker's services into one view. 
 
 Leave the worker's services out of the primary's registry. The shard owns them and reports them upward; duplicating them creates two sources of truth.
 
-**On the worker**, install the shard with its own registry (`"type": "shard"`) describing the services it hosts. See [shard-setup.md](./shard-setup.md).
+**On the worker**, install the shard with its own registry (`"type": "shard"`) describing the services it hosts. See [shard.md](shard.md).
 
 ---
 
@@ -183,9 +186,9 @@ Under `voice` in `config.json`. The pieces that matter (the service ids and mode
 ```json
 "voice": {
   "enabled": true,
-  "stt": { "serviceId": "fluid-stt", "model": "parakeet-unified-0.6b", "preferStreaming": true },
+  "stt": { "serviceId": "stt-faster-whisper", "preferStreaming": false },
   "tts": {
-    "selection": { "serviceId": "fluid-tts", "model": "kokoro-ane", "voice": "heart", "speed": 1 },
+    "selection": { "serviceId": "tts-kokoro", "model": "kokoro-82m", "voice": "heart", "speed": 1 },
     "options": { "chunkStrategy": "greedy", "minChunkWords": 15, "maxChunkWords": 60 },
     "settingsScope": "global",
     "modelPrefs": {}
@@ -193,7 +196,7 @@ Under `voice` in `config.json`. The pieces that matter (the service ids and mode
 }
 ```
 
-`serviceId` values must match registry entries. `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [docs/voices-and-models.md](voices-and-models.md) for what a roster model and voice are, and how to add or change them.
+`serviceId` values must match registry entries. A batch-only STT server leaves `voice.stt.model` unset; a server with streaming or loadable models names one there, as in [stt.md](stt.md#fluid-stt). `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [voices-and-models.md](voices-and-models.md) for what a roster model and voice are, and how to add or change them.
 
 The dashboard's settings dialog writes back to `selection` — the STT picker only appears when the registry holds more than one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for the dashboard to read, but nothing writes it back.
 
@@ -225,7 +228,7 @@ Optional. Under `runtime` in `config.json`:
 | `host` | `localhost` | Bind address |
 | `eventsPath` | `logs/events.jsonl` in the deployment | Event log |
 
-The listening port is **not** here — it comes from the registry's `control` service entry, so it is declared in one place rather than two that can disagree. Loop intervals are not here either: they live in `registry.json` under `intervals` (`healthMs`, and on the control plane `shardPollMs`, each defaulting to `900000`). See [registry.md](components/registry.md).
+The listening port is **not** here — it comes from the registry's `control` service entry, so it is declared in one place rather than two that can disagree. Loop intervals are not here either: they live in `registry.json` under `intervals` (`healthMs`, and on the control plane `shardPollMs`, each defaulting to `900000`). See [registry.md](../components/registry.md).
 
 Each has an environment override (`BANTER_CONTROL_HOST`, `BANTER_EVENTS_PATH`, `BANTER_HEALTH_INTERVAL_MS`, `BANTER_SHARD_POLL_INTERVAL_MS`, and `BANTER_CONTROL_PORT`), useful for local experiments. None is required.
 
@@ -257,7 +260,7 @@ A deploy replaces only the code folders it names (`control/`, `dashboard/`, `sha
 
 A field in the live file that the code does not know is kept, with a warning in the log. There is no prompt: to start over from an example, delete the live file and deploy.
 
-The first deploy has no `shipped/` copy, so it takes the example as the base and keeps every value in the live file. Where the live file is missing, a first deploy seeds it from the old paths if present: `$BANTER_PROD/control/control-plane/data/{config,registry}.json` (for a shard, `~/services/shard/registry.json`), and otherwise from the example.
+The first deploy has no `shipped/` copy, so it takes the example as the base and keeps every value in the live file. Where the live file is missing, a first deploy seeds it from `$BANTER_PROD/control/control-plane/data/{config,registry}.json` (for a shard, `~/services/shard/registry.json`) when that file exists, and otherwise from the example.
 
 Every load of `config.json` and `registry.json` also brings the file into line with its schema: missing fields get defaults, values are kept, and a value of the wrong type stops startup with a message naming the field. The control plane exits on an unreadable or invalid `config.json`. A dashboard setting is saved by changing that one field in the file on disk, so a hand edit made since startup survives. The last agent used and the last session per agent are not in `config.json`; they live in `state/state.json` and are never merged.
 
@@ -269,4 +272,4 @@ The dashboard's settings menu has a **Reload config** action, which hits `POST /
 
 The registry's `services`, `hosts`, `capabilities` and `defaults` all reload the same way — the in-memory copy is replaced from the file. A service already running keeps running as it was until you restart it; a service removed from the registry while still running is only reported, not stopped. The `shards` list is the one part reload never applies: a changed entry is reported but the running list is left as it was, so adding or removing a shard needs a restart of the control plane itself.
 
-A registry roster's `voices[]` — which voices exist and what they map to — takes effect on that reload alone, since the control plane assembles voices fresh on every request. A changed `providers` section — a new model, a changed preset list, and so on — does not: a server such as `fluid-stt` reads its provider's roster section once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. See [docs/voices-and-models.md#applying-an-edit](voices-and-models.md#applying-an-edit).
+A registry roster's `voices[]` — which voices exist and what they map to — takes effect on that reload alone, since the control plane assembles voices fresh on every request. A changed `providers` section — a new model, a changed preset list, and so on — does not: a server such as `fluid-stt` reads its provider's roster section once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. See [voices-and-models.md#applying-an-edit](voices-and-models.md#applying-an-edit).

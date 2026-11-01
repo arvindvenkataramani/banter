@@ -2,9 +2,9 @@
 
 How Banter's speech servers declare what they offer, and how to customise it. This is where you change the default voice, add or remove a voice on a model, add a voice built from reference audio, or add another model or speech server.
 
-For what every field means, see the Roster section of [docs/components/registry.md](components/registry.md#roster). This page is about editing it.
+For what every field means, see the Roster section of [docs/components/registry.md](../components/registry.md#roster). This page is about editing it.
 
-Every edit below goes in your deployed `registry.json` (`~/services/banter/registry.json`, or wherever `BANTER_PROD` points), not the `.example.json` in the repo — see the README's "Connect your speech servers" section for that distinction. A server hosted on a shard gets its roster entry in that shard's own registry instead.
+Every edit below goes in your deployed `registry.json` (`~/services/banter/registry.json`, or wherever `BANTER_PROD` points), not the `.example.json` in the repo — see [Which files to edit](install.md#which-files-to-edit) for that distinction. A server hosted on a shard gets its roster entry in that shard's own registry instead.
 
 ---
 
@@ -16,18 +16,18 @@ Each speech server's registry declares a `roster`: what it offers, and how confi
 - **A model** is one set of weights on that provider — an id, a display `name`, and the runtime's own `key` for it. A TTS model may list **preset voices**: names the model already knows, needing no recording.
 - **A roster voice** maps a voice id onto one or more `{serviceId, model, key}` links — usually a preset key, or the special key `clone` to render from a reference recording.
 
-The example registry (`control/control-plane/data/registry.example.json`) shows a roster for `fluid-tts` and `fluid-stt` as providers, used as the example throughout this page: Kokoro's 28 English presets and 28 matching roster voices (`alloy`, `heart`, `sarah`, and so on — each just a thin wrapper naming a Kokoro preset). Here is one, trimmed:
+The example registry (`control/control-plane/data/registry.example.json`) declares a roster for its two speech servers, and this page uses it as the worked example: the TTS provider `tts-kokoro` has one model, `kokoro-82m`, with 20 American English presets (`af_` and `am_` ids), and the roster has 20 matching voices (`alloy`, `heart`, `sarah`, and so on), each a thin wrapper naming one preset. The STT provider `stt-faster-whisper` has one batch model, `faster-whisper`. Here is the TTS side, trimmed:
 
 ```json
 "roster": {
   "providers": {
-    "fluid-tts": {
-      "responseFormat": "aac",
+    "tts-kokoro": {
+      "responseFormat": "wav",
       "ttsModels": [
         {
-          "id": "kokoro-ane",
-          "name": "Kokoro 82M (ANE)",
-          "key": "kokoro-ane",
+          "id": "kokoro-82m",
+          "name": "Kokoro 82M",
+          "key": "kokoro-82m",
           "presetVoices": [
             { "id": "af_heart", "name": "Heart" },
             { "id": "af_alloy", "name": "Alloy" }
@@ -41,7 +41,7 @@ The example registry (`control/control-plane/data/registry.example.json`) shows 
       "id": "heart",
       "name": "Heart",
       "models": [
-        { "serviceId": "fluid-tts", "model": "kokoro-ane", "key": "af_heart" }
+        { "serviceId": "tts-kokoro", "model": "kokoro-82m", "key": "af_heart" }
       ]
     }
   ]
@@ -52,7 +52,7 @@ The example registry (`control/control-plane/data/registry.example.json`) shows 
 
 ```json
 "tts": {
-  "selection": { "serviceId": "fluid-tts", "model": "kokoro-ane", "voice": "heart", "speed": 1 }
+  "selection": { "serviceId": "tts-kokoro", "model": "kokoro-82m", "voice": "heart", "speed": 1 }
 }
 ```
 
@@ -69,7 +69,7 @@ Note also that a hand edit to `config.json` isn't checked against the roster the
 Edit `voice.tts.selection.voice` in `config.json` to another roster voice id (or a bare preset id nothing else claims):
 
 ```json
-"selection": { "serviceId": "fluid-tts", "model": "kokoro-ane", "voice": "sarah", "speed": 1 }
+"selection": { "serviceId": "tts-kokoro", "model": "kokoro-82m", "voice": "sarah", "speed": 1 }
 ```
 
 Reload for it to take effect (see [Applying an edit](#applying-an-edit) below) — this is a `config.json` change, not a roster change, so no restart is needed.
@@ -78,14 +78,14 @@ Reload for it to take effect (see [Applying an edit](#applying-an-edit) below) �
 
 ## Adding or removing a voice on an existing model
 
-To add another Kokoro preset as a roster voice, append to `roster.voices` in the registry:
+To give a preset a roster voice, append to `roster.voices` in the registry. The example roster already wraps all 20 of its presets, so this is the entry for `nova` (the shape to use after removing one, or for a preset you add to the model's `presetVoices`):
 
 ```json
 {
   "id": "nova",
   "name": "Nova",
   "models": [
-    { "serviceId": "fluid-tts", "model": "kokoro-ane", "key": "af_nova" }
+    { "serviceId": "tts-kokoro", "model": "kokoro-82m", "key": "af_nova" }
   ]
 }
 ```
@@ -100,24 +100,24 @@ A `voices[]`-only edit (adding, renaming, or removing a roster voice against pre
 
 ## Adding a voice with reference audio
 
-Supported: a roster voice's model link can use the key `clone` instead of a preset id, which tells the model to render from a reference recording rather than a name it already knows. Declare the recording under the voice's `references` array:
+Supported by models that declare it: a roster voice's model link can use the key `clone` instead of a preset id, which tells the model to render from a reference recording rather than a name it already knows. Declare the recording under the voice's `references` array:
 
 ```json
 {
   "id": "custom-voice",
   "name": "Custom Voice",
   "references": [
-    { "audio": "~/services/fluid/refs/custom-voice.wav", "durationS": 8.2, "sampleRate": 24000 }
+    { "audio": "~/refs/custom-voice.wav", "durationS": 8.2, "sampleRate": 24000 }
   ],
   "models": [
-    { "serviceId": "fluid-tts", "model": "pocket-tts", "key": "clone" }
+    { "serviceId": "<service id>", "model": "<model id>", "key": "clone" }
   ]
 }
 ```
 
-`audio` is a path the TTS server resolves on its own machine (fluid-tts expands a leading `~`). `durationS` and `sampleRate` are declared facts about the recording, not probed from the file at load — if they're wrong, validation and rendering both trust the wrong numbers. `text` is optional and only needed if the model requires a transcript.
+`audio` is a path the TTS server resolves on its own machine, and whether it expands a leading `~` is up to the server. `durationS` and `sampleRate` are declared facts about the recording, not probed from the file at load; if they are wrong, validation and rendering both trust the wrong numbers. `text` is optional and only needed if the model requires a transcript.
 
-The model must declare `cloning.available: true`, and at least one reference must meet what it requires — `cloning.requiresText`, `minDurationS`, `maxDurationS`, `sampleRate`. In the example roster, `pocket-tts` clones without requiring text; `luxtts` requires a transcript, so a reference used for it needs `text` set. A voice with no reference meeting its model's requirements fails at load, naming both.
+The model must declare `cloning.available: true`, and at least one reference must meet what it requires: `cloning.requiresText`, `minDurationS`, `maxDurationS`, `sampleRate`. A voice with no reference meeting its model's requirements fails at load, naming both. The example roster declares no cloning model. [`services/fluid`](../../services/fluid/README.md#voices-from-reference-audio) has a worked example with models that clone.
 
 A voice can mix a preset link on one model and a `clone` link on another — the same voice, rendered differently depending on which model speaks it.
 
@@ -127,7 +127,7 @@ A voice can mix a preset link on one model and a `clone` link on another — the
 
 **Another model on an existing provider:** append to that provider's `ttsModels` or `sttModels` in the registry. A TTS model needs `id`, `name`, `key`, and (if it can clone) a `cloning` block; preset voices go in `presetVoices`. An STT model needs `id`, `name`, `key`, and `kind` (`"batch"`, `"streaming"`, or `"both"`).
 
-**Another speech server:** it has to answer the routes in [speech-server-api.md](speech-server-api.md). Add a `services` entry for it — capability `tts` or `stt`, its own host, port and health path — the same as any other service (see [configuration.md](configuration.md#adding-a-service)). Then add a `roster.providers` entry keyed by that service's id, with at least one model:
+**Another speech server:** it has to answer the routes in [speech-server-api.md](../speech-server-api.md). Add a `services` entry for it — capability `tts` or `stt`, its own host, port and health path — the same as any other service (see [configuration.md](configuration.md#adding-a-service)). Then add a `roster.providers` entry keyed by that service's id, with at least one model:
 
 ```json
 "services": [
@@ -169,7 +169,7 @@ For a server Banter didn't build, the roster is Banter's claim about what that s
 ## Applying an edit
 
 1. `POST /api/config/reload` on the control plane (this also re-reads the registry and, on a multi-node setup, reloads and re-polls every shard in one call).
-2. If the response's `warnings` names a `provider-changed` warning for a service, restart that service: `POST /api/services/<id>/restart`, or `scripts/service-control.sh restart <service>` as a backup path. A server such as `fluid-stt` or `fluid-tts` reads its roster section once, at startup, so a changed provider (a new model, a changed `presetVoices` list, and so on) only takes effect after the restart.
+2. If the response's `warnings` names a `provider-changed` warning for a service, restart that service: `POST /api/services/<id>/restart`, or `scripts/service-control.sh restart <service>` as a backup path. A server that reads its roster section once, at startup (the fluid servers do), only sees a changed provider (a new model, a changed `presetVoices` list, and so on) after the restart.
 
 A `voices[]`-only change never triggers that warning and needs no restart — the assembled voice list is rebuilt on every reload.
 
@@ -179,4 +179,4 @@ A `voices[]`-only change never triggers that warning and needs no restart — th
 
 A TTS model id must be unique within a single registry — the registry fails to load if two providers in the same file declare the same id. Across nodes it's softer but still enforced: if the control plane and a shard both declare a model with the same id, the assembler excludes that id from *both* nodes' providers and reports the collision, rather than picking a silent winner. Voice ids merge instead of colliding — the same voice id on two nodes becomes one voice with links from both, using the first-seen name; if the names differ, that's reported too.
 
-This matters when you move a speech server from the control plane onto a shard. The two example registries declare the same fluid services and model ids (`kokoro-ane`, `pocket-tts`, and so on), so a two-machine registry that keeps both copies collides. Keep each service, with its `roster.providers` and `roster.voices` entries, in the registry of the one node that runs it: remove them from the other. Otherwise every one of those model ids collides with itself across the two nodes and disappears from both.
+This matters when you move a speech server from the control plane onto a shard. The two example registries declare the same speech services and model ids (`tts-kokoro` with `kokoro-82m`, and `stt-faster-whisper` with `faster-whisper`), so a two-machine registry that keeps both copies collides. Keep each service, with its `roster.providers` and `roster.voices` entries, in the registry of the one node that runs it: remove them from the other. Otherwise every one of those model ids collides with itself across the two nodes and disappears from both.

@@ -104,8 +104,8 @@ Banter defaults to plain `http` and needs no particular network: machines on a
 LAN or a single machine work as they are. `https` is optional, and voice on a
 phone needs it, since browsers grant the microphone only to a secure page
 (`https`, or `localhost`). [Tailscale](https://tailscale.com/) with
-`tailscale serve` is the recommended way to get `https` without managing
-certificates; see [../remote-access.md](../remote-access.md).
+`tailscale serve` is one way to get `https` without managing
+certificates; see [../setup/remote-access.md](../setup/remote-access.md).
 
 A service's endpoint is derived at load time from its host, its port, and how it
 is exposed:
@@ -145,7 +145,7 @@ the repo's examples into them (see [../design/live-config.md](../design/live-con
 
 A normal run needs no environment variables. Every runtime setting has an
 environment override, but the files are the source of truth. See the
-configuration reference in the README.
+configuration reference in [../setup/configuration.md](../setup/configuration.md).
 
 ---
 
@@ -180,7 +180,8 @@ session model, and the streaming event shapes. It is the most complete
 description of what banter actually requires from an agent backend, and the
 right starting point for replacing it with something else.
 
-For operating it: the README's configuration and deployment sections,
+For operating it: [../setup/install.md](../setup/install.md),
+[../setup/configuration.md](../setup/configuration.md),
 [../OPERATIONS.md](../OPERATIONS.md), then
 [components/health-checker.md](../components/health-checker.md) and
 [components/event-log.md](../components/event-log.md).

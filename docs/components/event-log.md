@@ -15,8 +15,8 @@ The event log records what happened. Current state is always derived from it —
 One JSON object per line (`events.jsonl`). Append-only — nothing is ever edited or deleted.
 
 ```jsonl
-{"id":"evt_abc123","timestamp":"2026-03-25T10:00:00.000Z","type":"service.up","subjectType":"service","subjectId":"embedding","data":{"latencyMs":12},"actor":"system"}
-{"id":"evt_def456","timestamp":"2026-03-25T10:05:00.000Z","type":"service.down","subjectType":"service","subjectId":"tts-piper","data":{"reason":"connection_refused"},"actor":"system"}
+{"id":"evt_abc123","timestamp":"2026-03-25T10:00:00.000Z","type":"service.up","subjectType":"service","subjectId":"stt-faster-whisper","data":{"latencyMs":12},"actor":"system"}
+{"id":"evt_def456","timestamp":"2026-03-25T10:05:00.000Z","type":"service.down","subjectType":"service","subjectId":"tts-kokoro","data":{"reason":"connection_refused"},"actor":"system"}
 ```
 
 Fields:

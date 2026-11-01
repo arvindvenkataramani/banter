@@ -99,7 +99,7 @@ The frontend polls the API on an interval rather than using a WebSocket or SSE â
 
 ## PWA
 
-Installable. Each major route (`/chat`, `/services`) saveable as a separate icon. A browser installs the PWA and exposes the microphone only on a secure origin, so a LAN install over plain http gets neither; [`../remote-access.md`](../remote-access.md) covers serving over https with Tailscale.
+Installable. Each major route (`/chat`, `/services`) saveable as a separate icon. A browser installs the PWA and exposes the microphone only on a secure origin, so a LAN install over plain http gets neither; [`../setup/remote-access.md`](../setup/remote-access.md) covers serving over https with Tailscale.
 
 ---
 

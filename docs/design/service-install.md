@@ -55,7 +55,7 @@ Installing runs only as a script on the machine. The control API has no authenti
 
 ## Out of scope
 
-**Python services.** Installing one means syncing dependencies into its venv, not placing artifacts, and it stays the manual procedure in [`linux-speech-servers.md`](../linux-speech-servers.md). They still get `logs/` and plists from the same script.
+**Python services.** Installing one means syncing dependencies into its venv, not placing artifacts, and it stays the manual procedure in [`../setup/linux-speech-servers.md`](../setup/linux-speech-servers.md). They still get `logs/` and plists from the same script.
 
 
 ## Deploying from `main` deploys the shard only

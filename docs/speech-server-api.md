@@ -15,7 +15,7 @@ A usable server needs only:
 
 Everything streaming-specific is optional. The dashboard only uses the STT model-load calls and the streaming socket when `voice.stt.model` is set; with it unset, it transcribes in batch and never calls them.
 
-A server that answers all of this still isn't selectable until the registry's `roster` section declares its models: see [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server).
+A server that answers all of this still isn't selectable until the registry's `roster` section declares its models: see [setup/voices-and-models.md](setup/voices-and-models.md#adding-another-model-or-another-speech-server).
 
 ## Every server
 

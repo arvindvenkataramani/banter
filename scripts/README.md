@@ -8,7 +8,7 @@ Nothing here is required to run banter — `bun run control-dev` needs none of i
 
 | Script | What it does |
 |---|---|
-| `install.sh` | Everything in the README's Install section up through a running control plane: dependencies, model assets, config (prompts for the OpenClaw gateway URL/token, or reads `OPENCLAW_GATEWAY_URL`/`OPENCLAW_GATEWAY_TOKEN`), and deploying as a service on Linux or macOS. Writes `registry.json` and `config.json` at the top of `$BANTER_PROD` from the example files, filling in the gateway URL and token. Registering speech services is a separate step; see the README. |
+| `install.sh` | Everything in [docs/setup/install.md](../docs/setup/install.md) up through a running control plane: dependencies, model assets, config (prompts for the OpenClaw gateway URL/token, or reads `OPENCLAW_GATEWAY_URL`/`OPENCLAW_GATEWAY_TOKEN`), and deploying as a service on Linux or macOS. Writes `registry.json` and `config.json` at the top of `$BANTER_PROD` from the example files, filling in the gateway URL and token and every `*_CORS_ORIGINS` variable. It installs no speech servers and no Python packages, and builds nothing under `services/`; see [docs/setup/speech-servers.md](../docs/setup/speech-servers.md). |
 
 ## Control plane
 
@@ -32,7 +32,7 @@ Two of these are called by the machinery rather than by you:
 
 ## Worker machine (shard)
 
-Run these on the worker. See [../docs/shard-setup.md](../docs/shard-setup.md).
+Run these on the worker. See [../docs/setup/shard.md](../docs/setup/shard.md).
 
 | Script | What it does |
 |---|---|
@@ -42,6 +42,15 @@ Run these on the worker. See [../docs/shard-setup.md](../docs/shard-setup.md).
 | `shard-uninstall.sh` | Removes the agent and the deployment folder `$BANTER_SHARD_PROD`, including the live `registry.json` and `state/`. |
 | `shard-dev.sh` | Development: the shard alone, API-only, with `--watch`. Stops the production agent while it runs and restores it on exit. |
 | `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by the shard's live registry (the one the shard reads, `registry.json` at the top of `$BANTER_SHARD_PROD`; fails if there is none) and the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
+
+## Fluid speech servers (Apple Silicon)
+
+The Swift servers in `services/fluid` are built and checked by scripts of their own. `install.sh` and `control-deploy.sh` do not build them. Their registry entries are in `services/fluid/registry.fluid.example.json`; see [services/fluid/README.md](../services/fluid/README.md#registering-them).
+
+| Script | What it does |
+|---|---|
+| `fluid-build.sh` | Builds `fluid-stt.app` and `fluid-tts.app` from `services/fluid` after checking Apple Silicon, macOS 15 or later, a Swift 6 toolchain and `libopus`. Builds only; `control-install-services.sh` or `shard-install-services.sh` installs the result per each entry's `ops.install`. |
+| `fluid-smoke.sh` | Checks `fluid-stt` as built, installed and running, against a throwaway deploy in a scratch directory under a throwaway bundle identifier, so it never touches a running server. Its registry comes from `services/fluid/registry.fluid.example.json`. `fluid-smoke-listen.ts` is its `/listen` check. |
 
 ## Diagnostics and safety
 
@@ -68,4 +77,4 @@ A non-default `BANTER_PROD` under the default `BANTER_UNIT` is refused: every st
 
 A unit file cannot expand a shell variable, so `ops/systemd/banter.service.template` is rendered at install time with the deploy path substituted in.
 
-See [../docs/configuration.md](../docs/configuration.md#deployment) for the rest.
+See [../docs/setup/configuration.md](../docs/setup/configuration.md#deployment) for the rest.

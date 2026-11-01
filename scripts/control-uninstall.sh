@@ -29,8 +29,8 @@ if command -v systemctl >/dev/null 2>&1; then
   rm -f "$SYSTEMD_USER_DIR/$BANTER_UNIT.service"
   systemctl --user daemon-reload
 else
-  # No systemd — the control-runner.sh fallback path from the README's macOS
-  # section. There is no service to stop, and control-runner.sh execs into bun
+  # No systemd — the control-runner.sh fallback path from the macOS
+  # section of docs/setup/install.md. There is no service to stop, and control-runner.sh execs into bun
   # (replacing itself), so the running process is just "bun run src/index.ts" —
   # too generic a command line to pkill -f safely; it could match an unrelated
   # bun process. Its listening port is unique, so find it by that instead.

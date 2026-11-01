@@ -140,7 +140,7 @@ Text → TTS path:
 3. `streaming-backend.ts` POSTs each chunk to the TTS endpoint
 4. `PlaybackEngine` queues and plays audio chunks in order
 
-Status: implemented. Which STT and TTS services exist is whatever the registry lists; see [../models.md](../models.md) for adapters you can register.
+Status: implemented. Which STT and TTS services exist is whatever the registry lists; see [../setup/models.md](../setup/models.md) for adapters you can register.
 
 ### Streamed audio seams
 

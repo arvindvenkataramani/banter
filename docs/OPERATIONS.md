@@ -8,7 +8,7 @@ Deployment and development workflows for the control plane (systemd, Linux) and 
 
 **Consequence for operations:** starting and stopping is typically an all-or-nothing action per host. You start the control plane and its dependent services together; you stop them together. Individual service start and stop through the API exists for runtime management (demand-loading, recovery), not for infrastructure bring-up or tear-down.
 
-**Tailscale Serve, where used, is part of the service lifecycle.** A service whose registry entry sets `tailscaleServe` is only reachable over https through the Serve binding. Starting such a service without setting up its binding is incomplete, and stopping it must tear the binding down. The start and stop scripts do this; do not bypass them. Tailscale is optional: without it, endpoints are plain `http` and nothing here that mentions Serve applies. See [remote-access.md](remote-access.md).
+**Tailscale Serve, where used, is part of the service lifecycle.** A service whose registry entry sets `tailscaleServe` is only reachable over https through the Serve binding. Starting such a service without setting up its binding is incomplete, and stopping it must tear the binding down. The start and stop scripts do this; do not bypass them. Tailscale is optional: without it, endpoints are plain `http` and nothing here that mentions Serve applies. See [setup/remote-access.md](setup/remote-access.md).
 
 ## Prerequisites
 
@@ -236,11 +236,11 @@ tailscale serve status
 bash scripts/control-start.sh
 ```
 
-Voice on a phone also needs a secure page (https, or localhost); a plain `http://<lan-ip>` page can chat by text but cannot use the microphone. See [remote-access.md](remote-access.md#why-https).
+Voice on a phone also needs a secure page (https, or localhost); a plain `http://<lan-ip>` page can chat by text but cannot use the microphone. See [setup/remote-access.md](setup/remote-access.md#why-https).
 
 ### Voice fails on a healthy service
 
-Almost always CORS: the browser calls speech servers directly, so each needs the dashboard's origin in its allowlist, and the gateway needs it in `gateway.controlUi.allowedOrigins`. See [configuration.md](configuration.md#cors).
+Almost always CORS: the browser calls speech servers directly, so each needs the dashboard's origin in its allowlist, and the gateway needs it in `gateway.controlUi.allowedOrigins`. See [setup/configuration.md](setup/configuration.md#cors).
 
 ### Service won't stop, or a deploy is stuck at "Stopping"
 
@@ -269,12 +269,12 @@ Both default to `~/services/banter/registry.json`. The repo's `control/*/data/re
 
 ## Adding a new service
 
-1. Add an entry to the node's `registry.json` with `id`, `capabilityId`, `hostId`, `runner`, `network` (`port` and `healthPath`) and `lifecycle`. See [configuration.md](configuration.md#adding-a-service).
+1. Add an entry to the node's `registry.json` with `id`, `capabilityId`, `hostId`, `runner`, `network` (`port` and `healthPath`) and `lifecycle`. See [setup/configuration.md](setup/configuration.md#adding-a-service).
 2. Install the service on the node that runs it.
 3. For a `process` runner, write `main` so it starts the process directly (it must exec, not background), with the port as `{port}`.
 4. If the service needs Tailscale Serve, set `network.tailscaleServe`; otherwise the service is reached over its plain endpoint.
 5. If it is built from this repo, declare its built files under `ops.install.artifacts` and give it a build script; see [Installing a compiled service](#installing-a-compiled-service).
-6. Reload the registry (`POST /api/config/reload`) and, for a roster change, restart the provider. See [voices-and-models.md](voices-and-models.md#applying-an-edit).
+6. Reload the registry (`POST /api/config/reload`) and, for a roster change, restart the provider. See [setup/voices-and-models.md](setup/voices-and-models.md#applying-an-edit).
 
 ## Event log
 

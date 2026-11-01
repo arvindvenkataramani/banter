@@ -16,7 +16,7 @@ It does not contain runtime state. No health, no timestamps, no "last seen." Tho
 
 Each host owns its own registry as a static file local to that machine. A control host's registry describes only that host's services. A worker host's registry lives on the worker host, owned by the ControlShard running there.
 
-A shard is optional — a single-machine install has no shard and no cross-host concept at all (see [`docs/shard-setup.md`](../shard-setup.md)). When one or more shards are in play, the control plane assembles the full cross-host picture at runtime from shard reports. No config file spans machines. This is intentional:
+A shard is optional — a single-machine install has no shard and no cross-host concept at all (see [`../setup/shard.md`](../setup/shard.md)). When one or more shards are in play, the control plane assembles the full cross-host picture at runtime from shard reports. No config file spans machines. This is intentional:
 
 - **No drift** — each host's config is authoritative only for itself
 - **No single point of failure** — hosts are self-contained; the control host going down doesn't lose a worker host's config
@@ -60,7 +60,7 @@ The `roster` section declares what this node's model services offer: `providers`
 
 Every node builds its roster from its own registry. The shard serves its roster at `GET /api/roster`; the control plane polls it alongside the shard's services and assembles every node's roster with its own. Voices merge by id across nodes; a model id declared on two nodes is excluded from both and reported as a collision, since a selection names a model by id alone and a silent winner would leave one node's copy unreachable without saying so.
 
-A server that reads its provider's roster section at startup (as `fluid-stt` and `fluid-tts` do, with `--registry {registry} --provider <id>`) sees an edit only when it restarts; `POST /api/config/reload` re-reads the registry but names the affected provider in a warning rather than restarting it for you. See [docs/voices-and-models.md](../voices-and-models.md) for how to edit the roster and apply the change.
+A server that reads its provider's roster section at startup (as `fluid-stt` and `fluid-tts` do, with `--registry {registry} --provider <id>`) sees an edit only when it restarts; `POST /api/config/reload` re-reads the registry but names the affected provider in a warning rather than restarting it for you. See [../setup/voices-and-models.md](../setup/voices-and-models.md) for how to edit the roster and apply the change.
 
 Among the provider fields, `sessions: true` declares that the runtime's streaming socket understands session ids and take-over — the same way `responseFormat` declares the audio format it returns. It applies to both STT and TTS providers, and `GET /api/voice` carries it through to each `stt.options` entry and each TTS provider so the dashboard can tell which services support taking over a held session.
 
@@ -115,8 +115,8 @@ Declares how the registry's lifecycle module manages this service. Commands are 
 ```json
 "runner": {
   "type": "systemd",
-  "unit": "embedding",
-  "unitFile": "ops/systemd/embedding.service"
+  "unit": "my-service",
+  "unitFile": "ops/systemd/my-service.service"
 }
 ```
 
@@ -199,7 +199,7 @@ mkdir -p ~/services/banter
 cp control/control-plane/data/registry.example.json ~/services/banter/registry.json
 ```
 
-You edit the live `registry.json` with your own hosts, capabilities, and services. See [`docs/configuration.md`](../configuration.md) and [`docs/models.md`](../models.md) for example service entries and [`docs/shard-setup.md`](../shard-setup.md) for the worker-host registry.
+You edit the live `registry.json` with your own hosts, capabilities, and services. See [`../setup/configuration.md`](../setup/configuration.md) and [`../setup/models.md`](../setup/models.md) for example service entries and [`../setup/shard.md`](../setup/shard.md) for the worker-host registry.
 
 The registry is loaded into memory once at startup. All reads go to the in-memory copy. Mutations update the in-memory copy and then write to disk **atomically** (write to temp file, rename into place).
 

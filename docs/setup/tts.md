@@ -1,23 +1,80 @@
 # TTS setup
 
-Registry and config snippets for each text-to-speech model in [models.md](models.md#text-to-speech-models). Kokoro is covered in that page's [Quick start](models.md#quick-start) instead of here.
+Registry and config snippets for each text-to-speech model in [models.md](models.md#text-to-speech-models).
 
-Every snippet assumes the service has already been installed: `requirements.txt` (this repo's Python adapters), `pip install mlx-audio` (Pocket TTS), or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
+Every snippet assumes the service has already been installed, following its adapter's README: [`tts/kokoro`](../../services/tts/kokoro/README.md) and [`tts/neutts-air`](../../services/tts/neutts-air/README.md) (this repo's Python adapters), `pip install mlx-audio` (Pocket TTS), or `scripts/fluid-build.sh` (fluid). See [configuration.md](configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
 
 Each `roster.providers` snippet below is a new key to add to that object — a new key in that object, not replacing the providers already there.
 
 ---
 
+## Kokoro
+
+This repo's adapter, [`services/tts/kokoro`](../../services/tts/kokoro/README.md): the PyTorch `KPipeline` behind an OpenAI-compatible server, on CPU or a GPU, on Linux and macOS. The example registry has an entry in this shape.
+
+Install it by following the adapter's README: copy `server.py` and `requirements.txt` into the service's working directory, create the `logs/` folder the control plane writes to, and build the virtual environment there.
+
+```json
+{
+  "id": "tts-kokoro",
+  "name": "Kokoro TTS",
+  "capabilityId": "tts",
+  "hostId": "<your-host-id>",
+  "permissions": { "enabled": true, "protected": false },
+  "runner": {
+    "type": "process",
+    "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
+  },
+  "ops": {
+    "env": {
+      "workingDirectory": "~/services/tts/kokoro",
+      "variables": { "KOKORO_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173" }
+    }
+  },
+  "network": { "port": 8002, "healthPath": "/health" },
+  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "idleUnload": true, "idleTimeout": 1800000, "startupTime": 90000, "restartOnCrash": true, "maxRestarts": 3 }
+}
+```
+
+`KOKORO_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. `startupTime` covers importing PyTorch, which happens before the server listens.
+
+The server always answers `audio/wav`, so the roster provider sets `"responseFormat": "wav"`. Left absent it defaults to `mp3`, and the dashboard would try to decode wav bytes as mp3. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. A `roster.providers` entry, as in the example registry, trimmed:
+
+```json
+"roster": {
+  "providers": {
+    "tts-kokoro": {
+      "responseFormat": "wav",
+      "ttsModels": [
+        {
+          "id": "kokoro-82m",
+          "name": "Kokoro 82M",
+          "key": "kokoro-82m",
+          "presetVoices": [{ "id": "af_heart", "name": "Heart" }]
+        }
+      ]
+    }
+  }
+}
+```
+
+Point `voice.tts.selection` at it in `config.json`:
+
+```json
+"voice": {
+  "tts": {
+    "selection": { "serviceId": "tts-kokoro", "model": "kokoro-82m", "voice": "heart" }
+  }
+}
+```
+
+The weights download to `~/.cache/huggingface` the first time the pipeline loads. [voices-and-models.md](voices-and-models.md) shows how to add more presets as roster voices.
+
+---
+
 ## NeuTTS Air
 
-Install:
-
-```bash
-cp -r <banter>/services/tts/neutts-air ~/services/tts/neutts-air
-cd ~/services/tts/neutts-air
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-# then install NeuTTS itself from the patched clone in services/tts/neutts-air/README.md (stock upstream rejects max_context)
-```
+This repo's adapter, [`services/tts/neutts-air`](../../services/tts/neutts-air/README.md). Install it by following that README: it copies `server.py` and `voices.example.yaml` into the working directory, creates `logs/` and a virtual environment, and installs NeuTTS itself from a patched clone (stock upstream rejects `max_context`).
 
 Add this entry to `registry.json`'s `services`:
 
@@ -32,7 +89,12 @@ Add this entry to `registry.json`'s `services`:
     "type": "process",
     "main": ".venv/bin/uvicorn server:app --host 127.0.0.1 --port {port}"
   },
-  "ops": { "env": { "workingDirectory": "~/services/tts/neutts-air" } },
+  "ops": {
+    "env": {
+      "workingDirectory": "~/services/tts/neutts-air",
+      "variables": { "NEUTTS_CORS_ORIGINS": "http://localhost:4200,http://localhost:5173" }
+    }
+  },
   "network": { "port": 8004, "healthPath": "/health" },
   "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
 }
@@ -58,7 +120,7 @@ Then add a `roster.providers` entry for it in `registry.json`:
 }
 ```
 
-The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. NeuTTS Air's CORS is wide open by default (`allow_origins=["*"]`), as Kokoro's is — there's no environment variable to set for either. The dashboard sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
+The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. The dashboard sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
 
 Point `voice.tts.selection` at it in `config.json`:
 
@@ -143,6 +205,12 @@ Point `voice.tts.selection` at whichever preset you want by default:
 `mlx-audio` has no dedicated health endpoint; `GET /v1/models` doubles as one, returning 2xx once it's actually ready to serve. `--allowed-origins` is `mlx-audio`'s own CORS flag — pass the dashboard's origin the same as any other service. Any other model `mlx-audio` supports can be added as another entry in the same provider's `ttsModels` array; no second registry entry or process needed.
 
 `responseFormat` in the roster entry above is left unset, defaulting to `mp3` — the dashboard sends that as the request's `response_format` and decodes the response as that format, so this only works if `mlx-audio` honors the field. Set `responseFormat` explicitly to `"wav"` if you'd rather it request wav.
+
+---
+
+## fluid-tts
+
+An Apple Silicon option: Pocket TTS, Kokoro on the Neural Engine, and LuxTTS through `services/fluid`, with streaming audio. Its entry and roster are in `services/fluid/registry.fluid.example.json`, which merges into your registry by appending ([speech-servers.md](speech-servers.md#fluid-an-apple-silicon-option)). [`services/fluid`](../../services/fluid/README.md) covers what the server offers, including voices built from reference audio.
 
 ---
 

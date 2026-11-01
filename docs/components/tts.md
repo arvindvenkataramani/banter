@@ -16,8 +16,8 @@ The repo contains these adapters, which you can register:
 
 All of them expose OpenAI-compatible `/v1/audio/speech`, so switching between
 them needs no client change. Install and registry snippets are in
-[`../tts-setup.md`](../tts-setup.md) and
-[`../linux-speech-servers.md`](../linux-speech-servers.md); the registry holds
+[`../setup/tts.md`](../setup/tts.md) and
+[`../setup/linux-speech-servers.md`](../setup/linux-speech-servers.md); the registry holds
 the service definitions, and each entry's `lifecycle` settings say whether it
 starts at boot or on first use.
 
@@ -35,7 +35,7 @@ Cloned voices go to engines that support cloning, such as Pocket-TTS or NeuTTS-A
 Preset voices come with the model. Cloned voices are conditioned on reference
 clips, held as WAV plus transcript pairs in the directory the registry's
 roster names, the same set across every cloning engine so quality is comparable
-between them. [`../voices-and-models.md`](../voices-and-models.md) describes
+between them. [`../setup/voices-and-models.md`](../setup/voices-and-models.md) describes
 how a voice, a model and a provider relate.
 
 Kokoro also carries generated voice tensors, converted to `.safetensors` and

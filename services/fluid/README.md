@@ -1,6 +1,6 @@
 # Fluid speech servers
 
-`fluid-stt` and `fluid-tts` are speech servers for a Mac: one for transcription and one for speech. Both are built from this Swift package on [FluidAudio](https://github.com/FluidInference/FluidAudio), which runs speech models through CoreML on Apple Silicon. The example registries show how to register them.
+`fluid-stt` and `fluid-tts` are speech servers for a Mac: one for transcription and one for speech. Both are built from this Swift package on [FluidAudio](https://github.com/FluidInference/FluidAudio), which runs speech models through CoreML on Apple Silicon. They are an Apple Silicon option beside the Python adapters, not part of the example registry: `registry.fluid.example.json` in this folder holds their registry entries, and [Registering them](#registering-them) shows how to merge it into yours.
 
 ## What they're for
 
@@ -15,7 +15,7 @@ Any server that meets the [speech server API](../../docs/speech-server-api.md) w
 
 The trade-offs:
 
-- Apple Silicon and macOS 15 or later only. For Linux, see [linux-speech-servers.md](../../docs/linux-speech-servers.md).
+- Apple Silicon and macOS 15 or later only. For Linux, see [linux-speech-servers.md](../../docs/setup/linux-speech-servers.md); `stt/faster-whisper` and `tts/kokoro` in this repo run there.
 - One model is resident at a time, and switching models takes around thirteen seconds.
 - A model needs code in the server before the roster can offer it; the roster only chooses among models the server already supports.
 
@@ -26,7 +26,7 @@ The trade-offs:
 | Model | Kind | Notes |
 |---|---|---|
 | `parakeet-tdt-v3` | batch | 25 European languages |
-| `parakeet-unified-0.6b` | batch and streaming | One model with two modes; the example roster's default, streaming |
+| `parakeet-unified-0.6b` | batch and streaming | One model with two modes; `registry.fluid.example.json` sets it as the provider's `defaultModel` |
 | `nemotron-streaming-en-0.6b` | streaming | English. Chunk sizes of 560, 1120 or 2240 ms trade update frequency for per-call overhead |
 
 `fluid-tts`:
@@ -34,20 +34,38 @@ The trade-offs:
 | Model | Notes |
 |---|---|
 | `pocket-tts` | Streams. Voices come from a few seconds of reference audio |
-| `kokoro-ane` | 28 preset voices, runs on the Neural Engine. The example roster's default |
+| `kokoro-ane` | 28 preset voices, runs on the Neural Engine |
 | `luxtts` | Voices from reference audio |
 
-Which models each server offers comes from the `roster` section of the registry, not from the command line. [voices-and-models.md](../../docs/voices-and-models.md) covers choosing a default, adding voices, and adding a voice from reference audio.
+Which models each server offers comes from the `roster` section of the registry, not from the command line. [voices-and-models.md](../../docs/setup/voices-and-models.md) covers choosing a default, adding voices, and the roster in general; [Voices from reference audio](#voices-from-reference-audio) below covers cloning.
 
 Model weights are not bundled. The first load of each model downloads it into `~/Library/Application Support/FluidAudio/Models/`, so that load is slow and needs a network connection.
 
+## Registering them
+
+The entries for both servers are in `registry.fluid.example.json`: two `services`, two `roster.providers` (`fluid-stt` and `fluid-tts`), and the `fluid-` prefixed `roster.voices`. It merges into your registry by appending, and nothing in it collides with the example registry, because the voice ids carry a `fluid-` prefix and the model ids (`kokoro-ane`, `pocket-tts`, `luxtts`, the Parakeet and Nemotron ids) differ from the example registry's.
+
+Set each service's `hostId` to a host in your registry while merging. Run the merge once: a second run appends the entries again. On a single machine, with the live registry at `~/services/banter/registry.json`, from the repo root:
+
+```bash
+jq --slurpfile f services/fluid/registry.fluid.example.json --arg host this-machine --arg home "$HOME" '
+  .services += ($f[0].services | map(.hostId = $host
+      | .ops.env.workingDirectory |= (if startswith("~/") then $home + .[1:] else . end)))
+  | .roster.providers += $f[0].roster.providers
+  | .roster.voices += $f[0].roster.voices' \
+  ~/services/banter/registry.json > registry.merged.json \
+  && mv registry.merged.json ~/services/banter/registry.json
+```
+
+Replace `this-machine` with your host's id. The command also expands the leading `~/` in each `ops.env.workingDirectory` to your home directory, since nothing downstream expands it. On a shard, merge into the shard's own registry and use its host id; keep each fluid entry on the one node that runs it (see [Two nodes, one model id](../../docs/setup/voices-and-models.md#two-nodes-one-model-id)).
+
+Then set `FLUID_CORS_ORIGINS` on both entries to the origins you open the dashboard from. The file carries `http://localhost:4200,http://localhost:5173`; `scripts/install.sh` fills `*_CORS_ORIGINS` only in a fresh registry it seeds, so entries merged afterwards keep what the file says. Point `config.json`'s `voice.stt` and `voice.tts.selection` at the fluid services and models to use them, and reload ([Applying an edit](../../docs/setup/voices-and-models.md#applying-an-edit)).
+
 ## Install
 
-On Apple Silicon, `scripts/install.sh` offers to build and install both servers. To do it yourself:
-
 1. **Prerequisites.** macOS 15 or later on Apple Silicon, a Swift 6 toolchain (`xcode-select --install`, or Xcode 16), and `brew install opus`.
-2. **Build:** `scripts/fluid-build.sh`. It checks the prerequisites first and names anything missing with the command to install it. The servers land in `services/fluid/.build/release/` as `fluid-stt.app` and `fluid-tts.app`.
-3. **Install:** `scripts/control-install-services.sh` on a single machine, or `scripts/shard-install-services.sh` on a [shard](../../docs/shard-setup.md). Each copies the app bundles to `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, as each registry entry's `ops.install` declares. A server that is running is stopped for the swap and started again, and a bundle that hasn't changed is left alone.
+2. **Build:** `scripts/fluid-build.sh`. It checks the prerequisites first and names anything missing with the command to install it. The servers land in `services/fluid/.build/release/` as `fluid-stt.app` and `fluid-tts.app`. `scripts/install.sh` does not build them.
+3. **Install:** `scripts/control-install-services.sh` on a single machine, or `scripts/shard-install-services.sh` on a [shard](../../docs/setup/shard.md). Each copies the app bundles to `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, as each registry entry's `ops.install` declares. A full `scripts/control-deploy.sh` does the same. A server that is running is stopped for the swap and started again, and a bundle that hasn't changed is left alone.
 
 After a code change, run the same two scripts again.
 
@@ -66,10 +84,31 @@ fluid-tts.app/Contents/MacOS/fluid-tts --port {port} --registry {registry} --pro
 
 - `--registry` and `--provider` are required: the server reads that provider's models from the registry's `roster` section, and refuses to start if it can't find or validate them. `{registry}` is filled with the path of the registry the node loaded, so on a shard it is the shard's own `registry.json` at the top of its deployment folder.
 - `--bind local` (the default) listens on `127.0.0.1` only, which is what Tailscale Serve proxies to. `--bind all` listens on every interface over plain HTTP.
-- `FLUID_CORS_ORIGINS` (comma-separated origins) must include the dashboard's origin, since the browser calls these servers directly. `scripts/install.sh` fills it in from the registry's control-plane port.
+- `FLUID_CORS_ORIGINS` (comma-separated origins) must include the dashboard's origin, since the browser calls these servers directly. Unset, the servers send no CORS headers. See [Registering them](#registering-them) for how it is set.
 - Health is `GET /healthz`.
 
 Each server starts with no model loaded. The dashboard loads the configured model when a voice session starts. `fluid-stt` also loads one on the first request that needs it, the requested model or the roster's `defaultModel`, and releases it after `idleUnloadMs` without work (30 minutes by default).
+
+## Voices from reference audio
+
+`pocket-tts` and `luxtts` clone a voice from a recording. A roster voice's model link uses the key `clone` instead of a preset id, and the recording is declared under the voice's `references`:
+
+```json
+{
+  "id": "custom-voice",
+  "name": "Custom Voice",
+  "references": [
+    { "audio": "~/services/fluid/refs/custom-voice.wav", "durationS": 8.2, "sampleRate": 24000 }
+  ],
+  "models": [
+    { "serviceId": "fluid-tts", "model": "pocket-tts", "key": "clone" }
+  ]
+}
+```
+
+`audio` is a path `fluid-tts` resolves on its own machine, and it expands a leading `~`. `durationS` and `sampleRate` are declared facts about the recording, not probed from the file at load. `text` is a transcript of the recording; `luxtts` requires it (`cloning.requiresText`) and `pocket-tts` does not, so a reference used for `luxtts` needs `text` set. A voice with no reference meeting its model's requirements fails at load, naming both.
+
+A voice can mix a preset link on one model and a `clone` link on another, so the same voice renders differently depending on which model speaks it. [voices-and-models.md](../../docs/setup/voices-and-models.md#adding-a-voice-with-reference-audio) covers the general rules.
 
 ## More
 
