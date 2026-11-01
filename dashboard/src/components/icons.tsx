@@ -1,6 +1,8 @@
 import type { SVGProps } from 'react'
 
-export function BanterIcon(props: SVGProps<SVGSVGElement>) {
+// Accepts Phosphor's `weight` so it can stand in the nav bar beside Phosphor
+// icons, and drops it rather than writing it onto the <svg>.
+export function BanterIcon({ weight: _weight, ...props }: SVGProps<SVGSVGElement> & { weight?: string }) {
   return (
     <svg
       viewBox="0 0 48 48"
