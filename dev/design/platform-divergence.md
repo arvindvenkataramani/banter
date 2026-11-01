@@ -2,7 +2,7 @@
 
 Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why, and what should happen to each difference. Read this before porting anything from platform. Update it when a port lands or a decision below is made.
 
-Last audited: 2026-10-31, against platform `dev` at `ac32bcb` (merged to `main` as `cd91d71`) and Banter `c5b01dc`, this time including `docs/`. Of 392 files present in both repos (excluding `dev/`), 157 differ: 61 are files touched by platform's nine commits since `6703915`, and the other 96 all fall into a bucket below, apart from the gaps listed under [Banter is behind](#banter-is-behind-port-from-platform). An earlier audit the same day, against `6703915`, found the ports in the table below, and they have all landed.
+Last audited: 2026-10-31, against platform `dev` at `ac32bcb` (merged to `main` as `cd91d71`) and Banter `c5b01dc`, then rechecked on 2026-11-01 against `0b16270`, which adds `b4d13ea`, `2bab179` and `0b16270`, this time including `docs/`. Of 392 files present in both repos (excluding `dev/`), 157 differ: 61 are files touched by platform's nine commits since `6703915`, and the other 96 all fall into a bucket below, apart from the gaps listed under [Banter is behind](#banter-is-behind-port-from-platform). An earlier audit the same day, against `6703915`, found the ports in the table below, and they have all landed.
 
 **Porting rubric (Arvind, 2026-10-31).** Keep adaptation to a minimum and do things the way platform does wherever possible, even when that changes how Banter works. When a difference doesn't fit a bucket cleanly, ask whether platform's form serves Banter's goals: an open-source install by other people, on Linux, on one Mac running both nodes, over plain http on a LAN. Keep Banter's form only where platform's would break one of those goals, and name the goal.
 
@@ -84,10 +84,10 @@ Found by the audit against `ac32bcb`, in porting order. Nothing here is ported y
   - Check Banter-only `endpoint-derivation.test.ts` against platform's tests.
 - **NeuTTS-Air.** `server.py` passes `max_context=2048`, which upstream `neutts` accepts only with platform's `neutts-max-context.patch`. Banter has neither the patch nor the README, so the Linux adapter fails as shipped. Port both, plus `services/tts/kokoro/README.md`.
 
-**2. Live config (`de44bd6`, `bdeef42`, SEN-139).** This is a pass of its own. Banter takes the machinery but not platform's separate live directory: config, registry and state stay inside the deployed folder (see [Decided](#decided)).
+**2. Live config (`de44bd6`, `bdeef42`, `b4d13ea`, SEN-139).** This is a pass of its own. Platform's `b4d13ea` moved the live files to the top of the deployment folder, which is where Banter decided they belong (see [Decided](#decided)), so Banter takes the layout as platform has it.
 
 - **What platform built.**
-  - Each node keeps `config.json`, `registry.json` and `state/state.json` in a live directory beside the deployed tree (`~/services/platform-live`).
+  - Each node keeps `config.json`, `registry.json`, `shipped/` and `state/state.json` at the top of its deployment folder. A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, `ops/`, `scripts/`), so it never touches them. `*_LIVE_DIR` defaults to the deployment folder.
   - Every load syncs each file to a Zod schema, with defaults and repair rules.
   - Saves change one field on disk.
   - Runtime state (`lastAgent`, `lastSessionByAgent`) leaves `config.json`.
@@ -99,15 +99,19 @@ Found by the audit against `ac32bcb`, in porting order. Nothing here is ported y
   - `{port}` and `{registry}` in `runner.main`.
   - `sync-templates.ts` and the pre-commit sync, run against Banter's example files.
   - The probe's shared token loader (`2a893cf`), pointed at the deployed config, which is where Banter's probe already reads it.
-- **Adapted to in-folder files.**
-  - **Deploy merge.** `live-config/deploy.ts` and `deploy-config.ts` merge in place: the live side is the deployed folder's own `data/` files, the base is a `shipped/` copy kept beside them, and the repo side is the example. The deploy sets these files aside before it replaces the tree and puts them back afterwards, as `deploy-preserve-config.sh` does today. Platform has none of this step, since its files are never in the tree. The merge replaces the script's compare-and-prompt and `--reset-config`. Whether `history.ts`'s git-backed history comes over is a separate choice, later.
-  - **Shard registry moves into the shard's deployed folder.** Today it sits at `~/services/shard/registry.json`, outside the folder, so it gets the same set-aside-and-merge treatment. With that, `shard-registry.sh` and `paths.ts`'s `shardRoot` give way to platform's `paths.ts` shape, `paths.test.ts` and `platform_detect_node`, pointed at the deployed folder.
+- **Also taken as platform has it**, now that the files sit in the deployment folder:
+  - The deploy merge: `live-config/deploy.ts`, `deploy-config.ts` and their tests. The repo side is Banter's example files, so an untouched placeholder never conflicts. The merge replaces `deploy-preserve-config.sh`, its compare-and-prompt and `--reset-config`.
+  - `paths.ts`, `paths.test.ts`, `platform_detect_node` and the `*_LIVE_DIR` defaults.
+  - The shard registry moves from `~/services/shard/registry.json` to the top of the shard's folder, and `shard-registry.sh` and `shardRoot` go.
+  - The first-deploy seeding from the old locations: Banter's old locations are `control/control-plane/data/` and `~/services/shard/`.
+  - Whether `history.ts`'s git-backed history comes over is a separate choice, later.
+- **One Banter case platform doesn't have: one Mac running both nodes.** `BANTER_PROD` and `BANTER_SHARD_PROD` both default to `~/services/banter` (`deploy-env.sh:34,43`). With live files at the top of the folder, the plane's `registry.json` and the shard's would be the same file, and so would `shipped/registry.json`. Platform's nodes are separate machines, so it never meets this. Recommended fix: the shard defaults to its own folder, `~/services/banter-shard`, which is what platform's per-node folders amount to. This needs Arvind's call, since it also moves the shard's code.
   - **`deploy.conf`.** It can't live inside the deployed folder, because it says where that folder is (`BANTER_PROD`). It stays in the checkout's `scripts/`, and the deploy copies it into `$PROD/scripts/`. That fixes a Banter bug: a deploy deletes `$PROD/scripts` and recopies it from the git stage, which lacks the untracked `deploy.conf`, so the deployed scripts that systemd runs fall back to defaults. Platform's `~/.config/platform/deploy.conf` stays out. `deploy-env.test.ts` comes over for precedence and the default-unit refusal, without its live-directory case.
 - **Stripped.**
   - The schema's `mediaGeneration`, `vault` and `content` blocks, and the media slot and voice fields.
   - `extraOrigins` (`schemas.ts:262`, `registry.ts:124`) and `defaultScheme`'s https default. These are Decided; hunk-merge `registry.ts`, never overwrite it.
   - The shard's job log and results in `state/`.
-  - Every `*_LIVE_DIR` variable, and the live-directory and Pi/Mac sections of the docs.
+  - The Pi/Mac sections of the docs, and the Mac's `~/Services` capital, since Banter's folders are lowercase.
 - **Renamed.** `PLATFORM_*` becomes `BANTER_*`.
 - **One commit for the rename.** `PATCH /api/gateway/defaultAgent` becomes `lastAgent`. The plane and dashboard change together:
   - `gateway-config.ts`
@@ -125,7 +129,8 @@ Found by the audit against `ac32bcb`, in porting order. Nothing here is ported y
   - `components/voice-turn-taking.md`, `components/stt.md` and `components/tts.md`.
   - `design/`: `voice-system.md`, `turn-taking.md`, `voice-floor.md`, `voice-loop-streaming-stt.md`, `voice-speech-output.md`, `voice-tone-crackle.md`, `fluid-server-streaming-and-structure.md`, `fluidserver-model-lifecycle.md`, `lifecycle-executor.md`, `config-reload.md`, `service-install.md` and `live-config.md`.
   - `services/fluid/STT.md`, and platform's `openclaw/tool-call-handling.md`.
-  - Move `dev/design/model-roster.md` to `docs/design/`, where tests cite it.
+  - Move `dev/design/model-roster.md`, `fluid-server-app-identity.md` and `fluid-stt-on-demand-load.md` to `docs/design/`, as platform did (`0b16270`), taking platform's trimmed text: it drops the one-off migration and production-edit steps.
+  - Take platform's live-path wording in `control-plane-api.md`, `control-shard.md` and `registry.md` (`2bab179`).
 - **Strip and port.**
   - `pages/voice-interface.md`, without Home and media.
   - `components/dashboard.md`, `dashboard-views.md` and `components/index.md`.
@@ -187,7 +192,7 @@ Each needs Arvind's call. Until then Banter keeps its current position.
 
 ## Decided
 
-- **Config, registry and state stay inside the deployed folder, on both nodes** (2026-11-01). Platform's live config (`bdeef42`) moved them to a sibling directory (`~/services/platform-live`) to keep its Pi/Mac trust boundary, which Banter doesn't have. Banter doesn't want a second set of config files outside the install. It takes live config's schemas, sync, repair rules, state split and deploy merge, with the merge running on the files in the deployed folder. The shard registry moves into the shard's folder from `~/services/shard/`. `deploy.conf`, which names the folder, stays in the checkout, and a deploy copies it in. The control port is unchanged: scripts read it from the registry's `control` entry, as platform's now do, and `BANTER_CONTROL_PORT` overrides it, as `CONTROL_PORT` does on platform.
+- **Config, registry and state stay inside the deployed folder, on both nodes** (2026-11-01). Banter doesn't want a second set of config files outside the install. Platform's `bdeef42` had put them in a sibling directory; its `b4d13ea` brought them back to the top of the deployment folder, so Banter and platform agree. The shard registry moves into the shard's folder from `~/services/shard/`. `deploy.conf`, which names the folder, stays in the checkout, and a deploy copies it in. The control port is unchanged: scripts read it from the registry's `control` entry, as platform's now do, and `BANTER_CONTROL_PORT` overrides it, as `CONTROL_PORT` does on platform.
 
 - **Banter keeps http as its default scheme, and does not take platform's origin rule** (2026-10-31). Platform defaults to https except on loopback, because it assumes a tailnet, and its SEN-143 work (`5e5fb7d`, `811bb28`, `dbeb9ee`) builds on that: browsers reach Mac services through the shard's `/svc/<id>/` route (`forward.ts`), every route refuses a page that isn't https unless the registry's `extraOrigins` lists it (`origin.ts`), and the speech servers bind loopback with no CORS lists. Banter keeps http so a LAN or plain-IP install works without Tailscale, and documents why https is safer and how Tailscale provides it. `forward.ts`, `origin.ts`, `extraOrigins`, the `/svc/` endpoint rewrite, whisper's loopback bind and the matching test cases stay out.
 - **The PyTorch Kokoro and NeuTTS-Air adapters stay, for Linux** (2026-10-31). Platform retired both (`88b59dd`) because Kokoro runs on `fluid-tts` on a Mac; Banter keeps them as the Linux options.

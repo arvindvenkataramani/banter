@@ -24,7 +24,7 @@ Platform took these in `fd9920e` and `ac32bcb`. Where platform's form differs, B
 - Dev-mode port overrides and `lsof`/`curl` fallbacks.
 - The install scripts targeting localhost and guarding `systemctl`.
 
-`shard-registry.sh` is no longer offered. Platform defines the shard registry's path once in `deploy-env.sh`, which solves the same problem. Banter is moving its shard registry into the deployed folder; platform keeps its own in a live directory beside it.
+`shard-registry.sh` is no longer offered. Platform defines the shard registry's path once in `deploy-env.sh`, which solves the same problem. Both now keep the shard registry at the top of the shard's deployment folder.
 
 ## Scripts
 
