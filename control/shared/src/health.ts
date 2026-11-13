@@ -5,7 +5,7 @@ import type { Service, Registry } from "../../../shared/types";
 interface CheckOpts {
   bypassThreshold?: boolean;
   timeoutMs?: number;
-  localHostId?: string;  // hostId of the node running this check; enables localhost fallback for local services
+  routeUrl?: string;      // the service's Tailscale address, from tailnetRouteUrl; the route is checked only when given
   runFn?: RunFn;          // required for services with a managed runner (runs healthCmd)
 }
 
@@ -34,7 +34,9 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    // A pooled connection can outlive the service behind it: Tailscale Serve
+    // keeps answering on an open connection after its route is removed.
+    const response = await fetch(url, { signal: controller.signal, keepalive: false });
     clearTimeout(timer);
     return response;
   } catch (err) {
@@ -43,6 +45,36 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   }
 }
 
+/**
+ * The Tailscale address of a service behind Tailscale Serve, on its host's
+ * tailnet name. Undefined for a service with no route.
+ */
+export function tailnetRouteUrl(registry: Registry, service: Service): string | undefined {
+  if (!service.network.tailscaleServe || !service.network.port) return undefined;
+  const hostname = registry.hosts.find(h => h.id === service.hostId)?.hostname;
+  if (!hostname) return undefined;
+  return `https://${hostname}:${service.network.port}${service.network.healthPath}`;
+}
+
+type Probe = { status: number } | { error: string; timedOut: boolean };
+
+async function probe(url: string, timeoutMs: number): Promise<Probe> {
+  try {
+    return { status: (await fetchWithTimeout(url, timeoutMs)).status };
+  } catch (err: unknown) {
+    const timedOut = err instanceof Error && err.name === "AbortError";
+    return { error: timedOut ? "timeout" : (err instanceof Error ? err.message : String(err)), timedOut };
+  }
+}
+
+/**
+ * Checks a service on the node it runs on. The process is asked first, and
+ * only its answer decides whether the service is up: Tailscale Serve answers
+ * on its own (a 404 on a stale connection, a 502 with nothing behind it), so a
+ * response at the Tailscale address proves nothing about the process. For a
+ * service behind Serve, the route is then asked, and works when it relays the
+ * status the process gave; anything else is degraded.
+ */
 export async function checkService(
   service: Service,
   eventsPath: string,
@@ -51,99 +83,54 @@ export async function checkService(
   if (!service.permissions.enabled) return;
 
   const timeoutMs = opts.timeoutMs ?? 5000;
-  const bypassThreshold = opts.bypassThreshold ?? false;
-  const isManaged = service.runner?.type === "managed";
-
-  // Fallback URL: localhost, only for services local to this node. Not meaningful
-  // for a managed runner — it has no HTTP surface at all, primary or fallback.
-  const isLocal =
-    !isManaged &&
-    (service.network.listenAddress != null ||
-      (opts.localHostId != null && service.hostId === opts.localHostId));
-  const fallbackUrl = isLocal
-    ? `http://localhost:${service.network.port}${service.network.healthPath}`
-    : null;
-
   const start = Date.now();
-  let primaryOk = false;
-  let primaryError: string | null = null;
-  let isTimeout = false;
+  let outcome: { type: CheckOutcome; data: Record<string, unknown> };
 
-  // "reachable" treats any HTTP response as alive — for services whose health
-  // path answers non-2xx by design (an MCP endpoint returns 406 to a plain GET).
-  // Connection refused and timeouts still fail: reachability means a response
-  // came back, not that the service is exempt from being reported down.
-  // Not meaningful for a managed runner (no HTTP response to be lenient about).
-  const acceptsAnyResponse = service.network.healthExpect === "reachable";
-
-  if (isManaged) {
-    // ── Primary check (managed runner: healthCmd exit code, no HTTP) ────────
+  if (service.runner?.type === "managed") {
     const result = await opts.runFn!(["sh", "-c", (service.runner as { healthCmd: string }).healthCmd]);
-    if (result.exitCode === 0) {
-      primaryOk = true;
+    outcome = result.exitCode === 0
+      ? { type: "service.up", data: { latencyMs: Date.now() - start } }
+      : { type: "service.down", data: { reason: result.stderr || `exit code ${result.exitCode}` } };
+  } else {
+    // Behind Serve, the process listens on localhost and the registered
+    // endpoint may be the route. Otherwise nothing sits between the checker
+    // and the process, and the endpoint is the process.
+    const processUrl = service.network.tailscaleServe
+      ? `http://localhost:${service.network.port}${service.network.healthPath}`
+      : service.network.endpoint + service.network.healthPath;
+    const proc = await probe(processUrl, timeoutMs);
+    // "reachable" treats any HTTP response as alive, for services whose health
+    // path answers non-2xx by design (an MCP endpoint returns 406 to a plain GET).
+    const acceptsAnyResponse = service.network.healthExpect === "reachable";
+
+    if ("error" in proc) {
+      outcome = proc.timedOut
+        ? { type: "service.timed_out", data: { timeoutMs } }
+        : { type: "service.down", data: { reason: proc.error } };
+    } else if (!(acceptsAnyResponse || (proc.status >= 200 && proc.status < 300))) {
+      outcome = { type: "service.down", data: { reason: `status ${proc.status}` } };
     } else {
-      primaryError = result.stderr || `exit code ${result.exitCode}`;
-    }
-  } else {
-    // ── Primary check (Tailscale HTTPS endpoint) ────────────────────────────
-    const primaryUrl = service.network.endpoint + service.network.healthPath;
-
-    try {
-      const response = await fetchWithTimeout(primaryUrl, timeoutMs);
-      if (response.ok || acceptsAnyResponse) {
-        primaryOk = true;
-      } else {
-        primaryError = `status ${response.status}`;
+      const latencyMs = Date.now() - start;
+      outcome = { type: "service.up", data: { latencyMs } };
+      if (service.network.tailscaleServe && opts.routeUrl) {
+        const route = await probe(opts.routeUrl, timeoutMs);
+        if ("error" in route || route.status !== proc.status) {
+          const tailscaleError = "error" in route ? route.error : `status ${route.status} where the process answered ${proc.status}`;
+          outcome = { type: "service.degraded", data: { tailscaleError, localOk: true } };
+        }
       }
-    } catch (err: unknown) {
-      isTimeout = err instanceof Error && err.name === "AbortError";
-      primaryError = isTimeout ? "timeout" : (err instanceof Error ? err.message : String(err));
     }
   }
 
-  if (primaryOk) {
+  if (outcome.type === "service.up") {
     failureCounts.delete(service.id);
-    await recordOutcome(eventsPath, service.id, "service.up", { latencyMs: Date.now() - start });
-    return;
-  }
-
-  // ── Primary failed: apply threshold ──────────────────────────────────────
-
-  const count = (failureCounts.get(service.id) ?? 0) + 1;
-  failureCounts.set(service.id, count);
-
-  if (!bypassThreshold && count < FAILURE_THRESHOLD) {
-    // Not yet at threshold — skip emitting an event
-    return;
-  }
-
-  failureCounts.delete(service.id);
-
-  // ── Fallback check (localhost) ────────────────────────────────────────────
-
-  if (fallbackUrl) {
-    let fallbackOk = false;
-    try {
-      const fallbackResponse = await fetchWithTimeout(fallbackUrl, timeoutMs);
-      fallbackOk = fallbackResponse.ok || acceptsAnyResponse;
-    } catch {
-      fallbackOk = false;
-    }
-
-    if (fallbackOk) {
-      // Process is up but Tailscale endpoint is unreachable — degraded
-      await recordOutcome(eventsPath, service.id, "service.degraded", { tailscaleError: primaryError, localOk: true });
-      return;
-    }
-  }
-
-  // ── Both checks failed ────────────────────────────────────────────────────
-
-  if (isTimeout) {
-    await recordOutcome(eventsPath, service.id, "service.timed_out", { timeoutMs });
   } else {
-    await recordOutcome(eventsPath, service.id, "service.down", { reason: primaryError ?? "connection_refused" });
+    const count = (failureCounts.get(service.id) ?? 0) + 1;
+    failureCounts.set(service.id, count);
+    if (!opts.bypassThreshold && count < FAILURE_THRESHOLD) return;
+    failureCounts.delete(service.id);
   }
+  await recordOutcome(eventsPath, service.id, outcome.type, outcome.data);
 }
 
 /**
@@ -161,7 +148,7 @@ export async function checkAllServices(
   const services = registry.services.filter(s =>
     s.permissions.enabled &&
     (s.lifecycle?.loadStrategy !== "demand" || runIntent.get(s.id) === true));
-  await Promise.allSettled(services.map(s => checkService(s, eventsPath, opts)));
+  await Promise.allSettled(services.map(s => checkService(s, eventsPath, { ...opts, routeUrl: tailnetRouteUrl(registry, s) })));
 }
 
 export function startHealthLoop(

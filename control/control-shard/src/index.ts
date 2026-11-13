@@ -77,18 +77,14 @@ const registry = await loadRegistry(REGISTRY_PATH);
 console.log(`Loaded registry: ${registry.services.length} services`);
 
 // Step 2: Wire shared API (standard endpoints: /api/services, /api/events, etc.)
-// localHostId is resolved after registry load (Step 1) — hoisted here via let
-const localHost = registry.hosts.find(h => h.role === "worker");
-const localHostId = localHost?.id;
 const sharedApp = createApp({
   registryState: registry,
   registryPath: REGISTRY_PATH,
   eventsPath: EVENTS_PATH,
-  checkService: (svc, eventsPath, opts) => checkService(svc, eventsPath, { ...opts, localHostId }),
+  checkService,
   runFn,
   pollHealthFn,
   spawnFn,
-  localHostId,
 });
 
 // Step 3: Wire shard-specific API (/status, /ping, /load, /unload)
@@ -98,6 +94,7 @@ const shardApp = createShardApp({
   getFreeMem: () => getFreeMem(runFn),
   loadService,
   unloadService,
+  sharedLifecycle: (req) => sharedApp.fetch(req),
   pingMap,
   registryPath: REGISTRY_PATH,
 });
@@ -119,7 +116,7 @@ console.log(`ControlShard running on :${PORT}`);
 // Step 5: Start health loop. The interval comes from the registry's
 // `intervals` block, so it is read only once the registry is loaded.
 const healthIntervalMs = positiveInt(process.env.BANTER_HEALTH_INTERVAL_MS, registry.intervals?.healthMs ?? 900000, "BANTER_HEALTH_INTERVAL_MS");
-const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, healthIntervalMs, { localHostId, runFn });
+const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, healthIntervalMs, { runFn });
 
 // Step 6: Start idle loop — evicts idle services
 const { stop: stopIdle } = startIdleLoop(

@@ -12,7 +12,7 @@ import type { PlatformConfig } from "./gateway-config";
 import type { Service, ServiceWithHealth, Event, Shard, Registry } from "../../../shared/types";
 import type { SpawnFn, RunFn } from "../../shared/src/tailscale";
 
-type CheckFn = (service: Service, eventsPath: string, opts?: { bypassThreshold?: boolean; localHostId?: string; runFn?: RunFn }) => Promise<void>;
+type CheckFn = (service: Service, eventsPath: string, opts?: { bypassThreshold?: boolean; routeUrl?: string; runFn?: RunFn }) => Promise<void>;
 
 export interface ControlPlaneAppDeps {
   registryPath: string;
@@ -50,7 +50,6 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     runFn,
     pollHealthFn,
     spawnFn,
-    localHostId,
   });
 
   const pollIntervalMs = shardPollIntervalMs ?? registry.intervals?.shardPollMs ?? 900000;
@@ -145,9 +144,9 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
   app.openapi(cpRoutes.pollShard, async (c) => {
     const { hostId } = c.req.valid("param");
     if (!shards.find(s => s.hostId === hostId)) {
-      return c.json({ error: "shard not found" }, 404);
+      return c.json({ error: "Shard not found" }, 404);
     }
-    if (!poller) return c.json({ error: "no poller" }, 500);
+    if (!poller) return c.json({ error: "No poller" }, 500);
     await poller.pollShard(hostId);
     return c.json({
       hostId,
@@ -187,7 +186,7 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       return sharedApp.fetch(c.req.raw);
     }
     const cachedSvc = allShardServices().find((s) => s.id === id);
-    if (!cachedSvc) return c.json({ error: "service not found" }, 404);
+    if (!cachedSvc) return c.json({ error: "Service not found" }, 404);
 
     const endpoint = shardEndpointFor(cachedSvc.hostId);
     if (!endpoint) {
@@ -198,7 +197,7 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       const liveSvc = await fetchShardService(endpoint, id);
       // null is the shard's own 404: our cache lists the service, the node that
       // owns it does not, and the owner is the authority.
-      if (!liveSvc) return c.json({ error: "service not found" }, 404);
+      if (!liveSvc) return c.json({ error: "Service not found" }, 404);
       if (poller) poller.updateCachedService(cachedSvc.hostId, liveSvc);
       return c.json(rewriteShardEndpoint(liveSvc));
     } catch (err) {
@@ -235,14 +234,14 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     if (isLocal(id)) return sharedApp.fetch(c.req.raw);
 
     const shardSvc = allShardServices().find((s) => s.id === id);
-    if (!shardSvc) return c.json({ error: "service not found" }, 404);
+    if (!shardSvc) return c.json({ error: "Service not found" }, 404);
 
     if (!shardIsOnline(shardSvc.hostId)) {
-      return c.json({ error: "shard is offline" }, 503);
+      return c.json({ error: "Shard is offline" }, 503);
     }
 
     const endpoint = shardEndpointFor(shardSvc.hostId);
-    if (!endpoint) return c.json({ error: "shard not found" }, 404);
+    if (!endpoint) return c.json({ error: "Shard not found" }, 404);
 
     const result = await handle(endpoint);
 
@@ -275,11 +274,11 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     if (isLocal(id)) return c.json({ ok: true, evictable: false });
 
     const shardSvc = allShardServices().find((s) => s.id === id);
-    if (!shardSvc) return c.json({ error: "service not found" }, 404);
-    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "shard is offline" }, 503);
+    if (!shardSvc) return c.json({ error: "Service not found" }, 404);
+    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "Shard is offline" }, 503);
 
     const endpoint = shardEndpointFor(shardSvc.hostId);
-    if (!endpoint) return c.json({ error: "shard not found" }, 404);
+    if (!endpoint) return c.json({ error: "Shard not found" }, 404);
 
     // No poller refresh: a ping changes eviction timing, not anything the
     // service list reports.
@@ -292,11 +291,11 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     if (isLocal(id)) return sharedApp.fetch(c.req.raw);
 
     const shardSvc = allShardServices().find((s) => s.id === id);
-    if (!shardSvc) return c.json({ error: "service not found" }, 404);
-    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "shard is offline" }, 503);
+    if (!shardSvc) return c.json({ error: "Service not found" }, 404);
+    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "Shard is offline" }, 503);
 
     const endpoint = shardEndpointFor(shardSvc.hostId);
-    if (!endpoint) return c.json({ error: "shard not found" }, 404);
+    if (!endpoint) return c.json({ error: "Shard not found" }, 404);
 
     const body = await c.req.json();
     const result = await proxyShardEnabledToggle(endpoint, id, body);
@@ -311,11 +310,11 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     if (isLocal(id)) return sharedApp.fetch(c.req.raw);
 
     const shardSvc = allShardServices().find((s) => s.id === id);
-    if (!shardSvc) return c.json({ error: "service not found" }, 404);
-    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "shard is offline" }, 503);
+    if (!shardSvc) return c.json({ error: "Service not found" }, 404);
+    if (!shardIsOnline(shardSvc.hostId)) return c.json({ error: "Shard is offline" }, 503);
 
     const endpoint = shardEndpointFor(shardSvc.hostId);
-    if (!endpoint) return c.json({ error: "shard not found" }, 404);
+    if (!endpoint) return c.json({ error: "Shard not found" }, 404);
 
     const patch = await c.req.json();
     const result = await proxyShardPatch(endpoint, id, patch);

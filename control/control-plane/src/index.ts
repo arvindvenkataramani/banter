@@ -47,8 +47,7 @@ const localHost = registry.hosts.find(h => h.role === "control");
 // or port change through the API reach the loop without a restart.
 const app = await createControlPlaneApp({ registryPath: REGISTRY_PATH, registry, eventsPath: EVENTS_PATH, shardPollIntervalMs: SHARD_POLL_INTERVAL_MS, checkService, runFn, pollHealthFn, spawnFn, config, configPath: CONFIG_PATH, localHostId: localHost?.id });
 
-// localHostId enables localhost fallback for services running on this node
-const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, HEALTH_INTERVAL_MS, { localHostId: localHost?.id, runFn });
+const { stop: stopHealth } = startHealthLoop(registry, EVENTS_PATH, HEALTH_INTERVAL_MS, { runFn });
 
 const server = Bun.serve({
   hostname: HOST,

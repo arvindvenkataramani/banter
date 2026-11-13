@@ -10,7 +10,7 @@ The control plane needs no speech server to start. Until one is registered, voic
 
 - **[Bun](https://bun.sh)**, the runtime for everything here. Developed against 1.3.x.
 - **`jq`**, which `control-runner.sh` uses to read the port out of the registry and which the install script uses to seed the registry.
-- **`lsof`**, which a few scripts use to find or free a port. It is not installed by default on minimal distros (Debian netinst, Alpine, most containers); everything else here is usually already present.
+- **`lsof`**, which the control plane and shard use to stop a service by the port it listens on, and a few scripts use to find or free a port. It is not installed by default on minimal distros (Debian netinst, Alpine, most containers); everything else here is usually already present.
 - **An [OpenClaw](https://github.com/openclaw/openclaw) gateway** to talk to.
 - **systemd**, for the Linux path below. macOS and Linux without systemd use the fallback described under [Install as a service](#install-as-a-service).
 

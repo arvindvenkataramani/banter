@@ -57,10 +57,10 @@ export class FakeShard {
       const one = path.match(/^\/api\/services\/([^/]+)$/);
       if (one) {
         const svc = this.services.find(s => s.id === one[1]);
-        return svc ? Response.json(svc) : Response.json({ error: "service not found" }, { status: 404 });
+        return svc ? Response.json(svc) : Response.json({ error: "Service not found" }, { status: 404 });
       }
     }
-    return Response.json({ error: "not found" }, { status: 404 });
+    return Response.json({ error: "Not found" }, { status: 404 });
   }
 }
 

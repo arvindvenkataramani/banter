@@ -63,6 +63,7 @@ function shardApp(opts: {
   unloadService?: (svc: Service) => Promise<Outcome>;
   pingMap?: Map<string, number>;
   registryPath?: string | "none";
+  sharedLifecycle?: (req: Request) => Response | Promise<Response>;
 } = {}) {
   return createShardApp({
     registryState: registry,
@@ -70,6 +71,7 @@ function shardApp(opts: {
     getFreeMem: async () => 4096,
     loadService: opts.loadService ?? (async () => ({ ok: true })),
     unloadService: opts.unloadService ?? (async () => ({ ok: true })),
+    sharedLifecycle: opts.sharedLifecycle ?? (async () => Response.json({ success: true })),
     pingMap: opts.pingMap,
     registryPath: opts.registryPath === "none" ? undefined : registryPath,
   });
@@ -100,15 +102,30 @@ describe("starting and stopping", () => {
   it.each([
     ["start", "nope", 404],
     ["start", "off", 400],
-    ["start", "always", 400],
     ["stop", "nope", 404],
-    ["stop", "always", 400],
   ])("refuses to %s %s with %i", async (action, id, status) => {
     let called = false;
-    const app = shardApp({ loadService: async () => { called = true; return { ok: true }; }, unloadService: async () => { called = true; return { ok: true }; } });
+    const touch = async () => { called = true; return { ok: true }; };
+    const app = shardApp({ loadService: touch, unloadService: touch, sharedLifecycle: async () => { called = true; return Response.json({}); } });
 
     expect((await call(app, "POST", `/api/services/${id}/${action}`)).status).toBe(status);
     expect(called).toBe(false);
+  });
+
+  it.each(["start", "stop"])("hands a %s of a service that is not demand-loaded to the shared lifecycle", async (action) => {
+    const seen: string[] = [];
+    let demandCalled = false;
+    const touch = async () => { demandCalled = true; return { ok: true }; };
+    const app = shardApp({
+      loadService: touch,
+      unloadService: touch,
+      sharedLifecycle: async (req) => { seen.push(new URL(req.url).pathname); return Response.json({ success: true }); },
+    });
+
+    const res = await call(app, "POST", `/api/services/always/${action}`);
+    expect(res).toEqual({ status: 200, body: { success: true } });
+    expect(seen).toEqual([`/api/services/always/${action}`]);
+    expect(demandCalled).toBe(false);
   });
 
   it("answers a start with 202 as soon as the load begins, whatever the load later does", async () => {

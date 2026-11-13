@@ -14,6 +14,10 @@ interface ShardAppDeps {
   getFreeMem: () => Promise<number>;
   loadService: LoadServiceFn;
   unloadService: UnloadServiceFn;
+  /** Handles start and stop for services that are not demand-loaded. The
+   *  dispatcher sends every start and stop path here, so these never reach
+   *  the shared app's own lifecycle routes unless passed on. */
+  sharedLifecycle: (req: Request) => Response | Promise<Response>;
   /** Last-activity timestamps, keyed by service id. Must be the same map the
    *  idle loop reads, or pings never reach the eviction decision. */
   pingMap?: Map<string, number>;
@@ -46,7 +50,7 @@ export function createShardApp(deps: ShardAppDeps) {
   app.openapi(shardRoutes.pingService, (c) => {
     const { service: svcId } = c.req.valid("param");
     const svc = registryState.services.find(s => s.id === svcId);
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     pingMap.set(svcId, Date.now());
     return c.json({ ok: true }, 200);
@@ -56,8 +60,8 @@ export function createShardApp(deps: ShardAppDeps) {
   app.post("/api/services/:id/start", async (c) => {
     const svcId = c.req.param("id");
     const svc = registryState.services.find(s => s.id === svcId);
-    if (!svc) return c.json({ error: "service not found" }, 404);
-    if (!svc.permissions.enabled) return c.json({ error: "service is disabled" }, 400);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
+    if (!svc.permissions.enabled) return c.json({ error: "Service is disabled" }, 400);
 
     if (svc.lifecycle?.loadStrategy === "demand") {
       // Fire-and-forget: submit and return 202 immediately. A concurrent
@@ -72,27 +76,25 @@ export function createShardApp(deps: ShardAppDeps) {
       return c.json({ success: true }, 202);
     }
 
-    // For non-demand services, fall through to shared app (will be called below)
-    return c.json({ success: false, error: "not a demand service" }, 400);
+    return deps.sharedLifecycle(c.req.raw);
   });
 
   // POST /api/services/:id/stop (shard override for demand-loaded services)
   app.post("/api/services/:id/stop", async (c) => {
     const svcId = c.req.param("id");
     const svc = registryState.services.find(s => s.id === svcId);
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     // For demand-loaded services, handle the stop
     if (svc.lifecycle?.loadStrategy === "demand") {
       const result = await unloadService(svc);
       if (!result.ok) {
-        return c.json({ success: false, error: result.error ?? "stop failed" }, 500);
+        return c.json({ success: false, error: result.error ?? "Stop failed" }, 500);
       }
       return c.json({ success: true });
     }
 
-    // For non-demand services, fall through to shared app
-    return c.json({ success: false, error: "not a demand service" }, 400);
+    return deps.sharedLifecycle(c.req.raw);
   });
 
   // Read from the live registry object on every request, not cached at

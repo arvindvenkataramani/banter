@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkService, checkAllServices, startHealthLoop, resetFailureCounts } from "../src/health";
+import { checkService, checkAllServices, startHealthLoop, resetFailureCounts, tailnetRouteUrl } from "../src/health";
 import { readEvents, appendEvent } from "../src/events";
 import type { Service, Registry } from "../../../shared/types";
 
@@ -73,20 +73,27 @@ describe("a single check", () => {
     expect(await types()).toEqual([type]);
   });
 
+  // A connection held open from an earlier check can still be answered after
+  // the service has gone — Tailscale Serve keeps proxying it once the route is
+  // removed — so a check must open its own.
+  it("opens a fresh connection for every check", async () => {
+    const clientPorts: number[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req, srv) => { clientPorts.push(srv.requestIP(req)!.port); return new Response("x"); },
+    });
+    servers.push(server);
+    const svc = service(`http://localhost:${server.port}`);
+    await checkService(svc, eventsPath, once);
+    await checkService(svc, eventsPath, once);
+    expect(clientPorts).toHaveLength(2);
+    expect(clientPorts[0]).not.toBe(clientPorts[1]);
+  });
+
   it("records the latency of a service that is up", async () => {
     await checkService(service(serve()), eventsPath, once);
     const [event] = await readEvents(eventsPath);
     expect(typeof event.data.latencyMs).toBe("number");
-  });
-
-  it("records a local service that answers on localhost but not at its endpoint as degraded; a remote one as down", async () => {
-    const local = serve();
-    const port = Number(new URL(local).port);
-    await checkService(service(REFUSED, { id: "local", network: { port } }), eventsPath, { ...once, localHostId: "host1" });
-    await checkService(service(REFUSED, { id: "remote", network: { port } }), eventsPath, { ...once, localHostId: "elsewhere" });
-
-    expect(await types("local")).toEqual(["service.degraded"]);
-    expect(await types("remote")).toEqual(["service.down"]);
   });
 
   it("skips a disabled service", async () => {
@@ -111,6 +118,53 @@ describe("a single check", () => {
     await checkService(svc, eventsPath, once);
 
     expect(await types()).toEqual(["service.down", "service.up"]);
+  });
+});
+
+// A service behind Tailscale Serve: the process answers on localhost, and a
+// second server stands in for the route. The route can answer when the process
+// cannot, which is why the process is asked first.
+describe("a service behind Tailscale Serve", () => {
+  const behindServe = (processUrl: string, over: Over = {}) =>
+    service(processUrl, { ...over, network: { tailscaleServe: true, ...over.network } });
+
+  it.each([
+    ["relays the service's answer", 200, () => serve(200), undefined, "service.up"],
+    ["relays the non-2xx answer of a reachable service", 406, () => serve(406), "reachable", "service.up"],
+    ["answers with a status of its own", 200, () => serve(404), undefined, "service.degraded"],
+    ["answers a reachable service with a gateway error", 406, () => serve(502), "reachable", "service.degraded"],
+    ["refuses the connection", 200, () => REFUSED, undefined, "service.degraded"],
+  ] as [string, number, () => string, "reachable" | undefined, string][])(
+    "records the route that %s as %s",
+    async (_, processStatus, route, healthExpect, type) => {
+      const svc = behindServe(serve(processStatus), { network: { healthExpect } });
+      await checkService(svc, eventsPath, { ...once, timeoutMs: 100, routeUrl: route() + "/health" });
+      expect(await types()).toEqual([type]);
+    }
+  );
+
+  it("records the service down when its process does not answer, whatever the route says", async () => {
+    let routeAsked = false;
+    const route = Bun.serve({ port: 0, fetch: () => { routeAsked = true; return new Response("x", { status: 502 }); } });
+    servers.push(route);
+    const svc = behindServe(REFUSED, { network: { healthExpect: "reachable" } });
+    await checkService(svc, eventsPath, { ...once, routeUrl: `http://localhost:${route.port}/health` });
+    expect(await types()).toEqual(["service.down"]);
+    expect(routeAsked).toBe(false);
+  });
+
+  it("asks the process on localhost, not at its registered endpoint", async () => {
+    const processUrl = serve(200);
+    const port = Number(new URL(processUrl).port);
+    const svc = behindServe(REFUSED, { network: { port } });
+    await checkService(svc, eventsPath, once);
+    expect(await types()).toEqual(["service.up"]);
+  });
+
+  it("derives the route from the tailnet hostname of the service's host", () => {
+    const reg = registry([behindServe(serve(), { id: "s", hostId: "h1", network: { port: 8770, healthPath: "/mcp" } })]);
+    expect(tailnetRouteUrl(reg, reg.services[0])).toBe("https://h1.ts.net:8770/mcp");
+    expect(tailnetRouteUrl(reg, service(serve()))).toBeUndefined();
   });
 });
 

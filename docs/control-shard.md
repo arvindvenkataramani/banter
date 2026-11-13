@@ -145,7 +145,7 @@ The `shard-runner` binary:
 4. For each auto-start service: runs the start sequence (stop existing, spawn, health poll)
 
 **Shutdown:**
-1. For each `shutdown: true` service: run the stop sequence
+1. For each `shutdown: true` service: run the stop sequence. A startup service can set `shutdown: false`, so a shard restart leaves it running and the next shard adopts it. Demand-loaded services keep `shutdown: true`, because idle eviction tracks load time in memory and could not evict a service that outlived the shard
 2. shard-runner tears down Tailscale Serve
 3. Exit
 

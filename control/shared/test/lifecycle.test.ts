@@ -60,6 +60,7 @@ function makeService(overrides: Record<string, any> = {}): Service {
 const SYSTEMD = { type: "systemd", unit: "test-svc", unitFile: "ops/test-svc.service" };
 const MANAGED = { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" };
 const NO_SERVE = { tailscaleServe: false };
+const FAST_STOP = { termGraceMs: 50, killConfirmMs: 50, pollMs: 5 };
 
 /** A node with one Serve slot. `log` holds every command and lifecycle step in order. */
 class FakeNode {
@@ -78,10 +79,25 @@ class FakeNode {
   spawned: string[][] = [];
   spawnEnvs: (Record<string, string> | undefined)[] = [];
   kills = 0;
+  /** PIDs listening on the service's port, as lsof reports them. */
+  listeners: string[] = [];
+  /** Listeners that survive SIGTERM and go only on SIGKILL. */
+  ignoresTerm = false;
+  /** Listeners that survive every signal. */
+  unkillable = false;
   private exits: ((code: number) => void)[] = [];
 
   runFn: RunFn = async (cmd) => {
     this.calls.push(cmd);
+    if (cmd[0] === "lsof") {
+      return { stdout: this.listeners.map(p => `${p}\n`).join(""), exitCode: this.listeners.length ? 0 : 1, stderr: "" };
+    }
+    if (cmd[0] === "kill") {
+      this.log.push(cmd.join(" "));
+      const dies = !this.unkillable && (cmd[1] === "-KILL" || !this.ignoresTerm);
+      if (dies) this.listeners = this.listeners.filter(p => !cmd.slice(2).includes(p));
+      return { stdout: "", exitCode: 0, stderr: "" };
+    }
     if (cmd[0] === "tailscale" && cmd.includes("status")) {
       if (this.statusFails) return { stdout: "", exitCode: 1, stderr: "tailscaled is not running" };
       return { stdout: JSON.stringify({ Web: this.served ? { "host:8080": {} } : {} }), exitCode: 0, stderr: "" };
@@ -117,7 +133,7 @@ class FakeNode {
     let exit!: (code: number) => void;
     const exited = new Promise<number>(r => { exit = r; });
     this.exits.push(exit);
-    return { kill: () => { this.kills++; }, exited };
+    return { kill: () => { this.kills++; if (!this.unkillable) this.listeners = []; }, exited };
   };
 
   probeFn: ProbeFn = async () => {
@@ -135,7 +151,7 @@ class FakeNode {
   }
 
   stop(svc: Service) {
-    return stopService(this.runFn, svc, eventsPath);
+    return stopService(this.runFn, svc, eventsPath, FAST_STOP);
   }
 }
 
@@ -366,6 +382,59 @@ describe("stopping a service", () => {
     expect((await node.stop(makeService({ runner: SYSTEMD }))).ok).toBe(true);
     expect(node.log).toContain("systemctl --user stop test-svc.service");
     expect((await events()).map(e => e.type)).toEqual(["tailscale.serve_remove_failed", "service.stopped"]);
+  });
+
+  it("stops a process it did not spawn, found by the port it listens on", async () => {
+    const node = new FakeNode();
+    node.listeners = ["4242"];
+    expect(await node.stop(makeService())).toEqual({ ok: true });
+    expect(node.log).toContain("kill -TERM 4242");
+    expect(node.listeners).toEqual([]);
+    expect((await events()).map(e => e.type)).toEqual(["service.stopped"]);
+  });
+
+  it("kills a held child through its handle, without signalling by port once the port is free", async () => {
+    const node = new FakeNode();
+    const svc = makeService();
+    await node.start(svc);
+    node.listeners = ["5000"];
+    expect(await node.stop(svc)).toEqual({ ok: true });
+    expect(node.kills).toBe(1);
+    expect(node.log.some(l => l.startsWith("kill"))).toBe(false);
+  });
+
+  it("escalates to SIGKILL when the process outlasts SIGTERM", async () => {
+    const node = new FakeNode();
+    node.listeners = ["4242"];
+    node.ignoresTerm = true;
+    expect(await node.stop(makeService())).toEqual({ ok: true });
+    expect(node.log.filter(l => l.startsWith("kill"))).toEqual(["kill -TERM 4242", "kill -KILL 4242"]);
+  });
+
+  it("fails without recording service.stopped while the port stays in use", async () => {
+    const node = new FakeNode();
+    node.listeners = ["4242"];
+    node.unkillable = true;
+    const result = await node.stop(makeService());
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("8080");
+    expect(await events("service.stopped")).toEqual([]);
+  });
+
+  it("never signals its own process", async () => {
+    const node = new FakeNode();
+    node.listeners = [String(process.pid)];
+    expect((await node.stop(makeService())).ok).toBe(false);
+    expect(node.log.some(l => l.startsWith("kill"))).toBe(false);
+  });
+
+  it("does not start again when a restart's stop leaves the old process running", async () => {
+    const node = new FakeNode();
+    node.listeners = ["4242"];
+    node.unkillable = true;
+    const result = await restartService(node.runFn, node.pollHealthFn, makeService(), eventsPath, node.spawnFn, undefined, FAST_STOP);
+    expect(result.ok).toBe(false);
+    expect(node.spawned).toEqual([]);
   });
 });
 

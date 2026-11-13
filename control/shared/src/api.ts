@@ -12,10 +12,11 @@ import {
   restartDeadlineMs,
 } from "./lifecycle";
 import { submit, isPending } from "./executor";
+import { tailnetRouteUrl } from "./health";
 import type { RunFn, PollHealthFn, SpawnFn } from "./lifecycle";
 import type { Registry, Service, ServiceWithHealth } from "../../../shared/types";
 
-type CheckFn = (service: Service, eventsPath: string, opts?: { bypassThreshold?: boolean; localHostId?: string; runFn?: RunFn }) => Promise<void>;
+type CheckFn = (service: Service, eventsPath: string, opts?: { bypassThreshold?: boolean; routeUrl?: string; runFn?: RunFn }) => Promise<void>;
 
 interface AppDeps {
   registryState: Registry;
@@ -25,7 +26,6 @@ interface AppDeps {
   runFn: RunFn;
   pollHealthFn: PollHealthFn;
   spawnFn?: SpawnFn;
-  localHostId?: string;
 }
 
 /** A Node filesystem/system error, which carries a string `code` like ENOENT.
@@ -35,7 +35,7 @@ function isErrnoException(err: unknown): boolean {
 }
 
 export function createApp(deps: AppDeps) {
-  const { registryState, registryPath, eventsPath, checkService, runFn, pollHealthFn, spawnFn, localHostId } = deps;
+  const { registryState, registryPath, eventsPath, checkService, runFn, pollHealthFn, spawnFn } = deps;
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -65,7 +65,7 @@ export function createApp(deps: AppDeps) {
   // GET /api/services/:id
   app.get("/api/services/:id", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     const { health, lastEvent } = (await deriveServiceHealth(eventsPath))(svc);
     const pending = svc.runner?.type === "external" ? false : isPending(svc.id);
@@ -75,14 +75,14 @@ export function createApp(deps: AppDeps) {
   // GET /api/services/:id/info — proxy to the service's /info endpoint
   app.get("/api/services/:id/info", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     try {
       const res = await fetch(`${svc.network.endpoint}/info`);
       const data = await res.json();
       return c.json(data, res.status as any);
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : "fetch failed" }, 502);
+      return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 502);
     }
   });
 
@@ -107,9 +107,9 @@ export function createApp(deps: AppDeps) {
   // POST /api/services/:id/check
   app.post("/api/services/:id/check", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
-    await checkService(svc, eventsPath, { bypassThreshold: true, localHostId, runFn });
+    await checkService(svc, eventsPath, { bypassThreshold: true, routeUrl: tailnetRouteUrl(registryState, svc), runFn });
 
     const { health, lastEvent } = (await deriveServiceHealth(eventsPath))(svc);
     return c.json({ ...svc, health, lastEvent });
@@ -118,7 +118,7 @@ export function createApp(deps: AppDeps) {
   // PATCH /api/services/:id
   app.patch("/api/services/:id", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     const patch = await c.req.json() as Record<string, unknown>;
     let updated: Service;
@@ -141,13 +141,13 @@ export function createApp(deps: AppDeps) {
   // POST /api/services/:id/start
   app.post("/api/services/:id/start", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
-    if (!svc.permissions.enabled) return c.json({ error: "service is disabled" }, 400);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
+    if (!svc.permissions.enabled) return c.json({ error: "Service is disabled" }, 400);
 
     const result = await submit(svc.id, "start", () => startService(runFn, pollHealthFn, svc, eventsPath, spawnFn, undefined, registryPath), { deadlineMs: startDeadlineMs(svc) });
     if (!result.ok) {
       const status = result.error?.includes("external") ? 400 : 500;
-      return c.json({ error: result.error ?? "start failed" }, status as any);
+      return c.json({ error: result.error ?? "Start failed" }, status as any);
     }
 
     return c.json({ success: true, ...(result.stage && { stage: result.stage }), ...(result.error && { error: result.error }) });
@@ -156,13 +156,13 @@ export function createApp(deps: AppDeps) {
   // POST /api/services/:id/stop
   app.post("/api/services/:id/stop", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
     if (svc.permissions.protected) return c.json({ error: "Cannot stop a protected service" }, 403);
 
     const result = await submit(svc.id, "stop", () => stopService(runFn, svc, eventsPath), { deadlineMs: stopDeadlineMs() });
     if (!result.ok) {
       const status = result.error?.includes("external") ? 400 : 500;
-      return c.json({ error: result.error ?? "stop failed" }, status as any);
+      return c.json({ error: result.error ?? "Stop failed" }, status as any);
     }
 
     return c.json({ success: true });
@@ -171,12 +171,12 @@ export function createApp(deps: AppDeps) {
   // POST /api/services/:id/restart
   app.post("/api/services/:id/restart", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     const result = await submit(svc.id, "restart", () => restartService(runFn, pollHealthFn, svc, eventsPath, spawnFn, registryPath), { deadlineMs: restartDeadlineMs(svc) });
     if (!result.ok) {
       const status = result.error?.includes("external") ? 400 : 500;
-      return c.json({ error: result.error ?? "restart failed" }, status as any);
+      return c.json({ error: result.error ?? "Restart failed" }, status as any);
     }
 
     return c.json({ success: true, ...(result.stage && { stage: result.stage }), ...(result.error && { error: result.error }) });
@@ -185,7 +185,7 @@ export function createApp(deps: AppDeps) {
   // PATCH /api/services/:id/enabled
   app.patch("/api/services/:id/enabled", async (c) => {
     const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "service not found" }, 404);
+    if (!svc) return c.json({ error: "Service not found" }, 404);
 
     const body = await c.req.json() as { enabled: boolean };
 

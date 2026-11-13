@@ -2,7 +2,7 @@
 
 Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why, and what should happen to each difference. Read this before porting anything from platform, and update it when a port lands or a decision is made. It describes the current state; the history is in git.
 
-Compared against platform `0b16270`. Start the next audit from there.
+Compared against platform `0e43f9e`. Start the next audit from there.
 
 ## The rule
 
@@ -73,7 +73,7 @@ Banter changes that platform lacks. They stay.
 
 ## Banter is behind: port from platform
 
-Against platform `0b16270`, every code change is ported apart from the items below.
+Against platform `0e43f9e`, every code change is ported apart from the items below.
 
 ### Not taken yet
 

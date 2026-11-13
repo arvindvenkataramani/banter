@@ -368,10 +368,13 @@ export async function startService(
   return { ok: true };
 }
 
+export type StopOpts = { termGraceMs?: number; killConfirmMs?: number; pollMs?: number };
+
 export async function stopService(
   runFn: RunFn,
   svc: Service,
-  eventsPath: string
+  eventsPath: string,
+  opts: StopOpts = {}
 ): Promise<{ ok: boolean; error?: string }> {
   const runner = getRunner(svc);
   if (runner.type === "external") {
@@ -419,6 +422,16 @@ export async function stopService(
     await runStopCmd(runFn, svc);
   }
 
+  // A process runner's service may have been spawned by an earlier run of
+  // this node, or by hand, so no held child is the normal case after a node
+  // restart. Whatever listens on its port is the service.
+  if (runner.type === "process" && svc.network.port) {
+    const freed = await stopPortListeners(runFn, svc.network.port, opts);
+    if (!freed) {
+      return { ok: false, error: `A process is still listening on port ${svc.network.port}` };
+    }
+  }
+
   // Step 3: Emit service.stopped
   await appendEvent(eventsPath, {
     type: "service.stopped",
@@ -437,7 +450,8 @@ export async function restartService(
   svc: Service,
   eventsPath: string,
   spawnFn?: SpawnFn,
-  registryPath?: string
+  registryPath?: string,
+  stopOpts?: StopOpts
 ): Promise<StartResult> {
   const runner = getRunner(svc);
   if (runner.type === "external") {
@@ -461,8 +475,10 @@ export async function restartService(
     return { ok: true };
   }
 
-  // process runner: stop then start
-  await stopService(runFn, svc, eventsPath);
+  // process runner: stop then start. A start after a failed stop would adopt
+  // the old process and report a restart that never happened.
+  const stopped = await stopService(runFn, svc, eventsPath, stopOpts);
+  if (!stopped.ok) return { ok: false, error: stopped.error };
   return startService(runFn, pollHealthFn, svc, eventsPath, spawnFn, undefined, registryPath);
 }
 
@@ -679,6 +695,51 @@ async function runStopCmd(runFn: RunFn, svc: Service): Promise<void> {
     await runFn(cmd);
   }
   // process runner: no command — caller holds the child reference and kills it directly
+}
+
+// A server shutting down cleanly may flush state or drain requests, so SIGTERM
+// gets a generous grace period. SIGKILL cannot be caught; its wait only covers
+// the kernel releasing the socket.
+const STOP_TERM_GRACE_MS = 15000;
+const STOP_KILL_CONFIRM_MS = 5000;
+const STOP_POLL_MS = 250;
+
+async function portListeners(runFn: RunFn, port: number): Promise<string[]> {
+  const result = await runFn(["lsof", "-nP", "-t", `-iTCP:${port}`, "-sTCP:LISTEN"]);
+  const self = String(process.pid);
+  return result.stdout.split("\n").map(s => s.trim()).filter(pid => pid && pid !== self);
+}
+
+async function portInUse(runFn: RunFn, port: number): Promise<boolean> {
+  const result = await runFn(["lsof", "-nP", "-t", `-iTCP:${port}`, "-sTCP:LISTEN"]);
+  return result.stdout.trim().length > 0;
+}
+
+async function waitForPortFree(runFn: RunFn, port: number, timeoutMs: number, pollMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if (!(await portInUse(runFn, port))) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise(r => setTimeout(r, pollMs));
+  }
+}
+
+// SIGTERM whatever listens on the port, then SIGKILL what outlasts the grace
+// period. True once nothing listens. The node's own process is never
+// signalled, and still counts as listening.
+async function stopPortListeners(runFn: RunFn, port: number, opts: StopOpts): Promise<boolean> {
+  const pollMs = opts.pollMs ?? STOP_POLL_MS;
+  const steps: [string, number][] = [
+    ["-TERM", opts.termGraceMs ?? STOP_TERM_GRACE_MS],
+    ["-KILL", opts.killConfirmMs ?? STOP_KILL_CONFIRM_MS],
+  ];
+  for (const [signal, waitMs] of steps) {
+    const pids = await portListeners(runFn, port);
+    if (pids.length === 0) return !(await portInUse(runFn, port));
+    await runFn(["kill", signal, ...pids]);
+    if (await waitForPortFree(runFn, port, waitMs, pollMs)) return true;
+  }
+  return false;
 }
 
 // Managed runners have no HTTP health surface — poll healthCmd's exit code instead,

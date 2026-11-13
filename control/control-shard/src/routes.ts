@@ -57,7 +57,7 @@ export const shardStartService = createRoute({
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Service disabled or not a demand service",
+      description: "Service disabled",
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },

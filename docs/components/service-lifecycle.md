@@ -55,15 +55,18 @@ For services without `tailscaleServe`, steps 3, 7, and 8 are skipped.
 1. **Acquire lifecycle lock**
 2. **Teardown Tailscale Serve** — best effort; doesn't block stop on failure
 3. **Stop the process** — method depends on runner type
-4. **Emit `service.stopped` event**
-5. **Clear `loadTime`**
-6. **Release lifecycle lock**
+4. **Confirm it stopped** — for a `process` runner, nothing may still listen on the service's port; otherwise the stop fails and no event is written
+5. **Emit `service.stopped` event**
+6. **Clear `loadTime`**
+7. **Release lifecycle lock**
+
+A restart of a `process` runner whose stop fails returns that failure without starting, since the start would adopt the old process.
 
 ### Runner types
 
 The lifecycle module derives commands from the runner configuration in the registry:
 
-**`process`** — Banter-managed. The module spawns the process directly via `Bun.spawn`, holds the child reference for crash detection. Stop is by terminating the child process. Environment variables and working directory come from `ops.env`. `main` marks the port as `{port}` (filled from `network.port`) and may use `{registry}` (the path of the registry the node loaded); a literal port is refused at load.
+**`process`** — Banter-managed. The module spawns the process directly via `Bun.spawn`, holds the child reference for crash detection. The process outlives the node that spawned it, so after a node restart, or for a process adopted on start, there is no held child. Stop therefore terminates the held child if there is one, then sends SIGTERM to whatever still listens on the service's port (found with `lsof`), escalating to SIGKILL if the port is still in use after fifteen seconds. The node's own process is never signalled. Environment variables and working directory come from `ops.env`. `main` marks the port as `{port}` (filled from `network.port`) and may use `{registry}` (the path of the registry the node loaded); a literal port is refused at load.
 
 **`systemd`** — OS-managed on Linux. Start/stop/restart/enable/disable derived from the unit name: `systemctl --user {action} {unit}`. Install/uninstall copies the unit file and reloads the daemon.
 
