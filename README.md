@@ -6,7 +6,7 @@ It hears when you have actually meant to finish speaking, cleans your speech of 
 
 Built against [OpenClaw](https://docs.openclaw.ai/), and adaptable to other agent harnesses.
 
-Published as-is; not actively maintained; no support implied. Apache-2.0. Built with [Claude Code](https://claude.com/claude-code). Most of the code was written by a model, directed and reviewed by the author. Use at your own risk.
+Published as-is; occasionally maintained; no support implied. Apache-2.0. Built with [Claude Code](https://claude.com/claude-code). Most of the code was written by a model, directed and reviewed by the author. Use at your own risk.
 
 ![Banter's chat interface, desktop and mobile](docs/images/screenshot.jpg)
 
@@ -57,6 +57,8 @@ scripts/install.sh
 
 The script prompts for your gateway URL and token, installs the control plane as a service, and prints its address. Open that address (`http://localhost:4200` unless you changed the port) for the dashboard. Typing works at once; voice needs a speech server, and Banter installs none. Install one from its folder's README ([`services/README.md`](services/README.md) lists them), then see [docs/setup/speech-servers.md](docs/setup/speech-servers.md) for CORS and for adding your own. An LLM or agent can follow [docs/setup/install.md](docs/setup/install.md) for you.
 
+> **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running Banter, `http://localhost:4200` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Serve the dashboard over https for that: [docs/setup/remote-access.md](docs/setup/remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
+
 ## Documentation
 
 Setup, in [docs/setup/](docs/setup/README.md):
@@ -87,7 +89,7 @@ Everything else:
 ## Requirements and constraints
 
 - STT/TTS servers must be OpenAI-compatible (`/v1/audio/speech`-shaped for TTS) and CORS-enabled — the browser calls them cross-origin from the dashboard's own origin.
-- `onnxruntime-web` is pinned to an exact version, loaded at runtime from its prebuilt module and never bundled. The dashboard sends cross-origin isolation headers (`COOP`/`COEP`), so over https or on localhost the voice models run multi-threaded; over plain http the browser cannot isolate the page and they run on one thread. See [docs/design/turn-taking.md](docs/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled).
+- `onnxruntime-web` is pinned to an exact version, loaded at runtime from its prebuilt module and never bundled. The dashboard sends cross-origin isolation headers (`COOP`/`COEP`), so the voice models run multi-threaded. If something in front of the dashboard strips those headers, they fall back to one thread and turn detection slows; the settings dialog says so. See [docs/design/turn-taking.md](docs/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled).
 - The browser's model assets (~10MB) are committed to this repo, so a clone needs no download step for them: [Silero VAD](https://github.com/snakers4/silero-vad) (MIT), [pipecat smart-turn](https://huggingface.co/pipecat-ai/smart-turn-v3) (BSD-2-Clause), and [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny) (Apache-2.0, used only for its preprocessor config) — see NOTICE. Each is pinned by SHA-256 in `dashboard/scripts/fetch-models.ts`; `cd dashboard && bun run setup` re-verifies them against those pins and re-fetches if one is missing. This does not apply to the speech models themselves, which are large and download on first run.
 - Linux with systemd is the platform the install scripts are written for. On macOS or Linux without systemd, the control plane runs from `control-runner.sh` under a supervisor you provide; native Windows is not supported, and WSL2 with systemd follows the Linux path. See [docs/setup/install.md](docs/setup/install.md#install-as-a-service). `scripts/shard-deploy.sh` installs a shard on macOS only.
 - Known-working speech servers, with their tradeoffs, are listed in [docs/setup/models.md](docs/setup/models.md).

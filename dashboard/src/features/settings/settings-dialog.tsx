@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useVoiceSettings } from './voice-settings'
+import { PageSecurityNotice } from './page-security-notice'
 
 interface Props {
   open: boolean
@@ -54,6 +55,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
+
+        <PageSecurityNotice />
 
         <Tabs defaultValue="voice">
           <TabsList className="w-full">

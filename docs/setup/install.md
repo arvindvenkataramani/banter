@@ -6,6 +6,8 @@ An LLM or agent can follow this page for you: point it here and ask it to run th
 
 The control plane needs no speech server to start. Until one is registered, voice does nothing and typing still works.
 
+> **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running Banter, `http://localhost:PORT` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Plan to serve the dashboard over https if you'll talk to it from anywhere but that machine; [remote-access.md](remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
+
 ## Prerequisites
 
 - **[Bun](https://bun.sh)**, the runtime for everything here. Developed against 1.3.x.
@@ -14,7 +16,7 @@ The control plane needs no speech server to start. Until one is registered, voic
 - **An [OpenClaw](https://github.com/openclaw/openclaw) gateway** to talk to.
 - **systemd**, for the Linux path below. macOS and Linux without systemd use the fallback described under [Install as a service](#install-as-a-service).
 
-Banter defaults to plain `http`, which suits one machine or a trusted home network. On your own network a LAN address is enough for text. Voice on a phone needs a secure page (`https`, or `localhost`), so serve the dashboard over `https` for that; [Tailscale](https://tailscale.com) is one way to get it, covered in [remote-access.md](remote-access.md).
+Banter defaults to plain `http`, which suits one machine or a trusted home network. On your own network a LAN address is enough for text. Voice from any device other than the one running Banter needs a secure page (`https`; `localhost` only works on that machine), so serve the dashboard over `https` for that; [Tailscale](https://tailscale.com) is one way to get it, covered in [remote-access.md](remote-access.md).
 
 Speech servers bring their own prerequisites. Banter needs none of them to run itself.
 

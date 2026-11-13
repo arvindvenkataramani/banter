@@ -10,7 +10,7 @@ Tailscale is the one remote-access method Banter has built-in support for, via `
 
 Banter defaults to plain `http`, so it works as shipped on one machine or a home network with no certificates to set up. Moving to `https` is safer, and on a phone it's required for voice mode.
 
-- **Your microphone needs it.** Browsers only grant the microphone to a secure page: `https`, or `http://localhost` on the same machine. A phone opening the dashboard at `http://192.168.1.20:4200` can chat by text, but voice mode can't start.
+- **Your microphone needs it.** Browsers only grant the microphone to a secure page: `https`, or `http://localhost` on the same machine. Any other device, a phone or another computer, opening the dashboard at `http://192.168.1.20:4200` can chat by text, but voice mode can't start.
 - **Everything is readable on the network otherwise.** Over `http`, the audio you speak, the transcripts, the agent's replies and the gateway token travel in the clear. Anyone else on the same Wi-Fi, or any compromised device on it, can read them.
 - **The browser can't tell it's really your server.** `https` proves the page came from the machine it names. Over `http`, something on the network can answer in its place.
 - **Other websites can reach a plain-http server more easily.** Banter's API has no login of its own; it trusts whoever can reach it. A technique called DNS rebinding lets a web page you visit point its own name at an address on your network and call that address from your browser. A page served over `https` is much harder to target this way, because the attacker can't present a valid certificate for your machine's name.
