@@ -34,6 +34,25 @@ const mdComponents: Components = {
       </pre>
     )
   },
+  // Only images embedded in the message load. A remote URL is shown as a link:
+  // a reply should not make the browser fetch arbitrary addresses, and the
+  // page's COEP would block most remote images anyway.
+  img({ src, alt }) {
+    if (typeof src === 'string' && /^data:image\/[a-z0-9.+-]+;base64,/i.test(src)) {
+      return <img src={src} alt={alt ?? ''} className="max-w-full rounded-xl" />
+    }
+    return (
+      <span className="text-muted-foreground">
+        External image not loaded: {alt || 'image'}
+        {typeof src === 'string' && (
+          <>
+            {' · '}
+            <a href={src} target="_blank" rel="noopener noreferrer">Open image</a>
+          </>
+        )}
+      </span>
+    )
+  },
 }
 
 const remarkPlugins = [remarkGfm]

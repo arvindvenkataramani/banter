@@ -8,6 +8,8 @@
 
 A React PWA served directly by the control plane via `serveStatic()` middleware — no separate server process. Built by Vite into `dashboard/dist/`, deployed alongside the control plane. The control shard does not serve it — the shard is API-only; the dashboard talks to it only through the control plane.
 
+Every dashboard response carries `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, which make the page cross-origin isolated so the voice models can run multi-threaded WASM ([turn-taking.md](../design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled)). Browsers isolate only a secure context, so a dashboard reached over plain http runs them on one thread. Under these headers the browser refuses any cross-origin image, script or frame whose server does not opt in, which is why chat shows remote images as links.
+
 **Serving rule:** the Hono app handles `/api/*` routes first; everything else falls through to static file serving with an `index.html` fallback for client-side routing.
 
 **Frontend rule:** if the API says a service is healthy, it shows green. The dashboard never invents state.

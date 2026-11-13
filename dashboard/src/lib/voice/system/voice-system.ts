@@ -476,10 +476,10 @@ export class VoiceSystem {
   /** Start loading the browser models. Idempotent. */
   preload(): void {
     this.deps.loadModels().catch((err) => {
-      // Most often the ORT wasm runtime or the .onnx models 404 under
-      // /models/, which otherwise leaves voice silently dead.
+      // Most often the .onnx models 404 under /models/ or the ORT wasm
+      // runtime fails to load, which otherwise leaves voice silently dead.
       const detail = err instanceof Error ? err.message : String(err)
-      this.deps.notify(`Voice models failed to load — check /models/*.onnx and /models/ort-*.wasm are served. (${detail})`)
+      this.deps.notify(`Voice models failed to load — check /models/*.onnx and the ORT wasm under /assets/ are served. (${detail})`)
     })
   }
 

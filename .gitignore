@@ -58,12 +58,6 @@ scratchpad/
 # Per-machine deploy settings — deploy.conf.example ships instead
 scripts/deploy.conf
 
-# ORT runtime binaries — copied out of node_modules at build time by the
-# copy-ort-wasm plugin (dashboard/vite.config.ts), never committed. The model
-# assets alongside them in public/models/ ARE committed; see NOTICE.
-dashboard/public/models/*.wasm
-dashboard/public/models/*.mjs
-
 # Event log written by a local (non-deployed) control plane run
 logs/
 

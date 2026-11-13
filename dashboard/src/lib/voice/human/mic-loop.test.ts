@@ -98,7 +98,6 @@ function setup() {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  vi.spyOn(console, 'log').mockImplementation(() => {})
   detach.mockClear()
 })
 

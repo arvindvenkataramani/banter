@@ -114,7 +114,7 @@ These values are tuned on a device and nowhere else. No spec pins them — a thr
 
 Runs a custom ONNX model on an 8-second sliding audio window. Returns turn-completion probability — whether the user has finished their turn. Higher probability → transcript the current audio and send.
 
-Requires `onnxruntime-web@1.18.0` with the `ort.all` bundle (`onnxruntime-web/experimental`). **Do not upgrade ort.** Versions ≥1.19 dropped single-threaded WASM and require COOP/COEP headers.
+Runs on the shared multi-threaded ORT runtime from `ort-init.ts`; see [the ORT runtime notes](../design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled).
 
 Status: implemented and working.
 

@@ -17,9 +17,6 @@ const GatewayContext = createContext<GatewayContextValue>({
   reconnect: () => {},
 })
 
-// Provider and its consumer hook belong in one file; splitting them to satisfy
-// fast refresh would buy nothing but an extra module.
-// eslint-disable-next-line react-refresh/only-export-components
 export function useGateway(): GatewayContextValue {
   return useContext(GatewayContext)
 }

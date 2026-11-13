@@ -122,7 +122,6 @@ function element(): HTMLAudioElement {
 function setMediaSessionMetadata(title: string): void {
   if (!('mediaSession' in navigator)) return
   try {
-    // eslint-disable-next-line no-undef
     navigator.mediaSession.metadata = new MediaMetadata({ title, artist: 'Sutradhara' })
   } catch {
     /* ignore — guarded call only */

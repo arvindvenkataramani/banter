@@ -3,11 +3,21 @@ import { join, extname } from "node:path";
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".wasm": "application/wasm",
   ".onnx": "application/octet-stream",
   ".svg": "image/svg+xml",
+};
+
+/**
+ * Cross-origin isolation, which multi-threaded WASM needs for SharedArrayBuffer.
+ * Every response carries it: the workers ORT spawns load from these files too.
+ */
+const ISOLATION_HEADERS = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
 };
 
 export async function serveStatic(distPath: string, req: Request): Promise<Response> {
@@ -19,13 +29,14 @@ export async function serveStatic(distPath: string, req: Request): Promise<Respo
   }
   // SPA fallback — never cache the HTML shell so deploys take effect.
   return new Response(Bun.file(join(distPath, "index.html")), {
-    headers: { "Cache-Control": "no-cache" },
+    headers: { "Cache-Control": "no-cache", ...ISOLATION_HEADERS },
   });
 }
 
 async function respond(filePath: string, pathname: string, req: Request): Promise<Response> {
   const headers: Record<string, string> = {
     ...cacheHeaders(pathname),
+    ...ISOLATION_HEADERS,
     Vary: "Accept-Encoding",
   };
   // Set the type from the original path — a compressed sibling must still
@@ -47,11 +58,11 @@ async function respond(filePath: string, pathname: string, req: Request): Promis
 }
 
 /**
- * Cache policy. Without this the browser re-downloads the ~21MB of ONNX models
- * and the ORT wasm runtime under /models/ on every load, which is why VAD takes
- * a long time to go active. /assets/ is content-hashed by Vite (safe forever);
- * /models/ is large and effectively immutable between deploys, so cache it hard
- * too; the HTML shell must always revalidate.
+ * Cache policy. Without this the browser re-downloads the ONNX models under
+ * /models/ and the ORT wasm runtime under /assets/ on every load, which is why
+ * VAD takes a long time to go active. /assets/ is content-hashed by Vite (safe
+ * forever); /models/ is large and effectively immutable between deploys, so
+ * cache it hard too; the HTML shell must always revalidate.
  */
 function cacheHeaders(pathname: string): Record<string, string> {
   if (pathname.startsWith("/assets/")) {

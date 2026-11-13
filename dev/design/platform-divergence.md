@@ -2,7 +2,7 @@
 
 Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why, and what should happen to each difference. Read this before porting anything from platform, and update it when a port lands or a decision is made. It describes the current state; the history is in git.
 
-Compared against platform `0e43f9e`. Start the next audit from there.
+Compared against platform `c02b137`. Start the next audit from there.
 
 ## The rule
 
@@ -65,7 +65,7 @@ Banter changes that platform lacks. They stay.
   - the systemd unit rendered from a template, so an install at a non-default location gets a correct unit
   - `.build` pruned from the logs scan
   - `fluid-smoke.sh`'s roster, `/listen` and idle-unload checks, with `fluid-smoke-listen.ts`
-- **Dashboard lint fixes:** the `eslint.config.js` rules, `gateway-context.tsx` deriving the connection with `useMemo`, the `use-session-manager.ts` effect dependencies, `use-wake-lock.ts`'s targeted exemption, `services/page.tsx` depending on `[load]`, and `service-history.tsx` deriving its loading state.
+- **Dashboard lint fixes:** `caughtErrorsIgnorePattern` in `eslint.config.js`, `gateway-context.tsx` deriving the connection with `useMemo`, the `use-session-manager.ts` effect dependencies, `use-wake-lock.ts`'s targeted exemption, `services/page.tsx` depending on `[load]`, and `service-history.tsx` deriving its loading state.
 - **`CONTRIBUTING.md`:** the testing table and the human-review list.
 - **Open-source files with no platform counterpart:** `LICENSE`, `NOTICE`, `SECURITY.md`, `.github/`, `.nvmrc`, `install.sh`, `render-plist.sh`, `dashboard/scripts/fetch-models.ts` and the `setup` script, the example registries and config, `services/README.md`, `services/fluid/README.md` and `DEVELOPING.md`.
 - **Harness-agnostic docs:** `docs/gateway/dsh/` and `docs/gateway/opencode/`.
@@ -73,7 +73,7 @@ Banter changes that platform lacks. They stay.
 
 ## Banter is behind: port from platform
 
-Against platform `0e43f9e`, every code change is ported apart from the items below.
+Against platform `c02b137`, every code change is ported apart from the items below.
 
 ### Not taken yet
 
@@ -81,7 +81,7 @@ Live config's git-backed history of the live files (`history.ts`).
 
 ### Lint
 
-`turn-manager.ts` has two `prefer-const` errors and `media-engine.ts` an unused exemption. Both files match platform's, so the fix would start in Banter.
+`react-hooks` 7.1 reports `set-state-in-effect` in `features/services/page.tsx`, `features/services/service-detail.tsx` and `use-session-manager.ts`. Platform carries findings of the same rule in other files. `service-detail.tsx` matches platform's, so its fix belongs in platform; the other two are Banter's own versions.
 
 ## Decided
 
@@ -103,6 +103,6 @@ Live config's git-backed history of the live files (`history.ts`).
 - **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
 - **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
-  - `onnxruntime-web` 1.18.0, in the dashboard: 1.19 and later drop single-threaded WASM and the `/experimental` export path that the voice activity detector loads.
+  - `onnxruntime-web` 1.31.1, in the dashboard: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade, over plain http (one thread) as well as https (several); [turn-taking.md](../../docs/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.
   - The FluidAudio fork, at a commit: Banter's patches depend on it.
 - **OpenClaw tools stay** (see above).

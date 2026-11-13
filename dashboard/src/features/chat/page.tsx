@@ -402,7 +402,7 @@ export function ChatPage(_props: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [voiceLoopEnabled, toggleMuteAll])
+  }, [voiceLoopEnabled])
 
   const glowState: 'hearing' | 'playing' | 'off' =
     (!micMuted && loopState === 'hearing') ? 'hearing'

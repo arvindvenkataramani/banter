@@ -1,5 +1,4 @@
-import * as ort from 'onnxruntime-web'
-import './ort-init'
+import { loadOrt, type Ort } from './ort-init'
 
 export interface VadResult {
   speechProbability: number
@@ -17,43 +16,47 @@ const DEFAULT_MODEL_URL = '/models/silero_vad_legacy.onnx'
 const MODEL_WINDOW_SAMPLES = 512
 const DEFAULT_SPEECH_THRESHOLD = 0.5
 
-function zeroState(): { h: ort.Tensor; c: ort.Tensor } {
+function zeroState(ort: typeof Ort): { h: Ort.Tensor; c: Ort.Tensor } {
   return {
     h: new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]),
     c: new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]),
   }
 }
 
+interface Tensors {
+  ort: typeof Ort
+  h: Ort.Tensor
+  c: Ort.Tensor
+  sr: Ort.Tensor
+  input: Ort.Tensor
+}
+
 export class SileroVad {
-  private session: ort.InferenceSession | null = null
-  private h: ort.Tensor
-  private c: ort.Tensor
-  private sr: ort.Tensor = new ort.Tensor('int64', [16000n])
+  private session: Ort.InferenceSession | null = null
   // One model window, filled across calls and handed to every run through the
   // same tensor. Safe to reuse because runs are sequential: the caller awaits
   // each process() before the next.
   private window = new Float32Array(MODEL_WINDOW_SAMPLES)
   private windowFill = 0
-  private input = new ort.Tensor('float32', this.window, [1, MODEL_WINDOW_SAMPLES])
+  // Created by load(), once ORT is available.
+  private t: Tensors | null = null
   // Bumped by reset(), so a run in flight across a reset keeps neither its
   // verdict nor its state.
   private generation = 0
   private speechThreshold = DEFAULT_SPEECH_THRESHOLD
 
-  constructor() {
-    const s = zeroState()
-    this.h = s.h
-    this.c = s.c
-  }
-
   async load(modelUrl?: string): Promise<void> {
     const url = modelUrl ?? DEFAULT_MODEL_URL
+    const ort = await loadOrt()
     this.session = await ort.InferenceSession.create(url, {
       executionProviders: ['wasm'],
     })
-    const s = zeroState()
-    this.h = s.h
-    this.c = s.c
+    this.t = {
+      ort,
+      ...zeroState(ort),
+      sr: new ort.Tensor('int64', [16000n]),
+      input: new ort.Tensor('float32', this.window, [1, MODEL_WINDOW_SAMPLES]),
+    }
   }
 
   /** True once the ONNX session is loaded — chunks before this should be dropped. */
@@ -74,8 +77,9 @@ export class SileroVad {
    * earlier window of the same chunk.
    */
   async process(chunk16k: Float32Array): Promise<VadResult[]> {
-    if (!this.session) return []
+    if (!this.session || !this.t) return []
 
+    const t = this.t
     const generation = this.generation
     try {
       const results: VadResult[] = []
@@ -89,13 +93,13 @@ export class SileroVad {
         if (this.windowFill < MODEL_WINDOW_SAMPLES) break
         this.windowFill = 0
 
-        const feeds = { input: this.input, h: this.h, c: this.c, sr: this.sr }
+        const feeds = { input: t.input, h: t.h, c: t.c, sr: t.sr }
         const output = await this.session.run(feeds)
         if (generation !== this.generation) return results
 
         const prob = (output.output.data as Float32Array)[0]
-        this.h = output.hn
-        this.c = output.cn
+        t.h = output.hn
+        t.c = output.cn
 
         results.push({
           speechProbability: prob,
@@ -112,9 +116,7 @@ export class SileroVad {
   }
 
   reset(): void {
-    const s = zeroState()
-    this.h = s.h
-    this.c = s.c
+    if (this.t) Object.assign(this.t, zeroState(this.t.ort))
     this.windowFill = 0
     this.generation++
   }
@@ -122,7 +124,7 @@ export class SileroVad {
   destroy(): void {
     if (this.session) {
       // release() exists at runtime but isn't in the InferenceSession typings.
-      const session = this.session as ort.InferenceSession & { release?: () => void }
+      const session = this.session as Ort.InferenceSession & { release?: () => void }
       if (typeof session.release === 'function') {
         session.release()
       }

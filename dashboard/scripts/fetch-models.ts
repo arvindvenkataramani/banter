@@ -8,8 +8,8 @@
 // For each asset: download to a temp file, hash it, and only rename it into
 // place if the hash matches the pin below. A mismatch is never accepted as a
 // near-miss — the temp file is discarded and the next candidate URL (if any)
-// is tried instead. ORT's own WASM runtime needs no download here; the
-// `copyOrtWasm` Vite plugin copies it out of node_modules at build time.
+// is tried instead. ORT's own WASM runtime needs no download here; Vite emits
+// it from node_modules as a build asset.
 
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";

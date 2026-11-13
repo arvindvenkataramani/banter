@@ -30,10 +30,9 @@ export default defineConfig([
     },
   },
   {
-    // Vendored shadcn/ui primitives — upstream ships each component alongside
-    // its cva variants object, which trips the fast-refresh rule. We don't
-    // edit these files, so the rule has nothing to tell us here.
-    files: ['src/components/ui/**/*.{ts,tsx}'],
+    // shadcn primitives export their cva variants, and context modules their
+    // hook, beside the component.
+    files: ['src/components/ui/**', 'src/lib/gateway-context.tsx'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },

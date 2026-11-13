@@ -137,7 +137,6 @@ export class MicLoop {
   private maxSpeechProb = 0
   private vadBusy = false
   private smartTurnOk = true
-  private lastSmartTurnProb = 0
   private commitTimer: ReturnType<typeof setTimeout> | null = null
   private safetyTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -182,8 +181,6 @@ export class MicLoop {
     this.vad.reset()
     this.warnedNotReady = false
 
-    console.log('[mic-loop] starting')
-
     const mic = new UtteranceBuffer(frameSource)
     this.mic = mic
     mic.start({ onChunk: (chunk) => this.processChunk(chunk) })
@@ -191,7 +188,6 @@ export class MicLoop {
 
   stop(): void {
     if (!this.running) return
-    console.log('[mic-loop] stopping')
     this.running = false
 
     this.cancelCommitTimer()
@@ -242,7 +238,6 @@ export class MicLoop {
       this.mic?.clearBuffer()
       this.vad.reset()
       this.setState('paused')
-      console.log('[mic-loop] mic muted — utterance paused')
       return
     }
 
@@ -254,7 +249,6 @@ export class MicLoop {
     this.mic?.clearBuffer()
     this.vad.reset()
     this.setState('idle')
-    console.log('[mic-loop] mic muted — capture stays open')
     if (wasListening && durationS !== undefined && peakProb !== undefined) {
       this.cb.onUnconfirmed(durationS, peakProb)
     }
@@ -288,14 +282,12 @@ export class MicLoop {
       // the paused span is not charged against it, so a long pause costs
       // the utterance nothing toward the limit.
       this.scheduleSafetyFlush()
-      console.log('[mic-loop] mic unmuted — utterance resumed')
       return
     }
 
     // Drop the rolling preroll captured while muted — otherwise it gets
     // prepended to the first post-unmute utterance and transcribed.
     this.mic?.clearBuffer()
-    console.log('[mic-loop] mic unmuted')
   }
 
   /**
@@ -306,7 +298,7 @@ export class MicLoop {
    */
   commitUtterance(): void {
     if (this.state !== 'hearing') return
-    this.fireHandoff(false)
+    this.fireHandoff()
   }
 
   /**
@@ -317,7 +309,7 @@ export class MicLoop {
    */
   commitPaused(id: string): void {
     if (this.state !== 'paused' || this.currentUtteranceId !== id) return
-    this.fireHandoff(false)
+    this.fireHandoff()
   }
 
   // ── Per-chunk pipeline ─────────────────────────────────────────────────
@@ -495,7 +487,6 @@ export class MicLoop {
 
   private startCommitTimer(smartTurnProb: number): void {
     this.cancelCommitTimer()
-    this.lastSmartTurnProb = smartTurnProb
     const tt = this.voiceConfig?.stt?.turnTaking
     if (!tt) return
 
@@ -527,7 +518,7 @@ export class MicLoop {
     }
 
     this.commitTimer = setTimeout(() => {
-      if (this.state === 'hearing') this.fireHandoff(false)
+      if (this.state === 'hearing') this.fireHandoff()
     }, delay)
   }
 
@@ -547,7 +538,7 @@ export class MicLoop {
    * to idle — before this call returns, so a speech frame arriving right
    * after is captured as a new utterance, never a resume.
    */
-  private fireHandoff(forceFromFlush: boolean): void {
+  private fireHandoff(): void {
     const mic = this.mic
     if (!mic || !this.running || this.currentUtteranceId === null) return
     this.cancelCommitTimer()
@@ -556,12 +547,6 @@ export class MicLoop {
     const utteranceId = this.currentUtteranceId
     const postPause = mic.getUtteranceAudio()
     const audio = this.pausedAudio !== null ? concatFloat32(this.pausedAudio, postPause) : postPause
-    console.log(
-      forceFromFlush
-        ? '[mic-loop] safety-flush hand-off'
-        : '[mic-loop] hand-off (smartTurn=%.3f)',
-      forceFromFlush ? undefined : this.lastSmartTurnProb,
-    )
     mic.endUtterance()
     this.resetUtteranceState()
     this.setState('idle')
@@ -582,7 +567,7 @@ export class MicLoop {
     this.cancelSafetyFlush()
     this.safetyTimer = setTimeout(() => {
       if (!this.running || this.currentUtteranceId === null) return
-      this.fireHandoff(true)
+      this.fireHandoff()
     }, this.voiceConfig?.stt?.maxRecordingMs ?? DEFAULT_MAX_RECORDING_MS)
   }
 
@@ -597,7 +582,6 @@ export class MicLoop {
 
   private setState(s: MicState): void {
     if (this.state !== s) {
-      console.log('[mic-loop] state %s → %s', this.state, s)
       this.state = s
     }
   }

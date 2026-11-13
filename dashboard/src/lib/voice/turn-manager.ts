@@ -300,7 +300,7 @@ function reduceHumanReport(state: TurnManagerState, utterance: Utterance<'human'
   let human = state.human
   let previous = state.previous
   let relations = state.relations
-  let agent = state.agent
+  const agent = state.agent
 
   // A candidate is an onset: only a report whose phase is `hearing` and
   // whose id is unseen opens or joins a turn. Any other report is checked
@@ -450,7 +450,7 @@ function reduceConversationReport(state: TurnManagerState, conversation: Convers
 
   let agent = state.agent
   let previous = state.previous
-  let human = state.human
+  const human = state.human
   let relations = state.relations
 
   if (conversation.runActive && conversation.runId !== null) {
