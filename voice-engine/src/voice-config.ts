@@ -172,7 +172,7 @@ export interface VoiceConfig {
       stableMs?: number
     }
     options?: SttOption[]
-    /** Max duration (ms) to buffer mic audio before force-flushing to transcription. Default: 120000 (2 min). */
+    /** Max duration (ms) to buffer mic audio before force-flushing to transcription. Default: 300000 (5 min). */
     maxRecordingMs?: number
     /** How long voice-off waits for an outstanding transcription to settle before closing the transport regardless. Default: 1500. */
     settleOnStopMs?: number

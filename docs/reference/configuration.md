@@ -226,7 +226,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 | Field | Purpose |
 |---|---|
 | `version` | Schema version; `3`. |
-| `timezone` | An IANA timezone name. The schema accepts it; nothing in the control plane reads it. |
+| `timezone` | An IANA timezone name. The schema accepts it and keeps it for compatibility with the platform schema; Banter does not read it. |
 | `runtime` | See [Runtime settings](#runtime-settings). |
 | `integrations.openclaw.gateway.url`, `.token` | The OpenClaw gateway's address and token. A token written as `"${NAME}"` is read from the environment variable `NAME` when the control plane serves it; if that variable is unset the token resolves to nothing and the gateway connection is unauthenticated. |
 | `integrations.openclaw.defaultSession` | Session name the web app opens when nothing else is selected. Default: `main`. |
@@ -235,7 +235,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 
 | Field | Purpose |
 |---|---|
-| `enabled` | Present in the example; nothing in the code reads it. |
+| `enabled` | Accepted by the schema, which follows the platform schema; Banter does not read it. |
 | `takeover` | What a voice session does when a voice server it wants, TTS or STT, is held by another session. `"ask"` (default) ends voice with a dialog offering to take it over; `"always"` takes over without asking, on every connection the session makes. |
 | `debug.saveMicSamples` | Boolean, default `false`. Saves microphone captures to disk, and only takes effect when the control plane runs with the `DEBUG` environment variable set. See `MIC_SAMPLE_DIR` under [Deployment](#deployment). |
 
@@ -281,7 +281,7 @@ Values written through the settings dialog must be non-negative, and probabiliti
 `curve` takes one of two forms:
 
 - `{ "type": "power", "exponent": 2 }`: `1` is linear; `2` is patient through most of the band with a sharp drop near the threshold; higher is more patient for longer with a steeper drop at the end.
-- `{ "type": "sigmoid", "center": 0.5, "steepness": 8 }`: an S-curve. `center` (0 to 1) is where in the band the delay drops fastest; higher `steepness` approaches a step, lower approaches linear. The loop reads both, but the schema declares only `type` and `exponent`, so loading a sigmoid curve logs an unknown-field warning for `center` and `steepness`; the values are kept.
+- `{ "type": "sigmoid", "center": 0.5, "steepness": 8 }`: an S-curve. `center` (0 to 1) is where in the band the delay drops fastest; higher `steepness` approaches a step, lower approaches linear. The loop reads both.
 
 #### `voice.tts`
 
@@ -292,8 +292,8 @@ Nothing here declares what exists: models, voices, what each model calls them an
 | `selection.serviceId`, `.model`, `.voice` | The chosen service, roster model and roster voice (or a preset id of the model). The web app sends the TTS server each one's runtime key in their place. |
 | `selection.speed` | Between `0.5` and `2.0`; `1` when unset. |
 | `options.chunkStrategy` | `two-chunk`, `paragraph`, `sentence` or `greedy`. When nothing sets it, `two-chunk`. |
-| `options.minChunkWords` | Words to accumulate before a chunk is sent to the TTS service, so very short phrases do not reach it without context for natural prosody. |
-| `options.maxChunkWords` | Upper bound on words per chunk; a short lead-in sentence is only merged with what follows while the total stays within it. |
+| `options.minChunkWords` | The shortest piece spoken on its own. A sentence shorter than this is held and joined with what follows, so very short phrases do not reach the TTS service without context for natural prosody. |
+| `options.maxChunkWords` | Upper bound on words per chunk, used by the `sentence` and `greedy` strategies. When the buffer reaches it, the text is split at the latest sentence, clause or line break inside the limit; if none exists in that window, at the nearest boundary after it, so a chunk can run slightly over. A short lead-in sentence is only merged with what follows while the total stays within it. |
 | `modelPrefs` | Per-model overrides, keyed by service id and then roster model id, each `{ "chunking": { "mode", "minWords", "maxWords" } }` holding only the fields changed. Used only under `settingsScope: "per-model"`. |
 | `settingsScope` | `"global"` or `"per-model"`; see [Settings scope](#settings-scope). |
 
