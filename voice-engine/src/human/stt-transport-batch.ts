@@ -10,7 +10,6 @@
 
 import { encodeWav } from './wav-encoder'
 import { transcribeAudio } from './stt-client'
-import { ensureServiceReady } from '../voice-service'
 import type { SttTransport } from './stt-transport'
 
 export interface BatchTransportOptions {
@@ -19,6 +18,8 @@ export interface BatchTransportOptions {
   model?: string
   /** Restarts a stopped service and retries once. Without it, a failure is final. */
   serviceId?: string
+  /** Starts the service and returns its endpoint; the retry needs it alongside `serviceId`. */
+  ensureServiceReady?: (serviceId: string) => Promise<string>
   /** So the session can keep using an endpoint a restart moved. */
   onEndpointChange?: (endpoint: string) => void
 }
@@ -27,12 +28,14 @@ export class BatchSttTransport implements SttTransport {
   private endpoint: string
   private model?: string
   private serviceId?: string
+  private ensureServiceReady?: (serviceId: string) => Promise<string>
   private onEndpointChange?: (endpoint: string) => void
 
   constructor(opts: BatchTransportOptions) {
     this.endpoint = opts.endpoint
     this.model = opts.model
     this.serviceId = opts.serviceId
+    this.ensureServiceReady = opts.ensureServiceReady
     this.onEndpointChange = opts.onEndpointChange
   }
 
@@ -61,8 +64,8 @@ export class BatchSttTransport implements SttTransport {
       return await transcribeAudio(this.endpoint, wav, this.model)
     } catch (first) {
       const previousEndpoint = this.endpoint
-      if (!this.serviceId) throw new Error('No STT service configured')
-      const newEndpoint = await ensureServiceReady(this.serviceId)
+      if (!this.serviceId || !this.ensureServiceReady) throw new Error('No STT service configured')
+      const newEndpoint = await this.ensureServiceReady(this.serviceId)
       this.endpoint = newEndpoint
       this.onEndpointChange?.(newEndpoint)
       try {

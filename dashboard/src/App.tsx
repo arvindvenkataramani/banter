@@ -7,7 +7,7 @@ import { ChatPage } from '@/features/chat/page'
 import { GatewayProvider } from '@/lib/gateway-context'
 import { cancelArm } from '@/lib/media-voice-mode'
 import { voiceSystem } from '@/lib/voice/system'
-import { preloadTones } from '@/lib/voice/system/tones'
+import { preloadTones } from '@platform/voice-engine/system/tones'
 
 // The browser's VAD/smart-turn models and the tones load once, at page load,
 // so the first tap rarely waits on either.

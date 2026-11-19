@@ -12,7 +12,7 @@ in the browser, one on the speech machine.
 Why the decision logic sits this way — two-stage commit, the adaptive curve, why
 Parakeet's punctuation cannot serve as a completion signal — is in
 [`../design/turn-taking.md`](../design/turn-taking.md). Browser-side
-implementation is `dashboard/src/lib/voice/`; the ONNX runtime version is pinned in `dashboard/package.json`.
+implementation is the `@platform/voice-engine` package (`voice-engine/src/`); the ONNX runtime version is pinned in `voice-engine/package.json`.
 
 ## Services
 
@@ -60,13 +60,13 @@ audio over a WebSocket, and `fluid-stt` decodes raw Opus frames there
 (`services/fluid/Sources/FluidServerSTT/AudioDecode.swift`, libopus).
 
 Both are built on the browser side and the loop carries either without
-branching on which: `lib/voice/human/stt-transport.ts` is the interface,
+branching on which: `voice-engine/src/human/stt-transport.ts` is the interface,
 `stt-transport-batch.ts` and `stt-transport-streaming.ts` the two
 implementations, and `mic-loop.ts` holds no conditional on transport.
 
 **A dropped socket is replaced.** The close event is the whole of the failure
 condition, and nothing else detects a stall. While voice is on, `VoiceSystem`
-(`lib/voice/system/voice-system.ts`) builds a new transport and swaps it into `HumanVoice`,
+(`voice-engine/src/system/voice-system.ts`) builds a new transport and swaps it into `HumanVoice`,
 retrying per `voice.stt.reconnect` in `config.json`. Words the old socket had
 not finalized are lost, and one notice says so. Voice ends when another client
 takes the session over or when the retries run out, with an error that stays

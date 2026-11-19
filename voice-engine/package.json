@@ -1,0 +1,22 @@
+{
+  "name": "@platform/voice-engine",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "lint": "../dashboard/node_modules/.bin/eslint -c ../dashboard/eslint.config.js src"
+  },
+  "dependencies": {
+    "@platform/shared": "workspace:*",
+    "onnxruntime-web": "1.31.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "vite": "^8.3.8",
+    "vitest": "^4.1.12"
+  }
+}

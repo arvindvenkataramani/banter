@@ -15,12 +15,12 @@ import { Switch } from '@/components/ui/switch'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Input } from '@/components/ui/input'
 import { fetchVoiceConfig, loadVoiceSelection, unloadTtsModel, setSaveMicSamples, resolveVoiceSelection } from '@/lib/voice'
-import { STREAMING_BACKEND, saveStreamingBackend, getDetectedBackend } from '@/lib/voice/system/streaming-backend'
-import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from '@/lib/voice/voice-session-store'
+import { STREAMING_BACKEND, saveStreamingBackend, getDetectedBackend } from '@platform/voice-engine/system/streaming-backend'
+import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from '@platform/voice-engine/voice-session-store'
 import { applySavedVoiceSettings } from '@/lib/voice/apply-voice-settings'
 import { updateVoiceSelection } from '@/lib/api'
 import type { VoiceUpdateResult, VoiceSelectionPatch } from '@/lib/api'
-import type { StreamingBackend } from '@/lib/voice/system/streaming-backend'
+import type { StreamingBackend } from '@platform/voice-engine/system/streaming-backend'
 import type { VoiceConfig, VoiceSelection, ChunkStrategy } from '@/lib/voice'
 import {
   editField,
@@ -32,26 +32,26 @@ import {
   declaredAt,
   settingsScopeFrom,
   readPrefs,
-} from '@/lib/voice/model-settings'
+} from '@platform/voice-engine/model-settings'
 import type {
   ModelPrefs,
   ModelPref,
   SettingsScope,
   FieldOrigin,
   ResolvedField,
-} from '@/lib/voice/model-settings'
+} from '@platform/voice-engine/model-settings'
 import {
   CHUNKING,
   DEFAULT_CHUNK_STRATEGY,
   resolveChunkingFields,
   globalSetFromConfig,
   diffGlobalOptions,
-} from '@/lib/voice/agent/chunking-setting'
+} from '@platform/voice-engine/agent/chunking-setting'
 import type {
   ChunkingSet,
   ChunkingDraft,
   ChunkingField,
-} from '@/lib/voice/agent/chunking-setting'
+} from '@platform/voice-engine/agent/chunking-setting'
 import { Section, FieldProvenance } from './voice-settings-parts'
 
 /** The listening fields the Listening tab tunes. `section` names the object

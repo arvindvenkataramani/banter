@@ -1,11 +1,11 @@
 // Design: docs/components/voice-turn-taking.md
 
-import type { Frame } from '../../system/devices'
-import { MIC_SAMPLE_RATE } from '../../system/devices'
+import type { Frame } from '../devices'
+import { MIC_SAMPLE_RATE } from '../devices'
 
 /**
  * The recorder built on top of a frame source it does not open. Constructed
- * over `lib/system/devices.ts`'s frame source, which owns the microphone
+ * over `devices.ts`'s frame source, which owns the microphone
  * stream and its AudioContext — this only attaches to the frames that
  * source delivers.
  *

@@ -31,7 +31,7 @@ import type { VoiceConfig, VoiceSelection, ChunkStrategy } from '../voice-config
 import type { SttTransport } from '../human/stt-transport'
 import type { SileroVad } from '../human/silero-vad'
 import type { SmartTurn } from '../human/smart-turn'
-import type { Session } from '../../session'
+import type { VoiceSession } from '../session'
 import type { SpeechPlayer, TonePlayer } from './playback-engine'
 
 export type VoicePhase = 'off' | 'starting' | 'live' | 'ending'
@@ -58,7 +58,7 @@ export interface AgentSide {
   chunkConfig: { chunkStrategy: ChunkStrategy; minChunkWords: number | undefined; maxChunkWords: number | undefined }
   ttsEndpoint: string | null
   ttsSelection: VoiceSelection | null
-  attach(session: Session): void
+  attach(session: VoiceSession): void
   detach(): void
 }
 

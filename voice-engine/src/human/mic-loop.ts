@@ -3,7 +3,7 @@
 import { UtteranceBuffer } from './utterance-buffer'
 import { SileroVad } from './silero-vad'
 import { SmartTurn } from './smart-turn'
-import { frameSource, MIC_SAMPLE_RATE } from '../../system/devices'
+import { frameSource, MIC_SAMPLE_RATE } from '../devices'
 import type { VoiceConfig } from '../voice-config'
 import type { VadResult } from './silero-vad'
 

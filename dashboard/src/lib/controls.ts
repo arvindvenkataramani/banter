@@ -1,22 +1,12 @@
 import type { Session } from './session'
+import type { VoiceAnnotation } from '@platform/voice-engine/session'
+import { haltAudio } from '@platform/voice-engine/audio-halters'
 
-export type VoiceAnnotation = 'interrupted-speaking' | 'interrupted-working'
+export type { VoiceAnnotation }
 
 export const ANNOTATIONS: Record<VoiceAnnotation, string> = {
   'interrupted-speaking': '[[note: interrupted you while you were speaking]]',
   'interrupted-working': '[[note: interrupted you while you were working]]',
-}
-
-// Module-level, not per-instance: there is one voice engine, not one per
-// session. agent-voice.ts registers `() => engine.cancel()`; import
-// direction is voice → controls only, never the reverse.
-const audioHalters = new Set<() => void>()
-
-export function registerAudioHalter(halt: () => void): () => void {
-  audioHalters.add(halt)
-  return () => {
-    audioHalters.delete(halt)
-  }
 }
 
 const ABORT_THEN_SEND_TIMEOUT_MS = 5000
@@ -45,7 +35,7 @@ export class SessionControls {
   // resolves — a stop control that keeps talking for half a second feels
   // broken, so local silence precedes ground truth.
   stop(): Promise<void> {
-    for (const halt of audioHalters) halt()
+    haltAudio()
     return this.session.abort()
   }
 

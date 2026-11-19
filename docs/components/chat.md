@@ -114,7 +114,7 @@ One instance per sessionKey. Owns `_messages`, `_isStreaming`, `_isTyping`,
 
 History rows are anchored on `__openclaw.id` (falling back to `seq`, then
 positional index) so identity survives pagination and reload, matching the
-protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `lib/voice/agent/speech-chunker.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
+protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `voice-engine/src/agent/speech-chunker.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
 
 ### Run signalling — what opens a run, and what must not end one
 
@@ -166,7 +166,7 @@ Owns UI-local state only: scroll position and the voice chrome. Everything
 about the conversation itself — messages, streaming state,
 agent/model/session — comes from `useSessionManager()`. The voice session
 is not page state: it is the module-level `voiceSystem`
-(`lib/voice/system/`), and the page reads it through two stores.
+(`voice-engine/src/system/`), and the page reads it through two stores.
 
 - `useVoiceSystemStore` — `phase` (`off`, `starting`, `live`, `ending`),
   `reconfiguring` (a saved provider change is readying a service under a
@@ -189,7 +189,7 @@ itself, chosen by CSS breakpoint rather than JS device detection.
 
 The voice control calls `voiceOn()` from `lib/media-voice-mode.ts`, which
 calls `voiceSystem.voiceOn()`. The mic is acquired by `acquire()` in
-`lib/system/devices.ts`, which `voiceSystem` calls synchronously from the
+`voice-engine/src/devices.ts`, which `voiceSystem` calls synchronously from the
 tap, before any `await`: iOS Safari drops the user-activation context across
 an await, so `getUserMedia` has to run in the same tick as the tap.
 
@@ -206,7 +206,7 @@ over action calls `voiceOn({ takeover: true })`.
 The settings dialog (`features/settings/*`) is a config *editor*, not a live
 control: `useVoiceSettings` stages provider/model/voice/speed/chunking
 choices locally, and only on Save does it PATCH the selection server-side.
-It then calls `applySavedVoiceSettings()` (`lib/voice/apply-voice-settings.ts`),
+It then calls `applySavedVoiceSettings()` (`dashboard/src/lib/voice/apply-voice-settings.ts`),
 which merges the PATCH result into `useVoiceSessionStore` and calls
 `voiceSystem.reconfigure(...)` to ready the services it now names.
 

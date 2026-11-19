@@ -8,10 +8,10 @@ import type {
   HealthState,
   ControlPlaneReloadResponse,
 } from '@platform/shared'
-import type { VoiceConfig } from '@/lib/voice/voice-config'
-import type { ModelPref, SettingsScope } from '@/lib/voice/model-settings'
+import type { VoiceSelectionPatch, VoiceUpdateResult } from '@platform/voice-engine/voice-config'
 
 export type { ServiceWithHealth, Host, Capability, Event, HealthState, ControlPlaneReloadResponse }
+export type { VoiceSelectionPatch, VoiceUpdateResult }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
@@ -120,35 +120,6 @@ export function restartService(id: string): Promise<{ success: boolean; error?: 
   return request<{ success: boolean; error?: string; stage?: 'process' | 'serve' }>(`/api/services/${id}/restart`, {
     method: 'POST',
   })
-}
-
-export type VoiceSelectionPatch = {
-  serviceId?: string
-  model?: string
-  voice?: string
-  speed?: number
-  chunkStrategy?: string | null
-  minChunkWords?: number | null
-  maxChunkWords?: number | null
-  modelPrefs?: Record<string, Record<string, ModelPref | null>>
-  settingsScope?: SettingsScope
-  sttServiceId?: string
-  saveMicSamples?: boolean
-  takeover?: 'ask' | 'always'
-  vad?: Partial<Record<'minSpeechDurationS' | 'minSpeechProb', number>>
-  turnTaking?: Partial<Record<'pauseThresholdMs' | 'commitMinDelayMs' | 'commitMaxDelayMs' | 'smartTurnThreshold' | 'smartTurnLowCutoff', number>>
-}
-
-/** What `PATCH /api/voice/selection` returns — `config.voice` verbatim, so
- * every part is optional and it lacks the enrichment `GET /api/voice` adds
- * (provider service names, the STT options list). Callers must merge this
- * onto their existing config rather than replace it wholesale. */
-export type VoiceUpdateResult = {
-  enabled?: boolean
-  takeover?: VoiceConfig['takeover']
-  tts?: Partial<VoiceConfig['tts']>
-  stt?: VoiceConfig['stt']
-  debug?: VoiceConfig['debug']
 }
 
 export function updateVoiceSelection(patch: VoiceSelectionPatch): Promise<VoiceUpdateResult> {

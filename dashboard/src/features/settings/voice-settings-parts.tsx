@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge'
-import type { FieldOrigin } from '@/lib/voice/model-settings'
+import type { FieldOrigin } from '@platform/voice-engine/model-settings'
 
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

@@ -1,6 +1,6 @@
 # The voice system actor
 
-The voice floor names three actors. The human side and the agent side are objects: each is constructed, reports to the turn manager, and reconciles to its snapshot. The third, the system, "owns the devices, enters and leaves voice mode and plays tones" ([`voice-floor.md`](./voice-floor.md)), and in the code it is `VoiceSystem` (`dashboard/src/lib/voice/system/voice-system.ts`). Everything whose lifetime is one voice session belongs to it. Voice starts from the chat page's tap, which calls `voiceSystem.voiceOn()`; the sequences it runs — acquiring the devices in the tap, starting the services, the stop order — are `VoiceSystem` methods.
+The voice floor names three actors. The human side and the agent side are objects: each is constructed, reports to the turn manager, and reconciles to its snapshot. The third, the system, "owns the devices, enters and leaves voice mode and plays tones" ([`voice-floor.md`](./voice-floor.md)), and in the code it is `VoiceSystem` (`voice-engine/src/system/voice-system.ts`). Everything whose lifetime is one voice session belongs to it. Voice starts from the chat page's tap, which calls `voiceSystem.voiceOn()`; the sequences it runs — acquiring the devices in the tap, starting the services, the stop order — are `VoiceSystem` methods.
 
 ## What the system owns
 
@@ -75,5 +75,5 @@ The server does not check that a holder is alive before refusing. A holder whose
 - Voice on calls acquire before its first await. A test drives voice on and asserts, with no await in between, that the element's play and `getUserMedia` have both been called, in that order.
 - Voice off releases the microphone before the ended tone begins. A test asserts the order.
 - A transport, a tone or a service reports; only the system ends a session.
-- Nothing under `lib/system/` imports from `lib/voice/`.
+- `voice-engine/src/devices.ts` imports none of the engine's other modules.
 - No React effect starts or stops voice.

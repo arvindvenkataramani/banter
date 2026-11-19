@@ -27,7 +27,7 @@ A server that answers all of this still isn't selectable until the registry's `r
 
 ### Synthesis
 
-`POST {endpoint}/v1/audio/speech`, JSON body `{ model, input, voice, speed, stream, response_format, ...extra }` ([`playback-engine.ts`](../dashboard/src/lib/voice/system/playback-engine.ts)).
+`POST {endpoint}/v1/audio/speech`, JSON body `{ model, input, voice, speed, stream, response_format, ...extra }` ([`playback-engine.ts`](../voice-engine/src/system/playback-engine.ts)).
 
 `response_format` is the roster provider's `responseFormat`, `mp3` when absent. The dashboard decodes the response as that format, so it has to match what the server returns. A server that can't produce the requested format should refuse the request rather than return another format.
 
@@ -41,7 +41,7 @@ A server that answers all of this still isn't selectable until the registry's `r
 
 ### Batch transcription
 
-`POST {endpoint}/audio/transcriptions`, multipart, with a `file` field carrying WAV audio ([`stt-client.ts`](../dashboard/src/lib/voice/human/stt-client.ts)). OpenAI-compatible servers usually answer under `/v1/audio/transcriptions` as well; the dashboard uses the bare path.
+`POST {endpoint}/audio/transcriptions`, multipart, with a `file` field carrying WAV audio ([`stt-client.ts`](../voice-engine/src/human/stt-client.ts)). OpenAI-compatible servers usually answer under `/v1/audio/transcriptions` as well; the dashboard uses the bare path.
 
 The response is JSON with a `text` field. `fluid-stt` also takes `response_format` (`text`, `verbose_json`) and `timestamp_granularities[]=word` for word timings, and an optional `model` field: loaded if nothing is resident, refused (409) if another model is, never switched to.
 
@@ -66,7 +66,7 @@ Only a load replaces a resident model: a transcription or socket naming a differ
 
 ## Streaming transcription
 
-`WS {endpoint}/v1/audio/stream?model=<id>&chunkMs=<ms>&format=<opus|pcm16>&session=<id>&takeover=1` ([`stt-socket.ts`](../dashboard/src/lib/voice/human/stt-socket.ts)). Used when the model's `kind` is `streaming` or `both` and streaming is preferred.
+`WS {endpoint}/v1/audio/stream?model=<id>&chunkMs=<ms>&format=<opus|pcm16>&session=<id>&takeover=1` ([`stt-socket.ts`](../voice-engine/src/human/stt-socket.ts)). Used when the model's `kind` is `streaming` or `both` and streaming is preferred.
 
 `model` names the model wanted, and `chunkMs` the latency tier where the model declares one. A server may expect the model already loaded in a streaming mode; `fluid-stt` accepts the socket and then loads it, or adds its streaming mode, when nothing else is resident.
 

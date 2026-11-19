@@ -38,9 +38,9 @@ The direct observation, from the timeline with `ctx.onstatechange` instrumented:
 
 ## The fix
 
-**`dashboard/src/lib/system/devices.ts`** — `acquire()` keeps only what the iOS gesture requires: the element's play and `getUserMedia`. The `AudioContext`, source node and processor move into `openMicGraph()`, called from `frameSource.attach()`. Nothing captures, and no route changes, until something is listening.
+**`voice-engine/src/devices.ts`** — `acquire()` keeps only what the iOS gesture requires: the element's play and `getUserMedia`. The `AudioContext`, source node and processor move into `openMicGraph()`, called from `frameSource.attach()`. Nothing captures, and no route changes, until something is listening.
 
-**`dashboard/src/lib/voice/system/voice-system.ts`** — voice off releases the devices synchronously, before the ended tone. The player's release still waits for the tone, since the tone plays on the player's element.
+**`voice-engine/src/system/voice-system.ts`** — voice off releases the devices synchronously, before the ended tone. The player's release still waits for the tone, since the tone plays on the player's element.
 
 `acquire()`'s idempotence guard is now `stream` alone rather than `stream && micContext`, because the context legitimately does not exist between acquire and attach.
 

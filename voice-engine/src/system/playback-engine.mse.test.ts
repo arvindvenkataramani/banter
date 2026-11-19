@@ -89,7 +89,7 @@ beforeAll(async () => {
   // own report()/resetTurnManager() act on the same store instance the
   // engine subscribes to.
   ;({ PlaybackEngine } = await import('./playback-engine'))
-  ;({ resetDevicesForTest } = await import('../../system/devices'))
+  ;({ resetDevicesForTest } = await import('../devices'))
   ;({ useTurnManagerStore, resetTurnManager } = await import('../store/turn-manager-store'))
   ;({ snapshot: buildSnapshot, initialTurnManagerState } = await import('../turn-manager'))
 })

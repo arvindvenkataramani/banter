@@ -49,3 +49,6 @@ export interface SttTransport {
   /** Release whatever the transport holds open. */
   close(): void
 }
+
+/** What a model is, as its server reports it. */
+export type SttModelKind = 'batch' | 'streaming' | 'both'

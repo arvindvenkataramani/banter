@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ChatSendButton } from './chat-send-button'
 import { useChatTextarea } from './use-chat-textarea'
 import { useTranscriptStore } from '@/lib/voice'
-import { usePendingView } from '@/lib/voice/human/use-revealed-transcript'
+import { usePendingView } from '@platform/voice-engine/human/use-revealed-transcript'
 
 interface Props {
   onSend: (text: string) => void

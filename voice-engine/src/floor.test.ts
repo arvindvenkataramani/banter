@@ -12,7 +12,7 @@ import {
   type UtteranceOutcome,
   type UtterancePhase,
 } from './turn-manager'
-import type { Activity } from '../run-state'
+import type { Activity } from './run-event'
 
 // The turn manager's reduction rules, one test per rule, grouped by subject.
 // Each test is named by the rule it protects; the transitions they add up to

@@ -1,5 +1,6 @@
 import { getService, startService } from '@/lib/api'
 import type { ServiceWithHealth } from '@/lib/api'
+import type { SttModelKind } from '@platform/voice-engine/human/stt-transport'
 
 const POLL_INTERVAL_MS = 500
 
@@ -91,9 +92,6 @@ export async function loadTtsModel(endpoint: string, modelName: string): Promise
     throw new Error(`Failed to load model "${modelName}": ${res.status}`)
   }
 }
-
-/** What a model is, as its server reports it. */
-export type SttModelKind = 'batch' | 'streaming' | 'both'
 
 /**
  * Load an STT model before the first utterance, so no utterance waits on the

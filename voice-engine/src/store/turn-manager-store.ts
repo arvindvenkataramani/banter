@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { initialTurnManagerState, reduce, snapshot } from '../turn-manager'
 import type { TurnManagerState, TurnManagerConfig, Report, Snapshot } from '../turn-manager'
-import type { SessionControls } from '../../controls'
+import type { VoiceSession } from '../session'
 import { takeTranscript } from './transcript-store'
 
 export interface TurnManagerStoreState {
@@ -53,7 +53,7 @@ export function configureTurnManager(c: TurnManagerConfig): void {
 /** What the turn manager needs of a session: somewhere to send a finished
  * turn, and a way to stop the run a human interrupted. */
 export interface SendableSession {
-  controls: Pick<SessionControls, 'send' | 'abort'>
+  controls: VoiceSession['controls']
 }
 
 let session: SendableSession | null = null

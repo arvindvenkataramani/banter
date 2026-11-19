@@ -60,7 +60,7 @@ These hold by construction and no test can check them, so a change that breaks o
 - No actor reads another actor's state except through the snapshot.
 - No report is issued after an `await` on the path that observed the thing reported.
 - `reduce` has no side effects and no reference to a store, element or timer; the reconcile functions are idempotent.
-- Nothing under `lib/system/` imports from `lib/voice/`.
+- `voice-engine/src/devices.ts` imports none of the engine's other modules.
 - The tap reaches `acquire()` synchronously, through voice on, never through a subscription or an effect, and inside it the element play and `getUserMedia` both start before the first `await`, in that order. iOS Safari grants both only inside the gesture.
 - Nothing attaches to the frame source on a path that has not awaited the opening tones, and the mode reports `off` only after the last release of a session, never to cause one.
 

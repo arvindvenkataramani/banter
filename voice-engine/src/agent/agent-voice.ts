@@ -2,8 +2,8 @@
 
 import { SpeechChunker } from './speech-chunker'
 import { report } from '../store/turn-manager-store'
-import { registerAudioHalter } from '../../controls'
-import type { Session } from '../../session'
+import { registerAudioHalter } from '../audio-halters'
+import type { VoiceSession } from '../session'
 import type { VoiceSelection, ChunkStrategy } from '../voice-config'
 import type { ConversationReport } from '../turn-manager'
 import type { SpeechPlayer } from '../system/playback-engine'
@@ -30,8 +30,7 @@ export class AgentVoice {
 
   constructor(player: SpeechPlayer) {
     // Local "silence now" precedes ground truth — stop() halts audio
-    // synchronously before the abort RPC resolves. Registered here, not in
-    // playback-engine.ts: the import direction is voice → controls only.
+    // synchronously before the abort RPC resolves.
     // Unregistered at teardown — a voice session's own halter must not
     // outlive it, or a stop() belonging to a later session finds a stale
     // closure over a player it no longer plays through.
@@ -61,7 +60,7 @@ export class AgentVoice {
     this.chunker.config = c
   }
 
-  attach(session: Session): void {
+  attach(session: VoiceSession): void {
     this.unsubscribeConversation?.()
     this.chunker.attach(session)
     const reportConversation = () => {

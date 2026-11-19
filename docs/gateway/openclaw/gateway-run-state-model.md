@@ -1,6 +1,6 @@
 # Gateway run-state model
 
-How Banter turns the gateway's `agent` and `chat` event streams into a per-run state a UI (or the voice loop) can react to. Implemented in `dashboard/src/lib/run-state.ts`; consumed by `dashboard/src/lib/voice/turn-manager.ts`. See `gateway-tool-and-message-events.md` for why `session.message` alone isn't a reliable execution trace, and `openclaw-gateway-protocol.md` for the wire-level event shapes this normalizes.
+How Banter turns the gateway's `agent` and `chat` event streams into a per-run state a UI (or the voice loop) can react to. Implemented in `dashboard/src/lib/run-state.ts`; consumed by `voice-engine/src/turn-manager.ts`. See `gateway-tool-and-message-events.md` for why `session.message` alone isn't a reliable execution trace, and `openclaw-gateway-protocol.md` for the wire-level event shapes this normalizes.
 
 ## Why a separate model
 

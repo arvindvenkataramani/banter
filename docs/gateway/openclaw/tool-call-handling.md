@@ -16,7 +16,7 @@ Text streaming is unaffected. `chat` drives playback; only the tool signal trave
 
 ## Voice: flushing at the tool boundary
 
-`TurnManager` subscribes to conversation events and, on a tool event with `phase === 'start'`, calls `chunker.recommendFlush()` (`dashboard/src/lib/voice/turn-manager.ts`). Speech buffered up to that point is spoken rather than held while the tool runs.
+`TurnManager` subscribes to conversation events and, on a tool event with `phase === 'start'`, calls `chunker.recommendFlush()` (`voice-engine/src/turn-manager.ts`). Speech buffered up to that point is spoken rather than held while the tool runs.
 
 There is no resume on `phase === 'end'`, and tool activity is never spoken — a tool call affects *when* speech flushes, not what is said.
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { Session } from '../session'
+import type { VoiceSession } from './session'
 import type { SttTransport } from './human/stt-transport'
-import type { SttModelKind } from './voice-service'
+import type { SttModelKind } from './human/stt-transport'
 import { BatchSttTransport } from './human/stt-transport-batch'
 import { StreamingSttTransport, type StreamingCloseInfo } from './human/stt-transport-streaming'
 import type { VoiceConfig, VoiceSelection } from './voice-config'
@@ -22,7 +22,7 @@ import type { VoiceConfig, VoiceSelection } from './voice-config'
 interface VoiceSessionState {
   /** ChatPage's current activeSession, republished on every change. Retained
    * across ChatPage unmounts — see header comment. */
-  session: Session | null
+  session: VoiceSession | null
   voiceConfig: VoiceConfig | null
   voiceSelection: VoiceSelection | null
   ttsEndpoint: string | null
@@ -37,7 +37,7 @@ export const useVoiceSessionStore = create<VoiceSessionState>(() => ({
   sttEndpoint: null,
 }))
 
-export function publishSession(session: Session | null): void {
+export function publishSession(session: VoiceSession | null): void {
   useVoiceSessionStore.setState({ session })
 }
 
@@ -197,6 +197,8 @@ export async function createSttTransport(opts: {
   serviceId?: string
   model?: string
   mode: 'batch' | 'streaming' | null
+  /** Starts the STT service and returns its endpoint, for the batch transport's retry. */
+  ensureServiceReady: (serviceId: string) => Promise<string>
   /** The model's latency tier, for a streaming model that takes one. */
   chunkMs?: number
   /** This connection's session id. Only meaningful for a streaming
@@ -221,6 +223,7 @@ export async function createSttTransport(opts: {
     return new BatchSttTransport({
       endpoint: opts.endpoint,
       serviceId: opts.serviceId,
+      ensureServiceReady: opts.ensureServiceReady,
       onEndpointChange: setSttEndpoint,
     })
   }
@@ -242,6 +245,7 @@ export async function createSttTransport(opts: {
     endpoint: opts.endpoint,
     model: opts.model,
     serviceId: opts.serviceId,
+    ensureServiceReady: opts.ensureServiceReady,
     onEndpointChange: setSttEndpoint,
   })
 }

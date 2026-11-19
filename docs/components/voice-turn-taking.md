@@ -1,8 +1,8 @@
 # Voice turn-taking
 
-One record per actor in the voice loop. Every actor reports into the turn manager (`dashboard/src/lib/voice/turn-manager.ts`) and reconciles itself to its snapshot; why it is shaped this way is in [`docs/design/voice-floor.md`](../design/voice-floor.md).
+One record per actor in the voice loop. Every actor reports into the turn manager (`voice-engine/src/turn-manager.ts`) and reconciles itself to its snapshot; why it is shaped this way is in [`docs/design/voice-floor.md`](../design/voice-floor.md).
 
-## Human turn — `dashboard/src/lib/voice/turn-manager.ts`, `dashboard/src/lib/voice/store/turn-manager-store.ts`
+## Human turn — `voice-engine/src/turn-manager.ts`, `voice-engine/src/store/turn-manager-store.ts`
 
 **Owns:** the human turn's phase, outcome, `held`/`sendPending`, and delivering it once sent.
 **Reports:** nothing. **Reads:** `human`, `annotation`.
@@ -40,7 +40,7 @@ One record per actor in the voice loop. Every actor reports into the turn manage
 **Why:**
 - delivery is edge-triggered against `prev.human`, because the composer writes `settled` live while a sent turn still sits `closing`, and a level read would resend it.
 
-## Agent turn and floor — `dashboard/src/lib/voice/turn-manager.ts`, `dashboard/src/lib/voice/store/turn-manager-store.ts`
+## Agent turn and floor — `voice-engine/src/turn-manager.ts`, `voice-engine/src/store/turn-manager-store.ts`
 
 **Owns:** the agent turn's phase/outcome, the floor, and aborting a run the human interrupted.
 **Reports:** nothing. **Reads:** `agent`, `activity`.
@@ -84,7 +84,7 @@ One record per actor in the voice loop. Every actor reports into the turn manage
 - `annotation` reads `relations.interruption.working`, never `runActive` directly, because the abort the interruption causes ends the run before the send that reads it.
 
 
-## MicLoop — `dashboard/src/lib/voice/human/mic-loop.ts`
+## MicLoop — `voice-engine/src/human/mic-loop.ts`
 
 **Owns:** whether raw mic audio is an utterance, and that utterance's audio buffer.
 **Reports:** nothing (calls `MicLoopCallbacks` only; `HumanVoice` turns those into `report({ actor: 'human', utterance })`). **Reads:** nothing (no snapshot access; mute is driven by direct `muteMic()`/`unmuteMic()` calls).
@@ -119,7 +119,7 @@ VAD verdicts drive state and the silence counter; capture is driven by the frame
 No state for "handed off, waiting to see if it resumes" — a hand-off is terminal, so speech after one is always a new utterance through the confidence gate.
 Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic keeps writing while muted and must not grow unbounded or leak muted-room audio into the transcript.
 
-## HumanVoice — `dashboard/src/lib/voice/human/human-voice.ts`
+## HumanVoice — `voice-engine/src/human/human-voice.ts`
 
 **Owns:** the mic loop and STT transport; transcribes utterances and writes the transcript.
 **Reports:** `{ actor: 'human', utterance: Utterance<'human'> }`. **Reads:** `controls.micMuted`, `composer.focused`.
@@ -159,7 +159,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 
 **Why:** the transcript write happens before the `running`/`ended` checks, because a commit `stop()` is racing must not be thrown away.
 
-## Transcript store — `dashboard/src/lib/voice/store/transcript-store.ts`
+## Transcript store — `voice-engine/src/store/transcript-store.ts`
 
 **Owns:** the message being composed — settled text plus each unsettled utterance's words, in spoken order.
 **Reports:** nothing. **Reads:** nothing.
@@ -190,7 +190,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 
 **Why:** paced entry is the newest live one, because earlier live entries are already handed off to transcription and won't receive more partials to pace.
 
-## VoiceSystem — `dashboard/src/lib/voice/system/voice-system.ts`
+## VoiceSystem — `voice-engine/src/system/voice-system.ts`
 
 **Owns:** one voice session: its phase, its session id, the services and heartbeat, the human and agent sides, the transcription connection and its reconnects, the player, and the last ending. One instance per page, built in `system/index.ts`.
 **Reports:** `{ actor: 'mode', mode }` on every phase change and every mic mute while live; nothing else reports the mode. **Reads:** the mute store and the session store, not the snapshot.
@@ -211,7 +211,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 
 **Why:** the design record is [`docs/design/voice-system.md`](../design/voice-system.md).
 
-## PlaybackEngine — `dashboard/src/lib/voice/system/playback-engine.ts`
+## PlaybackEngine — `voice-engine/src/system/playback-engine.ts`
 
 **Owns:** what audio is mounted on the element for which run, and how it ended; the tone it is playing.
 **Reports:** `{actor:'agent', utterance, supply}` via `publish()`. **Reads:** `snapshot.agent.outcome`, `snapshot.previous.agent`, `snapshot.newAudio`, `snapshot.mayBeAudible`. While it holds a tone it leaves the element alone whatever `mayBeAudible` says.
@@ -261,7 +261,7 @@ Concurrency-limited speaks are granted in enqueue order, never released back to 
 **Why:** Reconciliation reads `speechMounted`, not `appendedToSource`, so blob's mounted audio is cancelled too — a guard naming only the MSE field would leave blob's audio uncancelled while the report said it was there.
 `elementBusy` excludes a tone's own slot on both backends, or a tone in flight would read as agent speech.
 
-## AgentVoice — `dashboard/src/lib/voice/agent/agent-voice.ts`
+## AgentVoice — `voice-engine/src/agent/agent-voice.ts`
 
 **Owns:** the conversation relay to the floor, and the `ttsSelection`/`ttsEndpoint` a chunk reads at speak time.
 **Reports:** `{ actor: 'conversation', conversation: ConversationReport }`. **Reads:** nothing.
@@ -287,7 +287,7 @@ Concurrency-limited speaks are granted in enqueue order, never released back to 
 **Why:** halter unregistered at `detach()` so a later session's `stop()` never closes over a stale engine.
 
 
-## SpeechChunker — `dashboard/src/lib/voice/agent/speech-chunker.ts`
+## SpeechChunker — `voice-engine/src/agent/speech-chunker.ts`
 
 **Owns:** the mapping from the agent's streamed text to speakable chunks handed to the player.
 **Reports:** nothing (calls `cb.enqueueChat`/`beginRun`/`endRun` directly). **Reads:** nothing (`session.conversation` events/snapshot, not the turn manager's).

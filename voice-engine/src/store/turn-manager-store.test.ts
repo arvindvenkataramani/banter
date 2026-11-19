@@ -11,7 +11,7 @@ import {
 } from './turn-manager-store'
 import { editTranscript, useTranscriptStore } from './transcript-store'
 import type { Report, UtteranceOutcome, UtterancePhase } from '../turn-manager'
-import type { Activity } from '../../run-state'
+import type { Activity } from '../run-event'
 
 // The turn manager's writes to the conversation: delivering a human turn
 // that closes sent, and aborting a run the human interrupted. Both act once

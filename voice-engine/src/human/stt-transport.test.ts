@@ -6,9 +6,6 @@ vi.mock('./stt-client', () => ({
   transcribeAudio: (...args: unknown[]) => transcribeAudio(...(args as [])),
   setSaveMicSamples: vi.fn(),
 }))
-vi.mock('../voice-service', () => ({
-  ensureServiceReady: () => ensureServiceReady(),
-}))
 
 import { BatchSttTransport } from './stt-transport-batch'
 import { StreamingSttTransport } from './stt-transport-streaming'
@@ -84,6 +81,7 @@ describe('the batch transport', () => {
     const t = new BatchSttTransport({
       endpoint: 'https://host:8767',
       serviceId: 'stt-fluid',
+      ensureServiceReady,
       onEndpointChange,
     })
 
@@ -97,7 +95,7 @@ describe('the batch transport', () => {
       .mockRejectedValueOnce(new Error('first reason'))
       .mockRejectedValueOnce(new Error('second reason'))
 
-    const t = new BatchSttTransport({ endpoint: 'https://host:8767', serviceId: 'stt-fluid' })
+    const t = new BatchSttTransport({ endpoint: 'https://host:8767', serviceId: 'stt-fluid', ensureServiceReady })
 
     // Reporting only the second hides that the endpoint changed in between.
     await expect(t.commit(new Float32Array(16000))).rejects.toThrow(/second reason.*first reason/s)

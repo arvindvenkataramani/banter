@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { PlaybackEngine } from './playback-engine'
-import { resetDevicesForTest, element as deviceElement } from '../../system/devices'
+import { resetDevicesForTest, element as deviceElement } from '../devices'
 import { useTurnManagerStore, resetTurnManager, report } from '../store/turn-manager-store'
 import { initialTurnManagerState, snapshot as buildSnapshot } from '../turn-manager'
 import type { Snapshot } from '../turn-manager'

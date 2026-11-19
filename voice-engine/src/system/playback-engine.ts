@@ -1,7 +1,7 @@
 // Design: docs/components/voice-turn-taking.md
 
 import { STREAMING_BACKEND } from './streaming-backend'
-import { element as deviceElement, unlockElement as unlockDeviceElement } from '../../system/devices'
+import { element as deviceElement, unlockElement as unlockDeviceElement } from '../devices'
 import { useTurnManagerStore, report } from '../store/turn-manager-store'
 import type { StreamingBackend } from './streaming-backend'
 import type { Snapshot, Utterance, AudioSupply } from '../turn-manager'

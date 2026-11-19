@@ -102,7 +102,7 @@ The sidebar is part of the page's internal layout — not a separate abstraction
 ## Data Flow
 
 - Each view fetches its own data via `src/lib/api.ts`
-- Views are independent; there is no shared global state, with one exception — voice is an app-level engine that outlives any single page. A voice session — microphone capture, VAD, smart-turn, the services, the player — is owned by a module instance, `VoiceSystem` (`dashboard/src/lib/voice/system/`); no page owns it, so navigating away from Chat does not stop it. Every other view holds only its own state.
+- Views are independent; there is no shared global state, with one exception — voice is an app-level engine that outlives any single page. A voice session — microphone capture, VAD, smart-turn, the services, the player — is owned by a module instance, `VoiceSystem` (`voice-engine/src/system/`); no page owns it, so navigating away from Chat does not stop it. Every other view holds only its own state.
 - Navigation between views is via the `navigate` callback and URL (path + query params)
 - A view explicitly imports the widgets it wants to display (pull model)
 

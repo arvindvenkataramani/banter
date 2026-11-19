@@ -163,8 +163,8 @@ cp -r "$SRC/scripts"      "$PROD/scripts"
 if [[ -f "$SCRIPTS_DIR/deploy.conf" ]]; then
   cp "$SCRIPTS_DIR/deploy.conf" "$PROD/scripts/deploy.conf"
 fi
-# Strip dashboard workspace from package.json — only dist is deployed, not the full package
-bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
+# Strip the dashboard and voice-engine workspaces from package.json — only the built dist is deployed
+bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard' && w !== 'voice-engine'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
 cp    "$SRC/tsconfig.json"   "$PROD/tsconfig.json"
 cp    "$SRC/bun.lock"        "$PROD/bun.lock" 2>/dev/null || true
 

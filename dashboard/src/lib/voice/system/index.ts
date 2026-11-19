@@ -2,16 +2,16 @@
 
 import { toast } from 'sonner'
 import { pingService } from '@/lib/api'
-import { VoiceSystem } from './voice-system'
-import { acquire, release } from '../../system/devices'
-import { PlaybackEngine } from './playback-engine'
-import { createToneQueue } from './tones'
+import { VoiceSystem } from '@platform/voice-engine/system/voice-system'
+import { acquire, release } from '@platform/voice-engine/devices'
+import { PlaybackEngine } from '@platform/voice-engine/system/playback-engine'
+import { createToneQueue } from '@platform/voice-engine/system/tones'
 import { ensureTtsReady, ensureServiceReady, loadTtsModel, loadSttModel } from '../voice-service'
-import { fetchSttModelFacts, createSttTransport } from '../voice-session-store'
-import { HumanVoice } from '../human/human-voice'
-import { AgentVoice } from '../agent/agent-voice'
-import { SileroVad } from '../human/silero-vad'
-import { SmartTurn } from '../human/smart-turn'
+import { fetchSttModelFacts, createSttTransport } from '@platform/voice-engine/voice-session-store'
+import { HumanVoice } from '@platform/voice-engine/human/human-voice'
+import { AgentVoice } from '@platform/voice-engine/agent/agent-voice'
+import { SileroVad } from '@platform/voice-engine/human/silero-vad'
+import { SmartTurn } from '@platform/voice-engine/human/smart-turn'
 
 // The browser models are page-lifetime singletons, loaded once the first
 // time the system asks for them. A load that fails is retried on the next
@@ -52,7 +52,7 @@ export const voiceSystem = new VoiceSystem({
     ping: pingService,
   },
   loadModels,
-  createTransport: createSttTransport,
+  createTransport: (opts) => createSttTransport({ ...opts, ensureServiceReady }),
   createHuman: (vad, smartTurn, cb) => new HumanVoice(vad, smartTurn, cb),
   createAgent: (speechPlayer) => new AgentVoice(speechPlayer),
   notify: (message, persistent) => toast.error(message, persistent ? { duration: Infinity, closeButton: true } : undefined),
@@ -62,5 +62,5 @@ export const voiceSystem = new VoiceSystem({
   newSessionId: () => (crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`),
 })
 
-export { VoiceSystem, useVoiceSystemStore } from './voice-system'
-export type { VoicePhase, EndReason, VoiceSystemState, VoiceSystemDeps, HumanSide, AgentSide } from './voice-system'
+export { VoiceSystem, useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
+export type { VoicePhase, EndReason, VoiceSystemState, VoiceSystemDeps, HumanSide, AgentSide } from '@platform/voice-engine/system/voice-system'

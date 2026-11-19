@@ -6,7 +6,7 @@ import { useMuteStore, resetMutes } from '../human/mute-store'
 import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection, publishSession } from '../voice-session-store'
 import type { VoiceConfig, VoiceSelection } from '../voice-config'
 import type { SttTransport } from '../human/stt-transport'
-import type { Session } from '../../session'
+import type { VoiceSession } from '../session'
 
 // Design record: docs/design/voice-system.md. The collaborators are fakes; the
 // turn manager's mode, the mutes and the session store are the real stores.
@@ -53,13 +53,13 @@ const selection2: VoiceSelection = {
   modelKey: 'model-b-key', voiceKey: 'v2-key', responseFormat: 'mp3',
 }
 
-function makeSession(): Session {
+function makeSession(): VoiceSession {
   return {
     controls: { send: vi.fn().mockResolvedValue(undefined), abort: vi.fn().mockResolvedValue(undefined) },
-  } as unknown as Session
+  } as unknown as VoiceSession
 }
 
-function configure(session: Session | null = makeSession(), config: VoiceConfig = makeConfig()): void {
+function configure(session: VoiceSession | null = makeSession(), config: VoiceConfig = makeConfig()): void {
   setVoiceConfig(config)
   setVoiceSelection(selection)
   publishSession(session)

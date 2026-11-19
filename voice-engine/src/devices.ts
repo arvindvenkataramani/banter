@@ -14,7 +14,7 @@
  * gesture play and then the getUserMedia call before its own first await, in
  * that order. The microphone's AudioContext takes no gesture of its own and
  * is built later still, at the frame source's first attach. Nothing here may
- * import from lib/voice/: this module owns the devices for whatever uses
+ * import the engine's other modules: this module owns the devices for whatever uses
  * them, voice among them.
  */
 

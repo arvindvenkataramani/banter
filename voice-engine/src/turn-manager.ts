@@ -1,6 +1,6 @@
 // Design: docs/components/voice-turn-taking.md
 
-import type { Activity } from '../run-state'
+import type { Activity } from './run-event'
 
 export type Speaker = 'human' | 'agent'
 export type Actor = 'human' | 'agent' | 'conversation' | 'controls' | 'composer' | 'mode'

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { Frame } from '../../system/devices'
+import type { Frame } from '../devices'
 import type { VadResult } from './silero-vad'
 import type { VoiceConfig } from '../voice-config'
 
@@ -8,7 +8,7 @@ import type { VoiceConfig } from '../voice-config'
 // be from the microphone. The confidence gate is driven by real sample counts.
 let deliver: ((frame: Frame) => void) | null = null
 const detach = vi.fn(() => { deliver = null })
-vi.mock('../../system/devices', () => ({
+vi.mock('../devices', () => ({
   MIC_SAMPLE_RATE: 16000,
   frameSource: {
     attach: (onFrame: (frame: Frame) => void) => { deliver = onFrame },

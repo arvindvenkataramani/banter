@@ -24,7 +24,7 @@ A browser only grants the microphone to a secure page: https, or `http://localho
 
 ## What it does
 
-**Microphone.** `open` calls `getUserMedia` and holds the stream and nothing else. `+ worklet capture` also builds an `AudioContext` and captures frames through an `AudioWorkletNode` that declares no outputs, which is what Banter's `dashboard/src/lib/system/devices.ts` does. Changing it needs the microphone reopened.
+**Microphone.** `open` calls `getUserMedia` and holds the stream and nothing else. `+ worklet capture` also builds an `AudioContext` and captures frames through an `AudioWorkletNode` that declares no outputs, which is what Banter's `voice-engine/src/devices.ts` does. Changing it needs the microphone reopened.
 
 **Playback**, the same 12-second clip each time:
 

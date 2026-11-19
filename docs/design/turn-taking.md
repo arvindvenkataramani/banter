@@ -1,7 +1,7 @@
 # Turn-taking and endpointing
 
 How the system decides the user has finished speaking. Implementation:
-`dashboard/src/lib/voice/human/mic-loop.ts`, with the models in `silero-vad.ts` and
+`voice-engine/src/human/mic-loop.ts`, with the models in `silero-vad.ts` and
 `smart-turn.ts`. Parameters and their defaults are documented in
 [`../../control/control-plane/data/config.md`](../../control/control-plane/data/config.md)
 under `voice.stt.turnTaking`, and served from `config.json` — this document does
@@ -144,7 +144,7 @@ This confirmed the expected tensor shape and that the feature extractor config i
 
 ### One multi-threaded ORT runtime, never bundled
 
-Silero VAD and smart-turn share one `onnxruntime-web` instance, which `loadOrt()` in `dashboard/src/lib/voice/human/ort-init.ts` imports from `onnxruntime-web/wasm`. The WASM backend covers every operator both models use, including smart-turn's int8 `QuantizeLinear`/`DequantizeLinear`, so no larger bundle is needed.
+Silero VAD and smart-turn share one `onnxruntime-web` instance, which `loadOrt()` in `voice-engine/src/human/ort-init.ts` imports from `onnxruntime-web/wasm`. The WASM backend covers every operator both models use, including smart-turn's int8 `QuantizeLinear`/`DequantizeLinear`, so no larger bundle is needed.
 
 Multi-threaded WASM needs `SharedArrayBuffer`, which only a cross-origin isolated page has, so every dashboard response carries `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`: `serveStatic` in `control/shared/src/static.ts` sends them in production and `server.headers` in `dashboard/vite.config.ts` in dev. When the page is isolated ORT runs `min(4, hardwareConcurrency)` threads, otherwise one. Browsers isolate only a secure context, the same condition they set for the microphone, so any page where voice can start gets the threads unless something between server and browser strips the headers. The settings dialog notes when a secure page is not isolated. Smart-turn's median inference falls from 184 ms to 96 ms on a four-core iPhone at four threads, and from 147 ms to 44 ms on the Mac; ORT's own default of half the cores would give the iPhone only two threads, at 112 ms. Silero takes about 0.2 ms at any thread count. With isolation missing and more than one thread requested, the model fails to load, and only a console warning (`numThreads is set to 4, but this will not work unless you enable crossOriginIsolated mode`) says why.
 
@@ -158,7 +158,7 @@ The `.wasm` is imported with `?url` too, and `wasmPaths` names it, since the unb
 
 ### The log-mel features are computed in-house, not by transformers.js
 
-`dashboard/src/lib/voice/human/whisper-features.ts` computes the `[1, 80, 800]` input itself, with the mel filters read from `public/models/whisper-tiny/preprocessor_config.json`. It prepares the waveform as the reference inference above does: the last 8 s, zero-padded at the start so speech ends where the window ends, then normalized to zero mean and unit variance over the whole window. transformers.js has no `do_normalize` and pads at the end, so neither step comes from it. Its FFT, window and padding are adapted from transformers.js 4.0.1. transformers.js runs the mel projection as an ONNX MatMul through its own onnxruntime-web (1.25-dev), which it loads from jsdelivr at runtime: a second ORT runtime, with a WASM heap that never shrinks, fetched from a CDN, for one matrix multiply. The in-house version does that multiply as a loop and allocates its working buffers once.
+`voice-engine/src/human/whisper-features.ts` computes the `[1, 80, 800]` input itself, with the mel filters read from `public/models/whisper-tiny/preprocessor_config.json`. It prepares the waveform as the reference inference above does: the last 8 s, zero-padded at the start so speech ends where the window ends, then normalized to zero mean and unit variance over the whole window. transformers.js has no `do_normalize` and pads at the end, so neither step comes from it. Its FFT, window and padding are adapted from transformers.js 4.0.1. transformers.js runs the mel projection as an ONNX MatMul through its own onnxruntime-web (1.25-dev), which it loads from jsdelivr at runtime: a second ORT runtime, with a WASM heap that never shrinks, fetched from a CDN, for one matrix multiply. The in-house version does that multiply as a loop and allocates its working buffers once.
 
 transformers.js stays a pinned dev dependency as the reference: `whisper-features.test.ts` requires our output to match its `WhisperFeatureExtractor` to within 1e-4 (it matches to one float32 rounding step). Upgrading that pin means re-checking the adapted code against the new version.
 

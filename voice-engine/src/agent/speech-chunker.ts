@@ -1,9 +1,9 @@
 // Design: docs/components/voice-turn-taking.md
 
 import { TextChunker } from './text-chunker'
-import type { Session } from '../../session'
+import type { VoiceSession } from '../session'
 import type { ChunkStrategy } from '../voice-config'
-import type { RunEvent } from '../../run-state'
+import type { RunEvent } from '../run-event'
 
 export interface SpeechChunkerCallbacks {
   // Per-chunk: the chunker emits a speakable chunk → enqueue into player.
@@ -22,12 +22,12 @@ export interface SpeechChunkerConfig {
 /**
  * Reads the agent's text as it streams from the conversation, decides where
  * the speakable pieces break, and hands them to the player. It manages no
- * turns — the turn manager is `lib/voice/turn-manager.ts`, which opens and closes
+ * turns — the turn manager is `turn-manager.ts`, which opens and closes
  * the agent's turn from the conversation's and the player's own reports;
  * this class only ever reads the conversation directly, to chunk.
  */
 export class SpeechChunker {
-  private session: Session | null = null
+  private session: VoiceSession | null = null
   private unsubscribeEvent: (() => void) | null = null
   private unsubscribeSnapshot: (() => void) | null = null
   private cb: SpeechChunkerCallbacks
@@ -57,7 +57,7 @@ export class SpeechChunker {
     this.cb = cb
   }
 
-  attach(session: Session): void {
+  attach(session: VoiceSession): void {
     this.detach()
     this.session = session
     this.unsubscribeEvent = session.conversation.onEvent((e) => this.handleEvent(e))

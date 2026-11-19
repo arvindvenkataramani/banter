@@ -5,8 +5,7 @@
 // today, but would fit this shape if they ever gained user-facing globals.
 
 import type { ChunkStrategy } from '@platform/shared'
-import type { VoiceConfig, VoiceSelection } from '../voice-config'
-import type { VoiceSelectionPatch } from '@/lib/api'
+import type { VoiceConfig, VoiceSelection, VoiceSelectionPatch } from '../voice-config'
 import {
   diffGlobalSet,
   draftFor,
