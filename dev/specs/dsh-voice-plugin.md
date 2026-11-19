@@ -1,0 +1,159 @@
+# Spec: voice mode as a dsh plugin
+
+The contract for building Banter's voice mode as a DeepSeek Harness (dsh) plugin. Design: [`dev/design/dsh-voice-plugin.md`](../design/dsh-voice-plugin.md). This spec is complete for the build; where it is silent, the decision tiers apply (decide from precedent and log, or write a brief and stop that step).
+
+**Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
+
+**Target:** dsh `dsh-v0.2.2-rc.1` (npm `latest`), source at `~/Code/contrib/deepseek-harness`, Node `>=24.9.0`. Line references below are at that tag.
+
+---
+
+## 1. Fixed
+
+These are settled. Changing any of them is a tier-2 brief, not a build decision.
+
+- **No patches to dsh.** Everything goes through dsh's plugin surfaces.
+- **No change to `@platform/voice-engine`'s contract**: `VoiceSession`, `RunEvent`/`Activity`, the audio-halter registry, `ensureServiceReady` injected into the STT transport, and the engine's root-path asset URLs (`/models/…`, `/tones/voice/…`). The plugin is a second host for that contract. A needed contract change is a brief.
+- **No change to the speech servers, their registry or the control plane's config.** The plugin reads the control plane, asks it to start and keep alive the configured speech services exactly as the dashboard does, and relays speech traffic. Nothing else.
+- **No live hostnames, URLs or service values in the repo.** Defaults, tests, fixtures, docs and this spec stay generic. Live values are read at install time and written only into the dsh profile.
+- **Behaviour is Banter's; look is dsh's.** Where this spec does not state a behaviour, the reference is Banter: [`docs/design/voice-floor.md`](../../docs/design/voice-floor.md), [`docs/design/voice-system.md`](../../docs/design/voice-system.md), [`docs/pages/voice-interface.md`](../../docs/pages/voice-interface.md), and the dashboard's composer (`dashboard/src/features/chat/chat-composer.tsx`, `use-chat-textarea.ts`). The plugin shows nothing dsh already shows (agent activity, Stop, the model, approvals, the conversation).
+
+## 2. Package
+
+- A workspace at `plugins/dsh-voice/`, added to the root `package.json` workspaces. The two deploy scripts' workspace filters (`scripts/control-deploy.sh`, `scripts/shard-deploy.sh`) drop it as they drop `dashboard` and `voice-engine`.
+- It depends on `@platform/voice-engine` through the workspace and imports engine modules by package subpath, as the dashboard does (`dashboard/src/lib/voice/system/index.ts`).
+- Two halves: `src/client/` (browser) and `src/host/` (runs in the dsh process).
+- **Client build.** Vite, so the engine's `?url` imports and `new URL(…, import.meta.url)` resolve as they do for the dashboard. The output is one script in dsh's client module format: `window.__ModuleLoader__.load({ id, factory: (require) => { … return module.exports } })`, with dsh's shared module table (React, React DOM, cordis and the other entries in `packages/client/web/src/platform.ts:8`) left as `require` calls and everything else bundled.
+- **Installable package.** A build script produces a self-contained package directory (no `workspace:` dependencies) that `dsh plugin --profile <p> add <dir>` accepts. It declares `dsh.client`, `dsh.bundle` and `engines.dsh` matching the target (`dev/analysis/dsh-voice-plugin.md` § What dsh gives a browser plugin).
+- Scripts: `build`, `test` (vitest), `lint` (the dashboard's eslint config, as `voice-engine/package.json` does), and `install-profile` (section 8).
+- Build output (`plugins/dsh-voice/dist/`) is gitignored.
+
+### Modules
+
+The seams the tests import. Logic that needs no browser or dsh runtime lives in pure modules, so tests construct inputs directly.
+
+| Module | Exports | What it is |
+|---|---|---|
+| `src/client/dsh-types.ts` | `DshSessionLike`, `DshEventWindow`, `DshEntry`, `DshInputActions`, `DshInputState` | Structural types for only the dsh fields the plugin reads, each citing its dsh source line, as `VoiceSession` is structural in the engine. No dsh package is imported. |
+| `src/client/run-reader.ts` | `initialReaderState`, `readWindow(state, window) → { state, events: RunEvent[], snapshot }` | Pure. Folds an event-window notification into `RunEvent`s and the `VoiceConversation` snapshot (section 5, Reading). |
+| `src/client/session-adapter.ts` | `createVoiceSession(session: DshSessionLike, deps: { haltAudio, clearDraft }) → VoiceSession & { dispose() }` | Wires `run-reader` to a live session and implements `controls` (section 5, Writing). |
+| `src/client/draft-mirror.ts` | `createDraftMirror(deps) → { onAttach, onDraftChange, onTranscriptChange, onUnmute, onDshSend }` | The rules of section 6, against injected `inputActions`, draft reader, and the engine calls it uses. |
+| `src/host/relay.ts` | `resolveSpeechUpstream(settings, path) → URL \| null`, `isAllowedControlCall(settings, method, path) → boolean` | Pure upstream selection and allowlist (section 7). |
+| `src/host/settings.ts` | `PluginSettings`, `settingsFromVoiceConfig(cfg, controlPlaneUrl)`, `voiceConfigFromSettings(settings, relayBase)` | Pure mapping between the control plane's voice config, the plugin's settings and the engine's `VoiceConfig` (sections 4, 8). |
+
+## 3. Controls
+
+In dsh's composer tool row, slot `conversation.input.right`. Registered from the client half. Banter's desktop composer set, in Banter's order (`chat-composer.tsx:215-320`):
+
+| Voice phase | Buttons |
+|---|---|
+| off | voice on |
+| starting | a spinner; pressing it cancels the start |
+| live | speech mute, mic mute, voice off; plus relink, in front, when the mutes are unlinked |
+| ended with an error | voice on, in the error colour, with the reason in its tooltip; pressing it retries |
+
+- **Mutes are Banter's** (`voice-engine/src/human/mute-store.ts`): mic mute while linked mutes both and reads "Mute everything"; muting speech alone unlinks; relink restores the link. Tooltips use Banter's wording.
+- **State is colour, never text.** The mic button carries the human side: listening, hearing, muted (manual), muted while typing. The speech button carries one state of its own: agent audio playing. Nothing shows agent working or thinking.
+- **Shortcut.** Mic mute is registered through `ctx.shortcuts.register` (rebindable in dsh's settings), not bare Space.
+- **The click is the user gesture** that opens the mic and starts audio.
+
+## 4. The voice system on dsh
+
+The client half builds one `VoiceSystem` per page, as `dashboard/src/lib/voice/system/index.ts` does, with these collaborators:
+
+- `devices`, `player`, `tones`, `loadModels`, `createHuman`, `createAgent`, `now`, `newSessionId`: as the dashboard.
+- `services.ensureServiceReady`, `ensureTtsReady`, `ping`: the dashboard's logic (`dashboard/src/lib/voice/voice-service.ts`, `pingService`) with its control-plane calls sent through the host half's control-plane relay (section 7). They return the **relay** endpoint for a service, not the service's real endpoint.
+- `services.loadTtsModel`, `loadSttModel`, `fetchSttModelFacts`: unchanged, called against the relay endpoint.
+- `createTransport`: `createSttTransport` with the plugin's `ensureServiceReady`.
+- `notify`: sets the error shown on the voice button (section 3). No toast.
+
+**Voice config.** The client puts a `VoiceConfig` and `VoiceSelection` into the engine's voice session store, as the dashboard's chat page does after `fetchVoiceConfig()`. Both come from the plugin's settings (section 6), not from `/api/voice`.
+
+**Session follow.** Voice belongs to the page. When the person opens another session while voice is live, the system re-attaches to that session's adapter (`attachSession`), as Banter's page does when the active session changes (`docs/design/voice-system.md`). Leaving the conversation view does not stop voice.
+
+**Hidden tab.** Voice keeps running when the tab is hidden or the window loses focus. The plugin copies none of dsh's dictation handlers for `blur`, `visibilitychange` or Escape.
+
+## 5. The session adapter
+
+Satisfies `VoiceSession` (`voice-engine/src/session.ts`) over a dsh session, read through `ctx.sessions` (`binding`, `retain`; `dev/analysis/dsh-voice-plugin.md` § A session handle outside React). The plugin retains the session voice is attached to and releases it on detach.
+
+**Reading.** From the session's event window (`SessionEventWindow`: `entries`, `revision`, `change`):
+
+- A **run** is one dsh turn. `runId` is the turn's identity. A `turn/start` (or the first live chunk of a turn) makes `runActive` true; `turn/end` with any reason makes it false.
+- **Text.** For the current run, `chat` `delta` events carry the run's assistant text so far, cumulative, as the engine expects (`voice-engine/src/agent/speech-chunker.ts:85-97`): the visible text (`text-delta` only) of the run's committed `assistant/message` entries, followed by the current attempt's live text. `reasoning-delta` and `tool-call-delta` never contribute.
+- **Deduplication.** A live chunk is applied once per (`attemptId`, chunk `index`). A window `change` of `replace` resets position within the active attempt and re-emits nothing already emitted. Emitted text never shrinks: an attempt abandoned after some of its text was emitted keeps that text, and later text follows it.
+- **End of a run.** `turn/end` emits `chat` with state `final` and the run's full text for `completed`, `max-tokens` and `blocked`; `aborted` for `aborted`; `error` for `error`. `interrupted` and `forked` emit `aborted`.
+- **Tools.** A tool call starting in the run emits `tool` with phase `start` (the chunker flushes on it), and its end emits `tool` with phase `result`.
+- **Reasoning.** `reasoning-delta` emits `thinking` with the reasoning text so far; it never reaches `chat`.
+- **Activity** is computed as the dashboard computes it (`computeActivity`, `dashboard/src/lib/run-state.ts`): `idle` with no run active, else `tool` while a tool is open, else `speaking` after a text delta, `thinking` after reasoning, otherwise `active`.
+- **`runId` after a run ends** keeps the ended run's id, as the dashboard's `endRun` does. A null `runId` with no run active is the engine's reset signal (`speech-chunker.ts` `handleSnapshotChange`) and must occur only when the session is first attached.
+- **`known`** is false until the window has first loaded, then true. A `replace` does not make it false: the chunker discards unspoken text when `known` drops, and deduplication already covers a resync.
+
+**Writing.**
+
+- `controls.send(text, { annotation })`: prompts the session with one text part in `queue` mode. With an annotation, the text is prefixed exactly as the dashboard prefixes it (`dashboard/src/lib/controls.ts:7-10,22`). After a successful prompt, the plugin empties dsh's text box. A result with `ok: false` rejects.
+- `controls.abort()`: calls `haltAudio()` first, then cancels the session's turn. Audio stops before the cancel resolves; this order is the promise.
+
+## 6. The draft and dsh's text box
+
+The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is the draft, as in Banter. dsh's text box shows it.
+
+- **Mirror.** While voice is live and not muted-while-typing, the client writes the transcript view (settled text plus pending utterances) into dsh's text box with `inputActions.setDraft`, and records the draft revision (`useInput`) each of its own writes produced. It writes only when the box holds exactly its own last write or is empty; `setDraft` removes dsh's reference chips, so the plugin never writes over text it did not put there.
+- **Adopt, never overwrite.** When voice attaches to a session (voice on, or a session switch) and that session's box is not empty, voice starts muted-while-typing: the box's text is the person's draft. Unmuting adopts it (below). The engine's transcript becomes the attached session's box text; a previous session's box keeps its own draft, as dsh keeps drafts per session.
+- **A change the plugin did not make** (a draft revision it did not produce) is the person editing. The client then: sets the engine's auto-mute (`setMicAutoMuted(true)`), reports composer focus to the turn manager as the dashboard's field does on focus (`reportComposerFocus(true)`), stops writing to the box, and copies the box's text into the transcript (`editTranscript`) on each further change.
+- **Ending that mute.**
+  - The person sends through dsh's own Send: the client empties the engine's transcript (`takeTranscript`), reports a composer send (`reportComposerSend`, which closes any open human turn as sent with nothing left to deliver), clears the auto-mute and reports focus false. The words are sent once, by dsh. How a dsh send is recognised is settled by the spike (section 9).
+  - The person unmutes the mic: the client copies the box's current text into the transcript (`editTranscript`), clears the auto-mute, reports focus false and resumes mirroring. Reporting focus false does not close a held turn (`turn-manager.ts` `reduceComposerReport`: a hold clears only when a new utterance is heard), so nothing is sent at the unmute. Speech then continues from that text, and the engine's own send at the close of the turn sends all of it.
+- **A closed human turn** is sent by the engine through `controls.send` (section 5), never through dsh's `submit()`.
+
+## 7. Host half
+
+- **Assets.** Serves, at the paths the client build references: `/models/silero_vad_legacy.onnx`, `/models/smart-turn-v3.2-cpu.onnx`, `/models/whisper-tiny/preprocessor_config.json`, `/tones/voice/*.mp3`, and the ONNX Runtime module, wasm and mic worklet the Vite build emits. Sources are the files the dashboard serves from `dashboard/public/`, copied into the built package. Correct content types (`application/wasm` for wasm).
+- **Speech relay.** Under a plugin-owned path prefix, relays HTTP requests and WebSocket upgrades to the configured STT and TTS endpoints only. The upstream is chosen by service id from the plugin's settings; a request naming anything else is refused. No `Origin` header is forwarded upstream. Bodies stream in both directions as they arrive and are never buffered whole: TTS audio is played as it streams, and a buffering relay passes every check while adding the whole synthesis time to each reply.
+- **Control-plane relay.** Relays exactly the calls the dashboard's voice code makes: `GET /api/services/:id`, `POST /api/services/:id/start`, `POST /api/services/:id/ping`, for the configured STT and TTS service ids only, to the configured control-plane URL.
+- **Gating.** Every plugin route, the upgrade included, refuses any request that dsh's `connection.requestRejection(req)` rejects (precedent: `packages/experimental/inspector/src/host/plugin.ts:93-110`).
+- **Voice guidance.** Registers a `ctx.systemPrompt.section` whose text is Banter's voice guidance (`plugins/voice-mode/voice-guidance.md`) for sessions with voice live, and empty otherwise. The client tells the host which sessions have voice live.
+
+## 8. Settings and install
+
+- **Settings** (dsh bundle config card, `plugins.bundle.config`; each field saves on change): control-plane URL; STT service id and model; TTS service id, model, voice and speed; input device. The rest of the `VoiceConfig` (turn-taking, reveal, chunking) is stored as seeded and not edited in the card.
+- **Activation prompt** (`plugins.bundle.activation`): asks for microphone permission and checks the configured services through the relay.
+- **`install-profile <profile> <control-plane-url>`**: builds the package, installs it into the named profile with `dsh plugin --profile <profile> add`, reads `GET <control-plane-url>/api/voice` once, and writes the plugin's settings from it into the profile. It writes nothing anywhere else.
+
+## 9. Proving the plumbing (spike)
+
+Run first, in a throwaway dsh profile (`DSH_HOME` under `/var/tmp`), launched with `--no-open`. No sign-in, no prompt, no model call. Each check either passes, takes its named degradation (logged), or stops the run with a tier-2 brief.
+
+| Check | Passes when | If not |
+|---|---|---|
+| Package loads | The built package installs; dsh starts with it; the voice-on button appears in `conversation.input.right` | Stop |
+| Assets | Every asset route answers with the right type; Silero VAD and smart-turn load in dsh's page | Stop |
+| Gating | A request without dsh's browser cookie is refused on an asset route, a relay route and the upgrade | Stop |
+| STT relay | Through the relay: fluid STT's health and model list answer; a WebSocket upgrade to the STT endpoint opens | Upgrade fails: batch STT only (the engine supports it), logged |
+| Draft | A plugin write to the box is visible in `useInput`; typing into the box produces a revision the plugin did not record | Stop |
+| Send recognised | A send through dsh's Send can be told apart from the person clearing the box (for example a user message appearing in the window that the plugin did not prompt, or the input state's submission) | The box going from non-empty to empty while muted-while-typing counts as a send, logged |
+| Session follow | With two sessions created (creating one makes no model call), one page-level object is reachable from each session's slot after switching, and the plugin learns the shown session's id; voice is never started | Voice turns off on a session switch, logged |
+| Settings | The bundle card shows the plugin's fields and a change persists across a dsh restart | Stop |
+
+The spike calls no start, no load and no TTS endpoint. Behaviour that needs a live turn (live-chunk mapping against a real stream, cancel, prompt mid-turn, a switch during a turn) is covered by unit tests over recorded or constructed event windows and is checked by the person at the first stop.
+
+## 10. Tests
+
+Under `plugins/dsh-voice/`, vitest, following `TESTING.md`: promises, not wiring; no UI tests. The suite covers:
+
+- **Adapter reading:** cumulative text across steps; visible text only; dedup by attempt and index; `replace` re-emits nothing and leaves `known` true; abandoned attempt keeps emitted text; each `turn/end` reason maps as section 5 states; an ended run keeps its `runId`; tool start and result; activity as the dashboard computes it.
+- **Adapter writing:** `queue` mode; annotation prefixes exactly the dashboard's; box emptied after a successful prompt; failed prompt rejects; `haltAudio` precedes the cancel.
+- **Draft rules:** own writes never trigger the mute; one foreign revision does; while muted the plugin writes nothing; attaching to a session with text in its box starts muted and does not write; a dsh send empties the transcript, reports a composer send and ends the mute; a manual unmute adopts the box text and sends nothing; the engine's turn send after an unmute carries the adopted text.
+- **Session follow:** a live system re-attaches to the shown session's adapter.
+- **Relay:** only configured service ids reach an upstream; an unknown id is refused; no `Origin` forwarded; control-plane relay allows only the three calls.
+- **Install seeding:** a `/api/voice` response maps to the plugin's settings with endpoints pointing at the relay.
+
+Stays green throughout: `voice-engine/src/boundary.test.ts` and the dashboard suite (`cd dashboard && bunx tsc -b && bunx vitest run`).
+
+## 11. Not tested, binding anyway
+
+Slot placement and button order (section 3); colours and tooltips; that the plugin draws nothing dsh already shows and changes nothing in how dsh renders or scrolls the conversation; nothing at approvals; no text state label; no strip above the composer; no hostnames in the repo; comments describe how the code works, not how it came to be.
+
+## 12. For the person to check in use
+
+The relay and its gating; the install into the `web` profile; turn-taking, latency and audio quality.
