@@ -17,7 +17,7 @@ A change these cover can be committed on a green run, without anyone trying it b
 
 ## Git hooks
 
-`scripts/git-hooks/` holds the hooks every clone should run. `ops/install.sh` enables them in a git checkout; in a clone that skipped it, run `git config core.hooksPath scripts/git-hooks`. The `pre-commit` hook regenerates `docs/reference/api.md` (`bun run docs`) on any commit that touches `control/` and adds it to that commit, so the reference always matches the routes beside it. Deploys no longer regenerate it, which used to leave the checkout dirty.
+`scripts/git-hooks/` holds the hooks every clone should run. `ops/install.sh` enables them in a git checkout; in a clone that skipped it, run `git config core.hooksPath scripts/git-hooks`. The `pre-commit` hook regenerates `docs/reference/api.md` (`bun run docs`) on any commit that touches `control/` and adds it to that commit, so the reference always matches the routes beside it.
 
 ## Changes that need human review
 

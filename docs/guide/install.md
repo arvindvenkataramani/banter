@@ -109,8 +109,6 @@ ops/control-deploy.sh || true   # expected to fail at the systemd step
 
 `control-runner.sh` reads the port from the registry, registers with Tailscale Serve if Tailscale is present (skipped silently otherwise), and execs bun. Ctrl+C stops it. To keep it running across logouts and reboots, point a supervisor at that script: a launchd agent on macOS, or whatever you use elsewhere. It reads the `deploy.conf` that a deploy copies beside it, so a custom `BANTER_PROD` needs nothing set in its environment.
 
-An install made before this layout points at `scripts/control-runner.sh`; redeploying, or editing a hand-made supervisor entry, picks up `ops/control-runner.sh`.
-
 `ops/systemd/banter.service.template` is the systemd unit before rendering; `__PROD__` and `__UNIT__` are substituted at install time. It is a reference for what a launchd plist needs to do.
 
 ### Windows
