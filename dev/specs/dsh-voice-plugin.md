@@ -2,9 +2,9 @@
 
 The contract for building Banter's voice mode as a DeepSeek Harness (dsh) plugin. Design: [`dev/design/dsh-voice-plugin.md`](../design/dsh-voice-plugin.md). This spec is complete for the build; where it is silent, the decision tiers apply (decide from precedent and log, or write a brief and stop that step).
 
-**Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
+**Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh@0.2.2-rc.1 web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
 
-**Target:** dsh `dsh-v0.2.2-rc.1` (npm `latest`), source at `~/Code/contrib/deepseek-harness`, Node `>=24.9.0`. Line references below are at that tag.
+**Target:** dsh `dsh-v0.2.2-rc.1`, pinned in every command (`npx @deepseek-ai/dsh@0.2.2-rc.1`), source at `~/Code/contrib/deepseek-harness`, Node `>=24.9.0`. Line references below are at that tag.
 
 ---
 
@@ -34,12 +34,14 @@ The seams the tests import. Logic that needs no browser or dsh runtime lives in 
 
 | Module | Exports | What it is |
 |---|---|---|
-| `src/client/dsh-types.ts` | `DshSessionLike`, `DshEventWindow`, `DshEntry`, `DshInputActions`, `DshInputState` | Structural types for only the dsh fields the plugin reads, each citing its dsh source line, as `VoiceSession` is structural in the engine. No dsh package is imported. |
+| `src/client/dsh-types.ts` | `DshSessionLike`, `DshEventWindow`, `DshEntry`, `DshInputActions`, `DshInputState` | Structural types for only the dsh fields the plugin reads, each citing its dsh source line, as `VoiceSession` is structural in the engine. No dsh package is imported. `DshSessionLike` is the session face (`prompt`, `cancel`) plus the binding's `eventSource`, flattened into one object. |
+| `src/client/presence.ts` | `followShownSession({ shown, keepOnOutside, isLive, attach, voiceOff }) → dispose` | Section 4's session follow and leaving rules, driven by the shown-session observable (`{ sessionId, panelOpen }`, from `createShownSession`). `keepOnOutside()` reads the setting; `attach(sessionId)` re-attaches the system; `voiceOff()` turns voice off. |
+| `src/client/services.ts` | `relayEndpoint(origin, serviceId)`, `createPluginServices({ origin, fetch }) → { ensureServiceReady, ensureTtsReady, ping }` | Section 4's services: the dashboard's readiness logic over the control-plane relay. `ensureServiceReady` resolves to `relayEndpoint(origin, id)`, `<origin>/dsh-voice/speech/<id>`, never the service's own endpoint. |
 | `src/client/run-reader.ts` | `initialReaderState`, `readWindow(state, window) → { state, events: RunEvent[], snapshot }` | Pure. Folds an event-window notification into `RunEvent`s and the `VoiceConversation` snapshot (section 5, Reading). |
 | `src/client/session-adapter.ts` | `createVoiceSession(session: DshSessionLike, deps: { haltAudio, clearDraft }) → VoiceSession & { dispose() }` | Wires `run-reader` to a live session and implements `controls` (section 5, Writing). |
 | `src/client/draft-mirror.ts` | `createDraftMirror(deps) → { onAttach, onDraftChange, onTranscriptChange, onUnmute, onDshSend }` | The rules of section 6, against injected `inputActions`, draft reader, and the engine calls it uses. |
-| `src/host/relay.ts` | `resolveSpeechUpstream(settings, path) → URL \| null`, `isAllowedControlCall(settings, method, path) → boolean` | Pure upstream selection and allowlist (section 7). |
-| `src/host/settings.ts` | `PluginSettings`, `settingsFromVoiceConfig(cfg, controlPlaneUrl)`, `voiceConfigFromSettings(settings, relayBase)` | Pure mapping between the control plane's voice config, the plugin's settings and the engine's `VoiceConfig` (sections 4, 8). |
+| `src/host/relay.ts` | `resolveSpeechUpstream(settings, path) → URL \| null`, `isAllowedControlCall(settings, method, path) → boolean`, `upstreamHeaders(incoming) → headers` | Pure upstream selection, allowlist, and the headers forwarded upstream for HTTP and upgrade requests alike (section 7). |
+| `src/host/settings.ts` | `PluginSettings`, `settingsFromVoiceConfig(cfg, controlPlaneUrl)`, `voiceConfigFromSettings(settings)` | Pure mapping between the control plane's voice config, the plugin's settings and the engine's `VoiceConfig` (sections 4, 8). `VoiceConfig` has no endpoint field: endpoints reach the engine through `ensureServiceReady` (`services.ts`). |
 
 ## 3. Controls
 
@@ -83,7 +85,9 @@ Satisfies `VoiceSession` (`voice-engine/src/session.ts`) over a dsh session, rea
 
 - A **run** is one dsh turn. `runId` is the turn's identity. A `turn/start` (or the first live chunk of a turn) makes `runActive` true; `turn/end` with any reason makes it false.
 - **Text.** For the current run, `chat` `delta` events carry the run's assistant text so far, cumulative, as the engine expects (`voice-engine/src/agent/speech-chunker.ts:85-97`): the visible text (`text-delta` only) of the run's committed `assistant/message` entries, followed by the current attempt's live text. `reasoning-delta` and `tool-call-delta` never contribute.
-- **Deduplication.** A live chunk is applied once per (`attemptId`, chunk `index`). A window `change` of `replace` resets position within the active attempt and re-emits nothing already emitted. Emitted text never shrinks: an attempt abandoned after some of its text was emitted keeps that text, and later text follows it.
+- **Deduplication.** A live chunk's entry carries `data: { attemptId, turn, step, chunk }`; `chunk.index` is the content block's index, shared by every delta of a block, not the chunk's position. A chunk is applied once per (`attemptId`, its ordinal among that attempt's chunk entries in window order). A window `change` of `replace` reinstalls an attempt's chunks in the same order, so it resets the ordinal count for the active attempt and re-emits nothing already emitted.
+- **Emitted text never shrinks.** The run's text is the text already emitted plus what follows it. An attempt abandoned after some of its text was emitted keeps that text, and the next attempt's text follows it; a committed `assistant/message` that repeats text already emitted from live chunks adds nothing.
+- **History is not spoken.** Entries in the first window the adapter reads are history: they set the conversation's state (`runActive`, `runId`) but emit no text. The first run that starts after attach begins from empty text.
 - **End of a run.** `turn/end` emits `chat` with state `final` and the run's full text for `completed`, `max-tokens` and `blocked`; `aborted` for `aborted`; `error` for `error`. `interrupted` and `forked` emit `aborted`.
 - **Tools.** A tool call starting in the run emits `tool` with phase `start` (the chunker flushes on it), and its end emits `tool` with phase `result`.
 - **Reasoning.** `reasoning-delta` emits `thinking` with the reasoning text so far; it never reaches `chat`.
@@ -104,7 +108,7 @@ The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is 
 - **Adopt, never overwrite.** When voice attaches to a session (voice on, or a session switch) and that session's box is not empty, voice starts muted-while-typing: the box's text is the person's draft. Unmuting adopts it (below). The engine's transcript becomes the attached session's box text; a previous session's box keeps its own draft, as dsh keeps drafts per session.
 - **A change the plugin did not make** (a draft revision it did not produce) is the person editing. The client then: sets the engine's auto-mute (`setMicAutoMuted(true)`), reports composer focus to the turn manager as the dashboard's field does on focus (`reportComposerFocus(true)`), stops writing to the box, and copies the box's text into the transcript (`editTranscript`) on each further change.
 - **Ending that mute.**
-  - The person sends through dsh's own Send: the client empties the engine's transcript (`takeTranscript`), reports a composer send (`reportComposerSend`, which closes any open human turn as sent with nothing left to deliver), clears the auto-mute and reports focus false. The words are sent once, by dsh. How a dsh send is recognised is settled by the spike (section 9).
+  - The person sends through dsh's own Send: the client empties the engine's transcript (`takeTranscript`), reports a composer send (`reportComposerSend`, which closes any open human turn as sent with nothing left to deliver), clears the auto-mute and reports focus false. The words are sent once, by dsh. A dsh send is recognised by the input state's `phase` becoming `'sending'`; the revision that then empties the box is the send's own clearing, not an edit, and does not set the mute again.
   - The person unmutes the mic: the client copies the box's current text into the transcript (`editTranscript`), clears the auto-mute, reports focus false and resumes mirroring. Reporting focus false does not close a held turn (`turn-manager.ts` `reduceComposerReport`: a hold clears only when a new utterance is heard), so nothing is sent at the unmute. Speech then continues from that text, and the engine's own send at the close of the turn sends all of it.
 - **A closed human turn** is sent by the engine through `controls.send` (section 5), never through dsh's `submit()`.
 
@@ -146,11 +150,13 @@ Under `plugins/dsh-voice/`, vitest, following `TESTING.md`: promises, not wiring
 
 - **Adapter reading:** cumulative text across steps; visible text only; dedup by attempt and index; `replace` re-emits nothing and leaves `known` true; abandoned attempt keeps emitted text; each `turn/end` reason maps as section 5 states; an ended run keeps its `runId`; tool start and result; activity as the dashboard computes it.
 - **Adapter writing:** `queue` mode; annotation prefixes exactly the dashboard's; box emptied after a successful prompt; failed prompt rejects; `haltAudio` precedes the cancel.
-- **Draft rules:** own writes never trigger the mute; one foreign revision does; while muted the plugin writes nothing; attaching to a session with text in its box starts muted and does not write; a dsh send empties the transcript, reports a composer send and ends the mute; a manual unmute adopts the box text and sends nothing; the engine's turn send after an unmute carries the adopted text.
+- **Draft rules:** own writes never trigger the mute; one foreign revision does; while muted the plugin writes nothing; attaching to a session with text in its box starts muted and does not write; a dsh send empties the transcript, reports a composer send and ends the mute, and the box-clearing that follows it does not mute again; a manual unmute adopts the box text and sends nothing; the engine's turn send after an unmute carries the adopted text.
 - **Session follow:** a live system re-attaches to the shown session's adapter.
 - **Leaving the conversation:** with the setting off, a view with no composer turns voice off; with it on, voice keeps running; a session switch never turns it off.
 - **Relay:** only configured service ids reach an upstream; an unknown id is refused; no `Origin` forwarded; control-plane relay allows only the three calls.
-- **Install seeding:** a `/api/voice` response maps to the plugin's settings with endpoints pointing at the relay.
+- **Relay headers:** `upstreamHeaders` never carries `Origin`, for HTTP and upgrade requests.
+- **Install seeding:** a `/api/voice` response maps to the plugin's settings and stored remainder.
+- **Services:** `ensureServiceReady` resolves to the relay endpoint, never the service's own.
 
 Stays green throughout: `voice-engine/src/boundary.test.ts` and the dashboard suite (`cd dashboard && bunx tsc -b && bunx vitest run`).
 
