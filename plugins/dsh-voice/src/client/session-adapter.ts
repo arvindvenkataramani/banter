@@ -17,6 +17,8 @@ export interface VoiceSessionDeps {
   haltAudio(): void
   /** Empties dsh's text box after a send. */
   clearDraft(): void
+  /** A prompt failed: hands the person's words back and says why. */
+  sendFailed?(text: string, message: string): void
 }
 
 function accepted(result: DshRemoteResult<unknown>, what: string): void {
@@ -26,15 +28,22 @@ function accepted(result: DshRemoteResult<unknown>, what: string): void {
 }
 
 export function createVoiceSession(session: DshSessionLike, deps: VoiceSessionDeps): VoiceSession & { dispose(): void } {
-  let state = initialReaderState
+  // dsh numbers turns per session, so the session's id keeps run ids apart across sessions.
+  let state = { ...initialReaderState, idPrefix: `${session.sessionId}:` }
   let snapshot: ReaderSnapshot = state.snapshot
+  /** The run the engine asked to abort; a run that ends aborted any other way was stopped in dsh. */
+  let engineAbortedRun: string | null = null
   const eventListeners = new Set<(e: RunEvent) => void>()
   const snapshotListeners = new Set<() => void>()
 
   const pump = (): void => {
     const read = readWindow(state, session.eventSource.getSnapshot())
     state = read.state
-    for (const event of read.events) for (const listener of [...eventListeners]) listener(event)
+    for (const event of read.events) {
+      for (const listener of [...eventListeners]) listener(event)
+      // Stop in dsh silences the voice as Banter's Stop does; the halt follows the event so the chunker's last flush is cut too.
+      if (event.kind === 'chat' && event.state === 'aborted' && event.runId !== engineAbortedRun) deps.haltAudio()
+    }
     if (read.snapshot !== snapshot) {
       snapshot = read.snapshot
       for (const listener of [...snapshotListeners]) listener()
@@ -58,10 +67,16 @@ export function createVoiceSession(session: DshSessionLike, deps: VoiceSessionDe
     controls: {
       async send(text, opts) {
         const finalText = opts?.annotation ? `${ANNOTATIONS[opts.annotation]} ${text}` : text
-        accepted(await session.prompt([{ type: 'text', text: finalText }], 'queue'), 'Send')
+        try {
+          accepted(await session.prompt([{ type: 'text', text: finalText }], 'queue'), 'Send')
+        } catch (err) {
+          deps.sendFailed?.(text, err instanceof Error ? err.message : 'Send failed')
+          throw err
+        }
         deps.clearDraft()
       },
       async abort() {
+        engineAbortedRun = snapshot.runActive ? snapshot.runId : null
         deps.haltAudio()
         accepted(await session.cancel(), 'Cancel')
       },

@@ -10,7 +10,7 @@ import type { Duplex } from 'node:stream'
 import z from '@deepseek-ai/schemastery'
 import { forwardHttp, forwardUpgrade } from './forward.ts'
 import {
-  CONTROL_PREFIX, LIVE_PATH, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath, resolveSpeechUpstream,
+  CONTROL_PREFIX, LIVE_PATH, LIVE_TTL_MS, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath, resolveSpeechUpstream,
   type RelaySettings,
 } from './relay.ts'
 import { DEFAULT_SETTINGS, type PluginSettings } from './settings.ts'
@@ -35,7 +35,6 @@ export interface Config {
   ttsModel: Live<string>
   ttsVoice: Live<string>
   ttsSpeed: Live<number>
-  inputDevice: Live<string>
   keepVoiceOutside: Live<boolean>
   rest: Live<string>
 }
@@ -48,7 +47,6 @@ export const Config: z<Config> = z.object({
   ttsModel: z.string().default(DEFAULT_SETTINGS.ttsModel).volatile(),
   ttsVoice: z.string().default(DEFAULT_SETTINGS.ttsVoice).volatile(),
   ttsSpeed: z.number().min(0.25).max(4).default(DEFAULT_SETTINGS.ttsSpeed).volatile(),
-  inputDevice: z.string().default(DEFAULT_SETTINGS.inputDevice).volatile(),
   keepVoiceOutside: z.boolean().default(DEFAULT_SETTINGS.keepVoiceOutside).volatile(),
   rest: z.string().default(DEFAULT_SETTINGS.rest).volatile(),
 }) as unknown as z<Config>
@@ -111,7 +109,6 @@ export function apply(ctx: HostContext, config: Config): void {
     ttsModel: config.ttsModel.get(),
     ttsVoice: config.ttsVoice.get(),
     ttsSpeed: config.ttsSpeed.get(),
-    inputDevice: config.inputDevice.get(),
     keepVoiceOutside: config.keepVoiceOutside.get(),
     rest: config.rest.get(),
   })
@@ -199,7 +196,8 @@ export function apply(ctx: HostContext, config: Config): void {
   }), 'dsh-voice: control-plane relay')
 
   // The page reports which sessions have voice live; their prompt carries the voice guidance.
-  const liveSessions = new Set<string>()
+  // Each report holds a session live until its expiry; the page repeats it while voice runs.
+  const liveSessions = new Map<string, number>()
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: LIVE_PATH,
@@ -214,7 +212,9 @@ export function apply(ctx: HostContext, config: Config): void {
         res.writeHead(400).end()
         return
       }
-      if (report.live) liveSessions.add(report.sessionId)
+      const now = Date.now()
+      for (const [id, expiry] of liveSessions) if (expiry <= now) liveSessions.delete(id)
+      if (report.live) liveSessions.set(report.sessionId, now + LIVE_TTL_MS)
       else liveSessions.delete(report.sessionId)
       res.writeHead(204).end()
     },
@@ -222,11 +222,11 @@ export function apply(ctx: HostContext, config: Config): void {
 
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'dsh-voice:guidance',
-    // INVENTED: after the deployment persona prefix and before every tool section.
+    // After the deployment persona prefix and before every tool section.
     order: 100,
     text: (context) => {
       const id = (context.scope as { id?: unknown } | undefined)?.id
-      return typeof id === 'string' && liveSessions.has(id) ? voiceGuidance : ''
+      return typeof id === 'string' && (liveSessions.get(id) ?? 0) > Date.now() ? voiceGuidance : ''
     },
     interpolate: false,
   }), 'dsh-voice: voice guidance')

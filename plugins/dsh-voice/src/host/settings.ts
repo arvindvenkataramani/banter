@@ -13,7 +13,6 @@ export interface PluginSettings {
   ttsModel: string
   ttsVoice: string
   ttsSpeed: number
-  inputDevice: string
   keepVoiceOutside: boolean
   /** JSON of every VoiceConfig field the card does not edit: rosters, turn-taking, reveal, chunking. */
   rest: string
@@ -27,7 +26,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   ttsModel: '',
   ttsVoice: '',
   ttsSpeed: 1,
-  inputDevice: '',
   keepVoiceOutside: false,
   rest: '{}',
 }

@@ -14,36 +14,8 @@ import { loadSttModel, loadTtsModel, type PluginServices } from './services.ts'
 
 export interface VoiceSystemParts {
   services: PluginServices
-  /** The configured input device id; empty means the browser's default. */
-  inputDevice(): string
   /** Shows a message on the voice button. */
   notify(message: string, persistent?: boolean): void
-}
-
-/**
- * Opens the microphone, on the configured device when there is one. The
- * engine's `acquire` asks for the stream before its first await and takes no
- * device, so the device id is added to that one call.
- */
-export function acquireMicrophone(deviceId: string): Promise<boolean> {
-  if (deviceId === '') return acquire()
-  const media = navigator.mediaDevices
-  const original = media.getUserMedia
-  media.getUserMedia = (constraints) => {
-    media.getUserMedia = original
-    const audio = typeof constraints?.audio === 'object' ? constraints.audio : {}
-    return original.call(media, { ...constraints, audio: { ...audio, deviceId: { exact: deviceId } } })
-  }
-  try {
-    return acquire().catch((err: unknown) => {
-      // The browser words a refused device constraint as an empty message.
-      const name = err instanceof Error ? err.name : ''
-      if (name === 'OverconstrainedError' || name === 'NotFoundError') throw new Error('The configured input device is not available')
-      throw err
-    })
-  } finally {
-    media.getUserMedia = original
-  }
 }
 
 export function createVoiceSystem(parts: VoiceSystemParts): VoiceSystem {
@@ -68,7 +40,7 @@ export function createVoiceSystem(parts: VoiceSystemParts): VoiceSystem {
   const { services } = parts
 
   return new VoiceSystem({
-    devices: { acquire: () => acquireMicrophone(parts.inputDevice()), release },
+    devices: { acquire, release },
     tones: { play: (name) => tones.play(name) },
     player,
     services: {

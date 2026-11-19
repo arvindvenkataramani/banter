@@ -17,17 +17,22 @@ export interface PresenceDeps {
 
 /** Starts following the shown session; the returned function stops. */
 export function followShownSession(deps: PresenceDeps): () => void {
-  let previous = deps.shown.getSnapshot()
+  const first = deps.shown.getSnapshot()
+  let panelOpen = first.panelOpen
+  /** The session last shown with a composer: the one voice follows. A session opened behind a panel counts once the panel closes. */
+  let followed = first.sessionId
   return deps.shown.subscribe(() => {
     const next = deps.shown.getSnapshot()
-    const last = previous
-    previous = next
+    const wasPanelOpen = panelOpen
+    panelOpen = next.panelOpen
     if (next.panelOpen) {
       // A view with no composer replaces the conversation.
-      if (!last.panelOpen && deps.isLive() && !deps.keepOnOutside()) deps.voiceOff()
+      if (!wasPanelOpen && deps.isLive() && !deps.keepOnOutside()) deps.voiceOff()
       return
     }
     // A switch changes the session with a composer shown again in the same navigation.
-    if (next.sessionId !== null && next.sessionId !== last.sessionId && deps.isLive()) deps.attach(next.sessionId)
+    const last = followed
+    followed = next.sessionId
+    if (next.sessionId !== null && next.sessionId !== last && deps.isLive()) deps.attach(next.sessionId)
   })
 }

@@ -30,8 +30,12 @@ export interface DraftMirror {
   onUnmute(): void
   /** The person sent the box's text through dsh's own Send. */
   onDshSend(): void
+  /** dsh refused the send: the box still holds the person's text, now theirs again. */
+  onDshSendRefused(): void
   /** The engine sent the transcript: empty the box. */
   clear(): void
+  /** The engine's send failed: put the words back ahead of anything said since. */
+  restore(text: string): void
 }
 
 export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
@@ -46,6 +50,8 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   let seenRev = 0
   /** After a dsh send, the revision that empties the box is dsh's own clearing. */
   let sendClearing = false
+  /** The transcript view as last reported, shown in the box unless the person is typing. */
+  let lastView = ''
 
   const setTyping = (value: boolean): void => {
     if (typing === value) return
@@ -112,6 +118,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     },
 
     onTranscriptChange(view) {
+      lastView = view
       if (typing) return
       const state = deps.readInput()
       if (view === state.draft) return
@@ -141,9 +148,26 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       setTyping(false)
     },
 
+    onDshSendRefused() {
+      // The refused text stays in the box; it is the person's draft again, under the typing mute.
+      lastWrite = null
+      sendClearing = false
+      enterTyping()
+      engine.editTranscript(deps.readInput().draft)
+    },
+
     clear() {
-      if (deps.readInput().draft === '' || awaiting[awaiting.length - 1] === '') return
+      // Only the plugin's own text goes, and not words said since the send.
+      const state = deps.readInput()
+      if (typing || lastView !== '' || state.draft === '' || !isOwn(state) || awaiting[awaiting.length - 1] === '') return
       write('')
+    },
+
+    restore(text) {
+      // While the person types, the box is theirs and the words cannot be shown in it.
+      if (typing) return
+      const since = engine.takeTranscript()
+      engine.editTranscript(since === '' ? text : `${text} ${since}`)
     },
   }
 }

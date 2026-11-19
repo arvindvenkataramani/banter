@@ -8,7 +8,7 @@ import { haltAudio } from '@platform/voice-engine/audio-halters'
 import { resolveVoiceSelection } from '@platform/voice-engine/voice-config'
 import { setVoiceConfig, setVoiceSelection, publishSession } from '@platform/voice-engine/voice-session-store'
 import { toggleMuteAll, useMuteStore } from '@platform/voice-engine/human/mute-store'
-import { LIVE_PATH } from '../host/relay.ts'
+import { LIVE_HEARTBEAT_MS, LIVE_PATH } from '../host/relay.ts'
 import { DEFAULT_SETTINGS, voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
 import type { DshClientContext, DshConfigForm, DshObservable } from './dsh-types.ts'
 import type { DraftMirror } from './draft-mirror.ts'
@@ -64,7 +64,6 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
   const services = createPluginServices({ origin, fetch: (...args) => fetch(...args) })
   const system = createVoiceSystem({
     services,
-    inputDevice: () => settings.inputDevice,
     notify: (message) => { patchUi({ notice: message }) },
   })
 
@@ -103,7 +102,18 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
     detach()
     const reference = ctx.sessions.retain(sessionId, { source: RETAIN_SOURCE })
     const { session, eventSource } = reference.binding
-    const deps: VoiceSessionDeps = { haltAudio, clearDraft: () => { boxes.get(sessionId)?.clear() } }
+    const deps: VoiceSessionDeps = {
+      haltAudio,
+      clearDraft: () => {
+        boxes.get(sessionId)?.clear()
+        patchUi({ notice: null })
+      },
+      // The words go back into the box and the voice button says why they were not sent.
+      sendFailed: (text, message) => {
+        boxes.get(sessionId)?.restore(text)
+        patchUi({ notice: `Not sent: ${message}` })
+      },
+    }
     const adapter = createVoiceSession({
       sessionId,
       prompt: (content, mode) => session.prompt(content, mode),
@@ -130,23 +140,39 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
 
   // The host adds the voice guidance to the prompt of a session that has voice live.
   let reported: string | null = null
+  let heartbeat: ReturnType<typeof setInterval> | null = null
   const post = (sessionId: string, live: boolean): void => {
+    // keepalive lets the report outlive a page that is closing.
     void fetch(`${origin}${LIVE_PATH}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sessionId, live }),
+      keepalive: true,
     }).catch(() => { /* the guidance is lost for this session; voice itself is unaffected */ })
+  }
+  const endReport = (): void => {
+    if (heartbeat !== null) clearInterval(heartbeat)
+    heartbeat = null
+    if (reported !== null) post(reported, false)
+    reported = null
   }
   const reportLive = (): void => {
     const next = phase() === 'live' ? ui.get().attachedSessionId : null
     if (next === reported) return
-    const previous = reported
+    endReport()
     reported = next
-    if (previous !== null) post(previous, false)
-    if (next !== null) post(next, true)
+    if (next === null) return
+    post(next, true)
+    // The host lets a report lapse, so a page that dies without ending it does not keep the guidance on.
+    heartbeat = setInterval(() => { post(next, true) }, LIVE_HEARTBEAT_MS)
   }
   const stopReportingPhase = useVoiceSystemStore.subscribe(reportLive)
   const stopReportingUi = ui.subscribe(reportLive)
+  // A page that is going away ends its report; one restored from the back-forward cache reports again.
+  const onPageHide = (): void => { endReport() }
+  const onPageShow = (event: PageTransitionEvent): void => { if (event.persisted) reportLive() }
+  window.addEventListener('pagehide', onPageHide)
+  window.addEventListener('pageshow', onPageShow)
 
   return {
     system,
@@ -185,6 +211,9 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
       stopFollowing()
       stopReportingPhase()
       stopReportingUi()
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
+      endReport()
       detach()
     },
   }

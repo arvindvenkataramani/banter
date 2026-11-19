@@ -35,6 +35,8 @@ interface Run {
 
 export interface ReaderState {
   loaded: boolean
+  /** Prefixed to every run id, so ids differ between sessions. */
+  idPrefix: string
   revision: number
   /** Highest durable seq already read. */
   lastSeq: number
@@ -54,6 +56,7 @@ export interface ReaderState {
 
 export const initialReaderState: ReaderState = {
   loaded: false,
+  idPrefix: '',
   revision: 0,
   lastSeq: -1,
   endedTurn: -1,
@@ -121,7 +124,7 @@ class Reading {
     if (s.run !== null && s.run.turn === turn) return s.run
     if (turn <= s.endedTurn) return null
     // A newer turn replaces a run whose end was never read.
-    s.run = { turn, id: `turn:${turn}`, silent: this.initial, text: '', attempts: {}, lastAttemptOfStep: {}, openTools: {} }
+    s.run = { turn, id: `${s.idPrefix}turn:${turn}`, silent: this.initial, text: '', attempts: {}, lastAttemptOfStep: {}, openTools: {} }
     s.runId = s.run.id
     s.activity = activityOf(s.run, 'other')
     return s.run

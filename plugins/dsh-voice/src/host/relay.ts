@@ -4,8 +4,11 @@
 /** Plugin-owned path prefixes on dsh's origin. */
 export const SPEECH_PREFIX = '/dsh-voice/speech'
 export const CONTROL_PREFIX = '/dsh-voice/control'
-/** Where the page tells the host which sessions have voice live. INVENTED: the path and the body shape. */
+/** Where the page tells the host which sessions have voice live, as `{ sessionId, live }`. */
 export const LIVE_PATH = '/dsh-voice/live'
+/** How often the page repeats a live report, and how long the host keeps one without a repeat. */
+export const LIVE_HEARTBEAT_MS = 30_000
+export const LIVE_TTL_MS = 180_000
 
 /** The request headers that cross to an upstream: no cookie, no Origin, no Referer. */
 const FORWARDED_HEADERS = new Set(['accept', 'content-type', 'content-length', 'range', 'user-agent'])

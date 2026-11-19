@@ -105,7 +105,12 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
         >
           {micMuted ? <MicSlashIcon /> : <MicIcon />}
         </Control>
-        <Control name="off" title="Turn voice off" onClick={() => { runtime.stop() }}>
+        <Control
+          name="off"
+          title={ui.notice === null ? 'Turn voice off' : `${ui.notice} — press to turn voice off`}
+          style={ui.notice === null ? undefined : ERROR}
+          onClick={() => { runtime.stop() }}
+        >
           <CloseIcon />
         </Control>
       </>
