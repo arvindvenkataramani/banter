@@ -4,7 +4,7 @@ How generated text becomes audio, and the two decisions behind it that are not
 visible in the code: how many TTS calls a response takes, and why this loop was
 built rather than adopted. Implementation: `voice-engine/src/agent/text-chunker.ts`,
 `speech-chunker.ts`, `playback-engine.ts`, `streaming-backend.ts`. Chunk parameters are documented in
-[`../../control/control-plane/data/config.md`](../../../control/control-plane/data/config.md)
+[the configuration reference](../configuration.md#voicetts)
 under `voice.tts.options`.
 
 ## Two calls, not one per sentence

@@ -3,7 +3,7 @@
 How the system decides the user has finished speaking. Implementation:
 `voice-engine/src/human/mic-loop.ts`, with the models in `silero-vad.ts` and
 `smart-turn.ts`. Parameters and their defaults are documented in
-[`../../control/control-plane/data/config.md`](../../../control/control-plane/data/config.md)
+[the configuration reference](../configuration.md#voicestt)
 under `voice.stt.turnTaking`, and served from `config.json` — this document does
 not restate their values.
 

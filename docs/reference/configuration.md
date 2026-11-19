@@ -217,6 +217,86 @@ Both are managed from the settings dialog. `modelPrefs` starts empty and is writ
 
 The `vad` and `turnTaking` blocks tune when the system decides you have finished speaking. The defaults in `config.example.json` are reasonable starting points; `minSpeechProb` and `smartTurnThreshold` are the two worth adjusting if it cuts you off or waits too long.
 
+### Field reference
+
+Every field `config.json` accepts. Every field is optional except `version`. A "default" below is what the code uses when the field is absent; `config.example.json` ships some different values, noted where they differ. The schema is in `control/shared/src/live-config/schemas.ts`.
+
+#### Top level
+
+| Field | Purpose |
+|---|---|
+| `version` | Schema version; `3`. |
+| `timezone` | An IANA timezone name. The schema accepts it; nothing in the control plane reads it. |
+| `runtime` | See [Runtime settings](#runtime-settings). |
+| `integrations.openclaw.gateway.url`, `.token` | The OpenClaw gateway's address and token. A token written as `"${NAME}"` is read from the environment variable `NAME` when the control plane serves it; if that variable is unset the token resolves to nothing and the gateway connection is unauthenticated. |
+| `integrations.openclaw.defaultSession` | Session name the web app opens when nothing else is selected. Default: `main`. |
+
+#### `voice`
+
+| Field | Purpose |
+|---|---|
+| `enabled` | Present in the example; nothing in the code reads it. |
+| `takeover` | What a voice session does when a voice server it wants, TTS or STT, is held by another session. `"ask"` (default) ends voice with a dialog offering to take it over; `"always"` takes over without asking, on every connection the session makes. |
+| `debug.saveMicSamples` | Boolean, default `false`. Saves microphone captures to disk, and only takes effect when the control plane runs with the `DEBUG` environment variable set. See `MIC_SAMPLE_DIR` under [Deployment](#deployment). |
+
+#### `voice.stt`
+
+| Field | Default | Purpose |
+|---|---|---|
+| `serviceId` | none | Registry id of the STT service. It is started on demand and its endpoint is resolved from the registry. |
+| `model` | none | The model the STT service loads for a voice session. A server holding nothing at start loads this before the first utterance. Leave it unset for a batch-only server. |
+| `preferStreaming` | `false` | For a model that offers both batch and streaming, take the streaming side. Only models reporting both consult it. |
+| `chunkMs` | server's own | Which streaming latency tier to load, for a model that offers a choice. |
+| `maxRecordingMs` | `300000` | Longest an utterance may run before it is force-flushed to transcription, whatever turn detection says. A safety net against a wedged detector, not a turn-taking setting. |
+| `settleOnStopMs` | `1500` | How long turning voice off waits for an utterance still being heard, or held paused, to finish transcribing before closing the transport regardless. |
+| `pauseFlushMs` | `1500` | How long a paused utterance keeps streaming silence in the microphone's place. A streaming model only produces text for audio it holds as further audio arrives behind it, so without this the last words said before a mute would not appear until unmute. |
+| `reveal.minIntervalMs` | `55` | Fastest interval between words revealed in the composer as a streaming partial arrives. |
+| `reveal.maxIntervalMs` | `200` | Slowest such interval. |
+| `reconnect.attempts` | `3` | Failed connections in a row after which voice ends when the streaming socket drops. `0` ends voice on the first drop. Words the dropped socket had not finalized are lost. |
+| `reconnect.delayMs` | `1000` | How much longer each attempt after the first waits than the one before it. The first attempt goes at once. |
+| `reconnect.stableMs` | `10000` | How long a socket must stay up before its drop starts a fresh count. One that drops sooner counts as a failure. |
+| `options` | assembled | Not written by hand: `GET /api/voice` fills it from the registry's STT services (`serviceId`, `name`, `sessions`) for the settings dialog's picker. |
+
+`vad` decides whether captured sound is speech at all:
+
+| Field | Default | Purpose |
+|---|---|---|
+| `vad.minSpeechDurationS` | `0.75` | Seconds of speech before an utterance counts as confirmed rather than noise. |
+| `vad.minSpeechProb` | `0.7` | Peak speech probability the utterance must also reach. A cough never crosses both gates. The example ships `0.9`. |
+
+`turnTaking` decides when a pause is detected and how long to wait before committing the turn. The wait is adaptive: shorter when the smart-turn model is confident the speaker is done, longer when it is not.
+
+| Field | Default | Purpose |
+|---|---|---|
+| `turnTaking.pauseThresholdMs` | `250` | Milliseconds of silence that count as a pause. The first stage of the two-stage commit gate. The microphone never stops; a pause is a purely logical state. The example ships `300`. |
+| `turnTaking.commitMinDelayMs` | `250` | Wait after a pause when smart-turn confidence is at or above `smartTurnThreshold`. The example ships `300`. |
+| `turnTaking.commitMaxDelayMs` | `2000` | Wait after a pause when confidence is below `smartTurnLowCutoff`. The example ships `1400`. |
+| `turnTaking.smartTurnThreshold` | `0.7` | Confidence (0 to 1) at or above which the turn is treated as clearly done. The example ships `0.9`. |
+| `turnTaking.smartTurnLowCutoff` | `0.15` | Confidence (0 to 1) below which the turn is treated as clearly not done. |
+| `turnTaking.curve` | power, exponent `2` | Shape of the interpolation between the max and min delay for confidence between `smartTurnLowCutoff` and `smartTurnThreshold`. |
+| `turnTaking.interruptionMinRemainingS` | `0.5` | Seconds of agent audio that must remain for a barge-in to count as interrupting speech. Not set from the settings dialog. |
+
+Values written through the settings dialog must be non-negative, and probabilities at most 1; the control plane refuses a patch that is not.
+
+`curve` takes one of two forms:
+
+- `{ "type": "power", "exponent": 2 }`: `1` is linear; `2` is patient through most of the band with a sharp drop near the threshold; higher is more patient for longer with a steeper drop at the end.
+- `{ "type": "sigmoid", "center": 0.5, "steepness": 8 }`: an S-curve. `center` (0 to 1) is where in the band the delay drops fastest; higher `steepness` approaches a step, lower approaches linear. The loop reads both, but the schema declares only `type` and `exponent`, so loading a sigmoid curve logs an unknown-field warning for `center` and `steepness`; the values are kept.
+
+#### `voice.tts`
+
+Nothing here declares what exists: models, voices, what each model calls them and each model's chunking and request settings are the roster's, declared in each node's `registry.json` and assembled by the control plane. `GET /api/voice` builds voice mode's choices from the roster and the registry.
+
+| Field | Purpose |
+|---|---|
+| `selection.serviceId`, `.model`, `.voice` | The chosen service, roster model and roster voice (or a preset id of the model). The web app sends the TTS server each one's runtime key in their place. |
+| `selection.speed` | Between `0.5` and `2.0`; `1` when unset. |
+| `options.chunkStrategy` | `two-chunk`, `paragraph`, `sentence` or `greedy`. When nothing sets it, `two-chunk`. |
+| `options.minChunkWords` | Words to accumulate before a chunk is sent to the TTS service, so very short phrases do not reach it without context for natural prosody. |
+| `options.maxChunkWords` | Upper bound on words per chunk; a short lead-in sentence is only merged with what follows while the total stays within it. |
+| `modelPrefs` | Per-model overrides, keyed by service id and then roster model id, each `{ "chunking": { "mode", "minWords", "maxWords" } }` holding only the fields changed. Used only under `settingsScope: "per-model"`. |
+| `settingsScope` | `"global"` or `"per-model"`; see [Settings scope](#settings-scope). |
+
 ---
 
 ## Runtime settings
@@ -246,7 +326,7 @@ Each has an environment override (`BANTER_CONTROL_HOST`, `BANTER_EVENTS_PATH`, `
 | `DASHBOARD_DIST` | `dashboard/dist` | Built assets to serve |
 | `MIC_SAMPLE_DIR` | `banter-voice-debug/mic-samples` in the OS temp directory | Where `DEBUG` mic captures land; set it to keep them somewhere durable |
 
-`BANTER_PROD` and `BANTER_UNIT` are better set in `ops/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. It stays in the checkout's `scripts/` because it names the deployment folder; a deploy copies it into `$BANTER_PROD/scripts/`, so the scripts systemd runs read the same settings. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
+`BANTER_PROD` and `BANTER_UNIT` are better set in `ops/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. It stays in the checkout's `ops/` because it names the deployment folder; a deploy copies it into `$BANTER_PROD/ops/`, so the scripts systemd runs read the same settings. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
 
 A unit file cannot expand a shell variable, so `ops/systemd/banter.service.template` is rendered at install time with the deploy path and unit name substituted in, and the rendered unit passes `BANTER_PROD` back to the runner through `Environment=`.
 
