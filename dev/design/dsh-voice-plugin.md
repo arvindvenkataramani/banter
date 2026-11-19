@@ -2,7 +2,7 @@
 
 Banter's voice mode, running inside DeepSeek Harness's (dsh) own web UI as a dsh plugin. dsh keeps the conversation, its rendering, its composer and its run controls. The plugin adds the voice loop and the few controls that only voice needs.
 
-Companions: [`dev/analysis/dsh-voice-plugin.md`](../analysis/dsh-voice-plugin.md) (feasibility, the dsh surfaces), [`voice-engine-package.md`](voice-engine-package.md) (the engine the plugin hosts), [`docs/gateway/dsh/dsh-web-protocol.md`](../../docs/gateway/dsh/dsh-web-protocol.md) (dsh's wire). The spec is [`dev/specs/dsh-voice-plugin.md`](../specs/dsh-voice-plugin.md).
+Companions: [`dev/analysis/dsh-voice-plugin.md`](../analysis/dsh-voice-plugin.md) (feasibility, the dsh surfaces), [`voice-engine-package.md`](voice-engine-package.md) (the engine the plugin hosts), [`docs/reference/protocols/dsh/dsh-web-protocol.md`](../../docs/reference/protocols/dsh/dsh-web-protocol.md) (dsh's wire). The spec is [`dev/specs/dsh-voice-plugin.md`](../specs/dsh-voice-plugin.md).
 
 ## Principles
 

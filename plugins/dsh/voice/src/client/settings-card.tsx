@@ -174,7 +174,7 @@ function GeneralPanel({ draft, edit }: PanelProps) {
             The address of your Banter install: the same address you open Banter's dashboard at. The install script prints it when
             it finishes. The plugin reaches the speech services through it. The provider, model and voice lists were copied from this server
             when the plugin was installed; re-running the install step picks up changes, and also resets these settings to the server's.{' '}
-            <a className="dv-link" href={doc('docs/setup/install.md')} target="_blank" rel="noreferrer">Install Banter</a>
+            <a className="dv-link" href={doc('docs/guide/install.md')} target="_blank" rel="noreferrer">Install Banter</a>
           </p>
         </Field>
         {view.declaresSessions && (
@@ -203,25 +203,25 @@ const HELP_LINKS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label:
   {
     heading: 'General',
     links: [
-      { label: 'Plugin docs', href: doc('docs/dsh-voice/README.md'), about: 'What the plugin does, its controls, and how to set it up' },
-      { label: 'Install Banter', href: doc('docs/setup/install.md'), about: 'Installing the Banter server, which prints its URL when it finishes' },
-      { label: 'Speech servers', href: doc('docs/setup/speech-servers.md'), about: 'Connecting speech servers to Banter' },
-      { label: 'Configuration reference', href: doc('docs/setup/configuration.md'), about: 'Every setting in the Banter server’s config.json and registry.json' },
+      { label: 'Plugin docs', href: doc('docs/guide/plugins/dsh-voice/README.md'), about: 'What the plugin does, its controls, and how to set it up' },
+      { label: 'Install Banter', href: doc('docs/guide/install.md'), about: 'Installing the Banter server, which prints its URL when it finishes' },
+      { label: 'Speech servers', href: doc('docs/guide/speech-servers.md'), about: 'Connecting speech servers to Banter' },
+      { label: 'Configuration reference', href: doc('docs/reference/configuration.md'), about: 'Every setting in the Banter server’s config.json and registry.json' },
     ],
   },
   {
     heading: 'Speech (TTS)',
     links: [
-      { label: 'TTS setup', href: doc('docs/setup/tts.md'), about: 'Setting up each text-to-speech server' },
-      { label: 'Speech models', href: doc('docs/setup/models.md#text-to-speech-models'), about: 'Which speech models exist and what each needs' },
-      { label: 'Voices and models', href: doc('docs/setup/voices-and-models.md'), about: 'How providers, models and voices fit together' },
+      { label: 'TTS setup', href: doc('docs/guide/tts.md'), about: 'Setting up each text-to-speech server' },
+      { label: 'Speech models', href: doc('docs/guide/models.md#text-to-speech-models'), about: 'Which speech models exist and what each needs' },
+      { label: 'Voices and models', href: doc('docs/guide/voices-and-models.md'), about: 'How providers, models and voices fit together' },
     ],
   },
   {
     heading: 'Transcription (STT)',
     links: [
-      { label: 'STT setup', href: doc('docs/setup/stt.md'), about: 'Setting up each speech-to-text server' },
-      { label: 'Transcription models', href: doc('docs/setup/models.md#speech-to-text-models'), about: 'Which transcription models exist and what each needs' },
+      { label: 'STT setup', href: doc('docs/guide/stt.md'), about: 'Setting up each speech-to-text server' },
+      { label: 'Transcription models', href: doc('docs/guide/models.md#speech-to-text-models'), about: 'Which transcription models exist and what each needs' },
     ],
   },
   { heading: 'Project', links: [{ label: 'Repository', href: REPO, about: 'Banter’s source code' }] },
@@ -346,9 +346,9 @@ function SpeechPanel({ draft, edit }: PanelProps) {
             </div>
             <p className="dv-help">
               Only models that can stream speech in real time are listed.{' '}
-              <a className="dv-link" href={doc('docs/setup/models.md#text-to-speech-models')} target="_blank" rel="noreferrer">Speech models</a>
+              <a className="dv-link" href={doc('docs/guide/models.md#text-to-speech-models')} target="_blank" rel="noreferrer">Speech models</a>
               {' · '}
-              <a className="dv-link" href={doc('docs/setup/voices-and-models.md')} target="_blank" rel="noreferrer">Voices and models</a>
+              <a className="dv-link" href={doc('docs/guide/voices-and-models.md')} target="_blank" rel="noreferrer">Voices and models</a>
             </p>
             <div className="dv-field">
               <div className="dv-split">
@@ -383,7 +383,7 @@ function SpeechPanel({ draft, edit }: PanelProps) {
           description={
             <>
               Whether these chunking settings are shared by every speech model or kept per model.{' '}
-              <a className="dv-link" href={doc('docs/setup/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How per-model values are chosen</a>
+              <a className="dv-link" href={doc('docs/reference/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How per-model values are chosen</a>
             </>
           }
           value={draft.scope}
@@ -440,9 +440,9 @@ function ListeningPanel({ draft, edit }: PanelProps) {
             />
             <p className="dv-help">
               The speech-to-text server that turns what you say into text.{' '}
-              <a className="dv-link" href={doc('docs/setup/stt.md')} target="_blank" rel="noreferrer">Setting up STT servers</a>
+              <a className="dv-link" href={doc('docs/guide/stt.md')} target="_blank" rel="noreferrer">Setting up STT servers</a>
               {' · '}
-              <a className="dv-link" href={doc('docs/setup/models.md#speech-to-text-models')} target="_blank" rel="noreferrer">Transcription models</a>
+              <a className="dv-link" href={doc('docs/guide/models.md#speech-to-text-models')} target="_blank" rel="noreferrer">Transcription models</a>
             </p>
           </Field>
         </Section>
@@ -454,7 +454,7 @@ function ListeningPanel({ draft, edit }: PanelProps) {
         <Section
           key={group.section}
           title={group.title}
-          aside={<a className="dv-link" href={doc('docs/pages/voice-interface.md#what-the-settings-mean')} target="_blank" rel="noreferrer">What these do</a>}
+          aside={<a className="dv-link" href={doc('docs/reference/components/voice-interface.md#what-the-settings-mean')} target="_blank" rel="noreferrer">What these do</a>}
         >
           {TUNING_FIELDS.filter(f => f.section === group.section).map(f => {
             const value = draft.tuning[f.key]
