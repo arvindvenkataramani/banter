@@ -161,14 +161,19 @@ function GeneralPanel({ draft, edit }: PanelProps) {
   const view = roster(draft)
   return (
     <>
-      <Section title="Voice servers">
-        <Field id="dv-control-plane" label="Control plane URL">
+      <Section title="Banter server">
+        <Field id="dv-control-plane" label="Banter server URL">
           <Input
             id="dv-control-plane"
             className="dv-input"
             value={draft.controlPlaneUrl}
             onChange={event => { edit(d => setControlPlaneUrl(d, event.target.value)) }}
           />
+          <p className="dv-help">
+            The address of your Banter install: the same address you open Banter's dashboard at. The install script prints it when
+            it finishes. The plugin reaches the speech services through it.{' '}
+            <a className="dv-link" href={doc('docs/setup/install.md')} target="_blank" rel="noreferrer">Install Banter</a>
+          </p>
         </Field>
         {view.declaresSessions && (
           <SwitchRow
