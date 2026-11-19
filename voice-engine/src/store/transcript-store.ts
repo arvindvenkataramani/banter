@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { emptyReveal, receive, advance, backlog, intervalFor, revealed } from '../human/word-reveal'
 import type { RevealState } from '../human/word-reveal'
 import { settledText } from '../human/transcript-view'
+import { cleanTranscript } from '../human/clean-transcript'
 
 /** One utterance's own entry in the pending list, kept in the order the
  * utterance was heard. `final` is unset while the utterance is still being
@@ -42,10 +43,18 @@ export interface TranscriptStoreState {
    * specifically and there is nowhere else for it to live without a third
    * store. */
   reveal: RevealState
-  /** Per utterance id, how many of its leading words were already sent by
-   * someone other than the engine (see `markWordsSent`). Absent means none.
-   * Kept apart from `pending` so a mark outlives the entry it was made on. */
-  sent: Record<string, number>
+  /** Per utterance id, the leading words already sent by someone other than
+   * the engine (see `markWordsSent`). Absent means none. Kept apart from
+   * `pending` so a mark outlives the entry it was made on. */
+  sent: Record<string, SentMark>
+}
+
+/** A mark: `shown` is how many leading words the host sent, as the raw partial
+ * showed them (what `pendingText` cuts); `cut` is how many words those make
+ * once cleaned the way a final is (what `drain` cuts from the final). */
+export interface SentMark {
+  shown: number
+  cut: number
 }
 
 export const useTranscriptStore = create<TranscriptStoreState>(() => ({
@@ -74,11 +83,11 @@ function withoutFirstWords(text: string, count: number): string {
  * out of the order they were spoken. Returns the new `settled` and `pending`
  * without writing; callers combine this with whatever else they write in
  * the same `setState` call. */
-function drain(settled: string, pending: PendingUtterance[], sent: Record<string, number>): { settled: string; pending: PendingUtterance[] } {
+function drain(settled: string, pending: PendingUtterance[], sent: Record<string, SentMark>): { settled: string; pending: PendingUtterance[] } {
   let out = settled
   let i = 0
   while (i < pending.length && pending[i].final !== null) {
-    const text = withoutFirstWords(pending[i].final as string, sent[pending[i].id] ?? 0)
+    const text = withoutFirstWords(pending[i].final as string, sent[pending[i].id]?.cut ?? 0)
     if (text) out = out ? `${out} ${text}` : text
     i += 1
   }
@@ -150,7 +159,7 @@ export function pendingDisplay(state: TranscriptStoreState): { id: string; text:
     if (p.final !== null) text = p.final
     else if (p.paused) text = p.text
     else text = p === paced ? revealed(state.reveal) : p.text
-    return { id: p.id, text, sent: state.sent[p.id] ?? 0 }
+    return { id: p.id, text, sent: state.sent[p.id]?.shown ?? 0 }
   })
 }
 
@@ -173,14 +182,25 @@ export function pendingText(state: TranscriptStoreState): string {
  * clears the mark. The mark belongs to the id, so it holds for an entry a
  * late final creates anew. Marks of ids no longer pending are discarded
  * with each call, except `id`'s own.
+ *
+ * Partials are raw and a final is cleaned of filler words, so the final is
+ * cut by the word count of the marked words once cleaned (`cut`), not by
+ * `count`. A number the final reformats ("twenty five" to "25") can still
+ * leave the cut a word off.
  */
 export function markWordsSent(id: string, count: number): void {
-  const { pending, sent } = useTranscriptStore.getState()
-  const next: Record<string, number> = {}
+  const state = useTranscriptStore.getState()
+  const { pending, sent } = state
+  const next: Record<string, SentMark> = {}
   for (const [key, value] of Object.entries(sent)) {
     if (key !== id && pending.some((p) => p.id === key)) next[key] = value
   }
-  if (count > 0) next[id] = count
+  if (count > 0) {
+    const shown = pendingDisplay(state).find((d) => d.id === id)
+    // With no entry on screen there are no words to clean: cut what was counted.
+    const cut = shown ? wordsOf(cleanTranscript(wordsOf(shown.text).slice(0, count).join(' '))).length : count
+    next[id] = { shown: count, cut }
+  }
   useTranscriptStore.setState({ sent: next })
 }
 

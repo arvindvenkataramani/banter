@@ -7,17 +7,7 @@ import type { SileroVad } from './silero-vad'
 import type { SmartTurn } from './smart-turn'
 import type { SttTransport } from './stt-transport'
 import type { Utterance } from '../turn-manager'
-
-/** Strip filler words from Parakeet transcripts. */
-function cleanTranscript(text: string): string {
-  const cleaned = text
-    .replace(/\b(uh|um|uhh|umm)\b[,.]?\s*/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-  // The model answers a stretch of silence with bare punctuation; with no
-  // letter or digit in it, nothing was said.
-  return /[\p{L}\p{N}]/u.test(cleaned) ? cleaned : ''
-}
+import { cleanTranscript } from './clean-transcript'
 
 export interface HumanVoiceCallbacks {
   onError: (msg: string) => void

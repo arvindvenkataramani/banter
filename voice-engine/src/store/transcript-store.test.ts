@@ -205,7 +205,24 @@ describe('transcript store — words already sent by the host', () => {
     setPartial('b', 'two', true)
     markWordsSent('b', 1)
 
-    expect(useTranscriptStore.getState().sent).toEqual({ b: 1 })
+    expect(useTranscriptStore.getState().sent).toEqual({ b: { shown: 1, cut: 1 } })
+  })
+
+  it('cuts the final by the cleaned count when the marked words held filler', () => {
+    setPartial('a', 'um so I think', true)
+    markWordsSent('a', 4)
+    expect(useTranscriptStore.getState().sent).toEqual({ a: { shown: 4, cut: 3 } })
+
+    settle('a', 'so I think we should go')
+
+    expect(useTranscriptStore.getState().settled).toBe('we should go')
+  })
+
+  it('still hides the marked raw words, filler included, while pending', () => {
+    setPartial('a', 'um so I think', true)
+    markWordsSent('a', 4)
+    setPartial('a', 'um so I think we', true)
+    expect(shown()).toBe('we')
   })
 
   it('without a mark the pending text is unchanged', () => {

@@ -8,6 +8,7 @@ import { usePendingView } from '@platform/voice-engine/human/use-revealed-transc
 import { reportComposerFocus, reportComposerSend } from '@platform/voice-engine/store/turn-manager-store'
 import { editTranscript, markWordsSent, pendingDisplay, pendingText, takeTranscript, useTranscriptStore } from '@platform/voice-engine/store/transcript-store'
 import type { DshInputActions, DshInputState } from './dsh-types.ts'
+import { dshSendEvent } from './box-phase.ts'
 import { createDraftMirror, type DraftMirror } from './draft-mirror.ts'
 import type { VoiceRuntime } from './runtime.ts'
 
@@ -83,10 +84,9 @@ export function useBoxMirror({ runtime, sessionId, active, input, inputActions }
     const mirror = mirrorRef.current
     if (mirror !== null) {
       mirror.onDraftChange(input)
-      // A send through dsh's own Send shows as the input state's phase becoming 'sending'.
-      if (previousPhase.current !== 'sending' && input.phase === 'sending') mirror.onDshSend()
-      // dsh accepts a send by clearing the box as the phase ends; text left in it means the send was refused.
-      else if (previousPhase.current === 'sending' && input.phase !== 'sending' && input.draft !== '') mirror.onDshSendRefused()
+      const event = dshSendEvent(previousPhase.current, input)
+      if (event === 'send') mirror.onDshSend()
+      else if (event === 'refused') mirror.onDshSendRefused()
     }
     previousPhase.current = input.phase
   }, [input])

@@ -56,6 +56,18 @@ export interface DraftMirror {
   restore(text: string): void
 }
 
+/** Two pieces of text as one, single-spaced where both are present. */
+export function joinText(first: string, second: string): string {
+  if (first === '') return second
+  if (second === '') return first
+  return `${first} ${second}`
+}
+
+/** Puts words from a failed send back at the front of the transcript, ahead of anything settled since. */
+export function restoreToTranscript(engine: Pick<DraftMirrorDeps['engine'], 'editTranscript' | 'takeTranscript'>, text: string): void {
+  engine.editTranscript(joinText(text, engine.takeTranscript()))
+}
+
 export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   const { engine } = deps
   let typing = false
@@ -70,14 +82,8 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   let sendClearing = false
   /** From a dsh send until dsh empties the box or refuses; dsh owns the box meanwhile. */
   let sending = false
-  /** Whether the box held the plugin's own text when the dsh send began. */
-  let sendOwn = false
   /** The transcript view as last reported, shown in the box unless the person is typing. */
   let lastView = ''
-  /** The utterances the current dsh send marked, with the mark each had before it. */
-  let marked: { id: string; before: number }[] = []
-  /** The pending words the box held when the current dsh send began. */
-  let sentTail = ''
 
   const setTyping = (value: boolean): void => {
     if (typing === value) return
@@ -85,7 +91,22 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     deps.onTypingChange?.(value)
   }
 
+  /**
+   * Marks each pending utterance's words the box shows as sent, counted from
+   * its first word, so the engine neither shows them again nor sends them when
+   * the utterance settles. Used when the words leave the pending list for the
+   * box's own text: a dsh send, or the person typing over them.
+   */
+  const markShownWords = (): void => {
+    for (const { id, text, sent } of engine.pendingDisplay()) {
+      const count = text.split(/\s+/).filter(Boolean).length
+      if (count > sent) engine.markWordsSent(id, count)
+    }
+  }
+
   const enterTyping = (): void => {
+    // The box showed the pending words; the typed text takes them in, so they are not pending too.
+    if (lastWrite !== null && lastWrite !== '') markShownWords()
     engine.setMicAutoMuted(true)
     engine.reportComposerFocus(true)
     awaiting = []
@@ -115,26 +136,6 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     write(lastView)
   }
 
-  /**
-   * At a dsh send, the pending words the box showed went with it. Marks each
-   * utterance's shown words as sent, counted from its first word, so the
-   * engine neither shows them again nor sends them when the utterance settles.
-   */
-  const markShownWords = (): void => {
-    marked = []
-    sentTail = ''
-    if (!sendOwn) return
-    const tail: string[] = []
-    for (const { id, text, sent } of engine.pendingDisplay()) {
-      const words = text.split(/\s+/).filter(Boolean)
-      if (words.length <= sent) continue
-      marked.push({ id, before: sent })
-      tail.push(...words.slice(sent))
-      engine.markWordsSent(id, words.length)
-    }
-    sentTail = tail.join(' ')
-  }
-
   return {
     snapshot: () => ({ typing, lastWrite }),
 
@@ -144,7 +145,6 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       awaiting = []
       sendClearing = false
       sending = false
-      marked = []
       lastWrite = snapshot.lastWrite
       // Typing carries over; otherwise the next transcript report brings the box up to date.
       if (snapshot.typing) setTyping(true)
@@ -157,7 +157,6 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       awaiting = []
       sendClearing = false
       sending = false
-      marked = []
       // The attached session's box is the transcript; text already in it is the person's.
       engine.editTranscript(state.draft)
       if (state.draft !== '') {
@@ -215,9 +214,9 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     onDshSend() {
       // The words are sent once, by dsh: empty the transcript before the floor hears of the send.
       const state = deps.readInput()
-      sendOwn = !typing && state.draft !== '' && isOwn(state)
+      const own = !typing && state.draft !== '' && isOwn(state)
       engine.takeTranscript()
-      markShownWords()
+      if (own) markShownWords()
       engine.reportComposerSend()
       engine.setMicAutoMuted(false)
       engine.reportComposerFocus(false)
@@ -230,16 +229,19 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
 
     onDshSendRefused() {
       // The refused text stays in the box; it is the person's draft again, under the typing mute.
-      const draft = deps.readInput().draft
+      // The marks made at the send stay: the box's pending words are part of the draft now.
       sending = false
       lastWrite = null
       sendClearing = false
       enterTyping()
-      // The box showed the pending words too: they are pending again, not sent.
-      for (const { id, before } of marked) engine.markWordsSent(id, before)
-      marked = []
-      const tail = sentTail !== '' && draft.endsWith(sentTail) ? sentTail : ''
-      engine.editTranscript(tail === '' ? draft : draft.slice(0, draft.length - tail.length).trimEnd())
+      let draft = deps.readInput().draft
+      // Words that settled during the send go after the draft, in the box and in the transcript.
+      const since = engine.takeTranscript()
+      if (since !== '') {
+        draft = joinText(draft, since)
+        deps.inputActions.setDraft(draft)
+      }
+      engine.editTranscript(draft)
     },
 
     clear() {
@@ -249,10 +251,14 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     },
 
     restore(text) {
-      // While the person types, the box is theirs and the words cannot be shown in it.
-      if (typing) return
-      const since = engine.takeTranscript()
-      engine.editTranscript(since === '' ? text : `${text} ${since}`)
+      if (typing) {
+        // The box is the person's: the words go ahead of what they have typed.
+        const joined = joinText(text, deps.readInput().draft)
+        deps.inputActions.setDraft(joined)
+        engine.editTranscript(joined)
+        return
+      }
+      restoreToTranscript(engine, text)
     },
   }
 }

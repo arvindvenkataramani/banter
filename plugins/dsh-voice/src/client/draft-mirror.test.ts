@@ -3,7 +3,7 @@ import {
   editTranscript, markWordsSent, pendingDisplay, pendingText, setPartial, settle, takeTranscript, useTranscriptStore,
 } from '@platform/voice-engine/store/transcript-store'
 import type { DshInputState } from './dsh-types'
-import { createDraftMirror } from './draft-mirror'
+import { createDraftMirror, restoreToTranscript } from './draft-mirror'
 
 // The engine's transcript store is real; the mute and floor reports are
 // recorded. The box is a small stand-in for dsh's input: one write is one
@@ -281,7 +281,7 @@ describe('draft mirror — a dsh send while an utterance is still being transcri
     expect(takeTranscript()).toBe('spoken words')
   })
 
-  it('a refused send gives the words back to the pending utterance', () => {
+  it('a refused send leaves the words in the draft, so they are not pending again', () => {
     const h = setup()
     h.mirror.onAttach()
     sayPartial(h, 'u1', 'one two three')
@@ -290,8 +290,8 @@ describe('draft mirror — a dsh send while an utterance is still being transcri
     // dsh refuses: the box still holds the text.
     h.mirror.onDshSendRefused()
 
-    expect(pendingText(useTranscriptStore.getState())).toBe('one two three')
-    expect(transcript()).toBe('')
+    expect(pendingText(useTranscriptStore.getState())).toBe('')
+    expect(transcript()).toBe('one two three')
     settle('u1', 'one two three')
     expect(transcript()).toBe('one two three')
   })
@@ -317,5 +317,128 @@ describe('draft mirror — a dsh send while an utterance is still being transcri
     expect(takeTranscript()).toBe('and more')
     h.mirror.clear()
     expect(h.box.draft).toBe('')
+  })
+})
+
+describe('draft mirror — words in the box and the transcript that settles later', () => {
+  function sayPartial(h: ReturnType<typeof setup>, id: string, text: string, paused = true) {
+    setPartial(id, text, paused)
+    h.speak(viewNow())
+  }
+  function dshSends(h: ReturnType<typeof setup>) {
+    h.mirror.onDshSend()
+    h.mirror.onTranscriptChange(viewNow())
+  }
+  function dshEmpties(h: ReturnType<typeof setup>) {
+    h.box.draft = ''
+    h.box.draftRev += 1
+    h.mirror.onDraftChange({ ...h.box })
+  }
+
+  it('a final with a different word count than the partial, its filler stripped, loses no word after a dsh send', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'um so I think')
+    expect(h.box.draft).toBe('um so I think')
+
+    dshSends(h)
+    dshEmpties(h)
+    // The final drops the filler the partial carried.
+    settle('u1', 'so I think we should go')
+    h.speak(viewNow())
+
+    expect(takeTranscript()).toBe('we should go')
+  })
+
+  it('on the word-reveal path, the words the box showed are the ones marked, and nothing is sent twice', () => {
+    vi.useFakeTimers()
+    try {
+      const h = setup()
+      h.mirror.onAttach()
+      setPartial('u1', 'alpha beta gamma delta epsilon', false)
+      vi.advanceTimersByTime(5000)
+      h.speak(viewNow())
+      // The reveal never shows the last, unsettled word.
+      expect(h.box.draft).toBe('alpha beta gamma delta')
+
+      dshSends(h)
+      dshEmpties(h)
+      expect(h.engine.markWordsSent).toHaveBeenCalledWith('u1', 4)
+      settle('u1', 'alpha beta gamma delta epsilon zeta')
+      h.speak(viewNow())
+
+      expect(takeTranscript()).toBe('epsilon zeta')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('typing while a shown utterance is still transcribing keeps its words from coming again when it settles', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'one two three')
+    expect(h.box.draft).toBe('one two three')
+
+    h.type('one two three and mine')
+    settle('u1', 'one two three')
+    h.mirror.onTranscriptChange(viewNow())
+
+    expect(transcript()).toBe('one two three and mine')
+    expect(takeTranscript()).toBe('one two three and mine')
+  })
+
+  it('typing marks nothing when the box held no words of the plugin\'s', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    h.type('typed first')
+    setPartial('u1', 'spoken', true)
+
+    expect(h.engine.markWordsSent).not.toHaveBeenCalled()
+  })
+
+  it('a refused send keeps the marks and adopts the whole draft, whose text a paused entry may end in a space of', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'one two three ')
+
+    dshSends(h)
+    h.mirror.onDshSendRefused()
+
+    expect(transcript()).toBe(h.box.draft)
+    expect(pendingText(useTranscriptStore.getState())).toBe('')
+    settle('u1', 'one two three')
+    expect(transcript()).toBe('one two three ')
+    expect(takeTranscript()).toBe('one two three ')
+  })
+
+  it('a refused send keeps words that settled while dsh was sending, after the draft', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'first words')
+    dshSends(h)
+    settle('u1', 'first words')
+    settle('u2', 'said after')
+
+    h.mirror.onDshSendRefused()
+
+    expect(h.box.draft).toBe('first words said after')
+    expect(transcript()).toBe('first words said after')
+  })
+
+  it('a failed voice send while the person types puts the words ahead of the box text, in the box and the transcript', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    h.type('typed now')
+
+    h.mirror.restore('the lost words')
+
+    expect(h.box.draft).toBe('the lost words typed now')
+    expect(transcript()).toBe('the lost words typed now')
+  })
+
+  it('a failed voice send with no box goes ahead of what settled since', () => {
+    editTranscript('said since')
+    restoreToTranscript({ editTranscript, takeTranscript }, 'the lost words')
+    expect(transcript()).toBe('the lost words said since')
   })
 })

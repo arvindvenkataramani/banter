@@ -57,6 +57,8 @@ export function settingsFromVoiceConfig(cfg: VoiceConfig, controlPlaneUrl: strin
  */
 export function voiceConfigFromSettings(settings: PluginSettings): VoiceConfig {
   const rest = parseRest(settings.rest)
+  // The engine posts microphone samples to dsh's own origin when this is set, and nothing there accepts them.
+  delete rest.debug
   return {
     ...rest,
     tts: {

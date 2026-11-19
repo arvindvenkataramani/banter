@@ -8,10 +8,11 @@ import { haltAudio } from '@platform/voice-engine/audio-halters'
 import { resolveVoiceSelection } from '@platform/voice-engine/voice-config'
 import { setVoiceConfig, setVoiceSelection, publishSession } from '@platform/voice-engine/voice-session-store'
 import { toggleMuteAll, useMuteStore } from '@platform/voice-engine/human/mute-store'
+import { editTranscript, takeTranscript } from '@platform/voice-engine/store/transcript-store'
 import { LIVE_HEARTBEAT_MS, LIVE_PATH } from '../host/relay.ts'
 import { DEFAULT_SETTINGS, voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
 import type { DshClientContext, DshConfigForm, DshObservable } from './dsh-types.ts'
-import type { DraftMirror, MirrorSnapshot } from './draft-mirror.ts'
+import { restoreToTranscript, type DraftMirror, type MirrorSnapshot } from './draft-mirror.ts'
 import { createValue, type Value } from './observable.ts'
 import { followShownSession } from './presence.ts'
 import { createPluginServices, type PluginServices } from './services.ts'
@@ -118,9 +119,11 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
         boxes.get(sessionId)?.clear()
         patchUi({ notice: null })
       },
-      // The words go back into the box and the voice button says why they were not sent.
+      // The words go back into the box, or into the transcript when no box is mounted, and the voice button says why they were not sent.
       sendFailed: (text, message) => {
-        boxes.get(sessionId)?.restore(text)
+        const box = boxes.get(sessionId)
+        if (box) box.restore(text)
+        else restoreToTranscript({ editTranscript, takeTranscript }, text)
         sendNotice = `Not sent: ${message}`
         patchUi({ notice: sendNotice })
       },

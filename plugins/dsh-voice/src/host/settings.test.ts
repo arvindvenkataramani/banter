@@ -56,4 +56,10 @@ describe('install seeding', () => {
     expect(edited.tts.providers).toEqual(controlPlaneConfig.tts.providers)
     expect(edited.takeover).toBe('ask')
   })
+
+  it('never turns on microphone sample saving, whatever the stored remainder holds', () => {
+    const seeded = settingsFromVoiceConfig(controlPlaneConfig, 'http://control.invalid:7000')
+    const rest = JSON.stringify({ ...JSON.parse(seeded.rest) as object, debug: { saveMicSamples: true } })
+    expect(voiceConfigFromSettings({ ...seeded, rest }).debug?.saveMicSamples ?? false).toBe(false)
+  })
 })

@@ -19,13 +19,13 @@ import {
   setModel, setProvider, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
 } from './settings-model.ts'
 
-type TabId = 'voice' | 'speech' | 'listening'
+type TabId = 'general' | 'speech' | 'listening'
 
 const tabId = (tab: TabId): string => `dsh-voice-tab-${tab}`
 const panelId = (tab: TabId): string => `dsh-voice-panel-${tab}`
 
 const tabItem = (value: TabId, label: string) => ({ value, label, id: tabId(value), panelId: panelId(value) })
-const TAB_ITEMS = [tabItem('voice', 'Voice'), tabItem('speech', 'Speech'), tabItem('listening', 'Listening')] as const
+const TAB_ITEMS = [tabItem('general', 'General'), tabItem('speech', 'Speech'), tabItem('listening', 'Listening')] as const
 
 /** What a draft was seeded from: the stored settings and the revision they were read at. */
 interface Base {
@@ -39,7 +39,7 @@ export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) 
   const state = useSyncExternalStore(listener => form.subscribe(listener), () => form.getSnapshot())
   const [draft, setDraft] = useState<Draft | null>(null)
   const [base, setBase] = useState<Base | null>(null)
-  const [tab, setTab] = useState<TabId>('voice')
+  const [tab, setTab] = useState<TabId>('general')
   const [saving, setSaving] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -97,7 +97,7 @@ export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) 
           onChange={setTab}
         />
         <fieldset className="dv-panel" role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} disabled={readOnly}>
-          {tab === 'voice' && <VoicePanel draft={draft} edit={edit} />}
+          {tab === 'general' && <GeneralPanel draft={draft} edit={edit} />}
           {tab === 'speech' && <SpeechPanel draft={draft} edit={edit} />}
           {tab === 'listening' && <ListeningPanel draft={draft} edit={edit} />}
         </fieldset>
@@ -117,10 +117,17 @@ interface PanelProps {
   edit: (change: (current: Draft) => Draft) => void
 }
 
-function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
+function Section({ title, aside, children }: { title: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
     <section className="dv-section">
-      <h3 className="dv-heading">{title}</h3>
+      {aside === undefined ? (
+        <h3 className="dv-heading">{title}</h3>
+      ) : (
+        <div className="dv-split">
+          <h3 className="dv-heading">{title}</h3>
+          {aside}
+        </div>
+      )}
       {children}
     </section>
   )
@@ -150,95 +157,11 @@ function SwitchRow({ label, description, checked, onChange }: { label: string; d
 
 const optionsOf = (items: ReadonlyArray<{ id: string; name?: string }>): SelectOption[] => items.map(item => ({ value: item.id, label: item.name ?? item.id }))
 
-function VoicePanel({ draft, edit }: PanelProps) {
+function GeneralPanel({ draft, edit }: PanelProps) {
   const view = roster(draft)
-  const [streaming, setStreaming] = useState<StreamingBackend | 'auto'>(readStreamingChoice)
-  const detected = getDetectedBackend()
-  const backendName = (backend: StreamingBackend): string => (backend === 'mms' ? 'MMS' : backend === 'mse' ? 'MSE' : 'Blob')
   return (
     <>
-      {view.sttOptions.length > 1 && (
-        <Section title="Transcription">
-          <Field id="dv-stt" label="Provider">
-            <SelectField
-              id="dv-stt"
-              value={draft.sttServiceId}
-              options={view.sttOptions.map(o => ({ value: o.serviceId, label: o.name }))}
-              onChange={value => { edit(d => setSttService(d, value)) }}
-            />
-          </Field>
-        </Section>
-      )}
-      <Section title="Voice">
-        {view.providers.length === 0 ? (
-          <p className="dv-help">The settings hold no voice roster, so there is nothing to choose from.</p>
-        ) : (
-          <>
-            <div className="dv-row">
-              {view.providers.length > 1 && (
-                <Field id="dv-provider" label="Provider">
-                  <SelectField
-                    id="dv-provider"
-                    value={draft.ttsServiceId}
-                    options={view.providers.map(p => ({ value: p.serviceId, label: p.name ?? p.serviceId }))}
-                    onChange={value => { edit(d => setProvider(d, value)) }}
-                  />
-                </Field>
-              )}
-              {view.models.length > 1 && (
-                <Field id="dv-model" label="Model">
-                  <SelectField id="dv-model" value={draft.ttsModel} options={optionsOf(view.models)} onChange={value => { edit(d => setModel(d, value)) }} />
-                </Field>
-              )}
-              <Field id="dv-voice" label="Voice">
-                <SelectField
-                  id="dv-voice"
-                  value={draft.ttsVoice}
-                  options={view.voices.map(v => ({ value: v.id, label: v.name }))}
-                  onChange={value => { edit(d => setVoice(d, value)) }}
-                />
-              </Field>
-            </div>
-            <div className="dv-field">
-              <div className="dv-split">
-                <span className="dv-label">Speed</span>
-                <span className="dv-value">{draft.ttsSpeed.toFixed(1)}x</span>
-              </div>
-              <SliderField label="Speed" min={0.5} max={2} step={0.1} value={draft.ttsSpeed} onChange={value => { edit(d => setSpeed(d, value)) }} />
-            </div>
-          </>
-        )}
-      </Section>
-      <Section title="Playback">
-        <Field id="dv-streaming" label="Streaming method">
-          <SelectField
-            id="dv-streaming"
-            value={streaming}
-            options={[
-              { value: 'auto', label: `Auto (${backendName(detected)})` },
-              { value: 'mms', label: 'MMS streaming', disabled: typeof ManagedMediaSource === 'undefined' },
-              { value: 'mse', label: 'MSE streaming', disabled: typeof MediaSource === 'undefined' },
-              { value: 'blob', label: 'Blob fallback' },
-            ]}
-            // Saved as soon as it changes, outside the draft: the engine reads it from the browser's storage when it loads.
-            onChange={value => {
-              const choice = value as StreamingBackend | 'auto'
-              setStreaming(choice)
-              saveStreamingBackend(choice)
-            }}
-          />
-        </Field>
-        <p className="dv-help">Active: {backendName(STREAMING_BACKEND)} — reload to apply</p>
-      </Section>
       <Section title="Voice servers">
-        {view.declaresSessions && (
-          <SwitchRow
-            label="Always take over"
-            description="Our voice servers serve one session at a time. When another session is using one, take it over without asking."
-            checked={draft.takeover === 'always'}
-            onChange={checked => { edit(d => setTakeover(d, checked ? 'always' : 'ask')) }}
-          />
-        )}
         <Field id="dv-control-plane" label="Control plane URL">
           <Input
             id="dv-control-plane"
@@ -247,6 +170,14 @@ function VoicePanel({ draft, edit }: PanelProps) {
             onChange={event => { edit(d => setControlPlaneUrl(d, event.target.value)) }}
           />
         </Field>
+        {view.declaresSessions && (
+          <SwitchRow
+            label="Always take over"
+            description="Our voice servers serve one session at a time. When another session is using one, take it over without asking."
+            checked={draft.takeover === 'always'}
+            onChange={checked => { edit(d => setTakeover(d, checked ? 'always' : 'ask')) }}
+          />
+        )}
       </Section>
       <Section title="Conversation">
         <SwitchRow
@@ -256,7 +187,58 @@ function VoicePanel({ draft, edit }: PanelProps) {
           onChange={checked => { edit(d => setKeepVoiceOutside(d, checked)) }}
         />
       </Section>
+      <HelpSection />
     </>
+  )
+}
+
+const REPO = 'https://github.com/arvindvenkataramani/banter'
+const doc = (path: string): string => `${REPO}/blob/main/${path}`
+
+const HELP_LINKS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: string; href: string }> }> = [
+  {
+    heading: 'General',
+    links: [
+      { label: 'Plugin docs', href: doc('docs/dsh-voice/README.md') },
+      { label: 'Install Banter', href: doc('docs/setup/install.md') },
+      { label: 'Speech servers', href: doc('docs/setup/speech-servers.md') },
+      { label: 'Speech servers on Linux', href: doc('docs/setup/linux-speech-servers.md') },
+    ],
+  },
+  {
+    heading: 'Speech (TTS)',
+    links: [
+      { label: 'TTS setup', href: doc('docs/setup/tts.md') },
+      { label: 'Speech models', href: doc('docs/setup/models.md#text-to-speech-models') },
+      { label: 'Voices and models', href: doc('docs/setup/voices-and-models.md') },
+    ],
+  },
+  {
+    heading: 'Transcription (STT)',
+    links: [
+      { label: 'STT setup', href: doc('docs/setup/stt.md') },
+      { label: 'Transcription models', href: doc('docs/setup/models.md#speech-to-text-models') },
+    ],
+  },
+  { heading: 'Project', links: [{ label: 'Repository', href: REPO }] },
+]
+
+function HelpSection() {
+  return (
+    <Section title="Help">
+      {HELP_LINKS.map(group => (
+        <div key={group.heading} className="dv-links">
+          <h4 className="dv-subheading">{group.heading}</h4>
+          <ul className="dv-link-list">
+            {group.links.map(link => (
+              <li key={link.href}>
+                <a className="dv-link" href={link.href} target="_blank" rel="noreferrer">{link.label}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </Section>
   )
 }
 
@@ -293,7 +275,11 @@ function Provenance({ origin, modelName, diverges }: { origin: FieldOrigin; mode
 }
 
 function SpeechPanel({ draft, edit }: PanelProps) {
+  const voices = roster(draft)
   const view = chunkingView(draft)
+  const [streaming, setStreaming] = useState<StreamingBackend | 'auto'>(readStreamingChoice)
+  const detected = getDetectedBackend()
+  const backendName = (backend: StreamingBackend): string => (backend === 'mms' ? 'MMS' : backend === 'mse' ? 'MSE' : 'Blob')
   const mode = view.fields.mode.value ?? DEFAULT_CHUNK_STRATEGY
   const modelMode = view.draft.modelDefaults.mode
   const words = (field: 'minWords' | 'maxWords', id: string, label: string, max: number) => (
@@ -313,40 +299,112 @@ function SpeechPanel({ draft, edit }: PanelProps) {
   )
   return (
     <>
-      <div className="dv-split">
-        <h3 className="dv-heading">Chunking</h3>
-        {draft.scope === 'per-model' && <span className="dv-help">Values for {view.modelName}</span>}
-      </div>
-      <RadioChoices<SettingsScope> name="dv-scope" label="Chunking scope" value={draft.scope} choices={SCOPE_CHOICES} onChange={value => { edit(d => setScope(d, value)) }} />
-      <hr className="dv-rule" />
-      <RadioChoices<ChunkStrategy>
-        name="dv-mode"
-        label="Chunking mode"
-        value={mode}
-        choices={MODE_CHOICES.map(choice => ({
-          ...choice,
-          description: choice.value === modelMode ? `${choice.description} · ${view.modelName} asks for this` : choice.description,
-          extra: <Provenance origin={view.fields.mode.from} modelName={view.modelName} diverges={view.divergences.mode} />,
-        }))}
-        onChange={value => { edit(d => editChunking(d, 'mode', value)) }}
-      />
-      <div className="dv-pair">
-        {words('minWords', 'dv-min-words', 'Min words', 200)}
-        {words('maxWords', 'dv-max-words', 'Max words', 500)}
-      </div>
-      {view.note !== null && <p className="dv-help">{view.note}</p>}
-      <div className="dv-footer">
-        <Button variant="outline" size="sm" disabled={draft.scope === 'global' || !view.overridePresent} onClick={() => { edit(resetChunking) }}>
-          Reset to model defaults
-        </Button>
-      </div>
+      <Section title="Voice">
+        {voices.providers.length === 0 ? (
+          <p className="dv-help">The settings hold no voice roster, so there is nothing to choose from.</p>
+        ) : (
+          <>
+            <div className="dv-row">
+              {voices.providers.length > 1 && (
+                <Field id="dv-provider" label="Provider">
+                  <SelectField
+                    id="dv-provider"
+                    value={draft.ttsServiceId}
+                    options={voices.providers.map(p => ({ value: p.serviceId, label: p.name ?? p.serviceId }))}
+                    onChange={value => { edit(d => setProvider(d, value)) }}
+                  />
+                </Field>
+              )}
+              {voices.models.length > 1 && (
+                <Field id="dv-model" label="Model">
+                  <SelectField id="dv-model" value={draft.ttsModel} options={optionsOf(voices.models)} onChange={value => { edit(d => setModel(d, value)) }} />
+                </Field>
+              )}
+              <Field id="dv-voice" label="Voice">
+                <SelectField
+                  id="dv-voice"
+                  value={draft.ttsVoice}
+                  options={voices.voices.map(v => ({ value: v.id, label: v.name }))}
+                  onChange={value => { edit(d => setVoice(d, value)) }}
+                />
+              </Field>
+            </div>
+            <div className="dv-field">
+              <div className="dv-split">
+                <span className="dv-label">Speed</span>
+                <span className="dv-value">{draft.ttsSpeed.toFixed(1)}x</span>
+              </div>
+              <SliderField label="Speed" min={0.5} max={2} step={0.1} value={draft.ttsSpeed} onChange={value => { edit(d => setSpeed(d, value)) }} />
+            </div>
+          </>
+        )}
+      </Section>
+      <Section title="Chunking" aside={draft.scope === 'per-model' ? <span className="dv-help">Values for {view.modelName}</span> : undefined}>
+        <RadioChoices<SettingsScope> name="dv-scope" label="Chunking scope" value={draft.scope} choices={SCOPE_CHOICES} onChange={value => { edit(d => setScope(d, value)) }} />
+        <hr className="dv-rule" />
+        <RadioChoices<ChunkStrategy>
+          name="dv-mode"
+          label="Chunking mode"
+          value={mode}
+          choices={MODE_CHOICES.map(choice => ({
+            ...choice,
+            description: choice.value === modelMode ? `${choice.description} · ${view.modelName} asks for this` : choice.description,
+            extra: <Provenance origin={view.fields.mode.from} modelName={view.modelName} diverges={view.divergences.mode} />,
+          }))}
+          onChange={value => { edit(d => editChunking(d, 'mode', value)) }}
+        />
+        <div className="dv-pair">
+          {words('minWords', 'dv-min-words', 'Min words', 200)}
+          {words('maxWords', 'dv-max-words', 'Max words', 500)}
+        </div>
+        {view.note !== null && <p className="dv-help">{view.note}</p>}
+        <div className="dv-footer">
+          <Button variant="outline" size="sm" disabled={draft.scope === 'global' || !view.overridePresent} onClick={() => { edit(resetChunking) }}>
+            Reset to model defaults
+          </Button>
+        </div>
+      </Section>
+      <Section title="Playback">
+        <Field id="dv-streaming" label="Streaming method">
+          <SelectField
+            id="dv-streaming"
+            value={streaming}
+            options={[
+              { value: 'auto', label: `Auto (${backendName(detected)})` },
+              { value: 'mms', label: 'MMS streaming', disabled: typeof ManagedMediaSource === 'undefined' },
+              { value: 'mse', label: 'MSE streaming', disabled: typeof MediaSource === 'undefined' },
+              { value: 'blob', label: 'Blob fallback' },
+            ]}
+            // Saved as soon as it changes, outside the draft: the engine reads it from the browser's storage when it loads.
+            onChange={value => {
+              const choice = value as StreamingBackend | 'auto'
+              setStreaming(choice)
+              saveStreamingBackend(choice)
+            }}
+          />
+        </Field>
+        <p className="dv-help">Active: {backendName(STREAMING_BACKEND)} — reload to apply</p>
+      </Section>
     </>
   )
 }
 
 function ListeningPanel({ draft, edit }: PanelProps) {
+  const view = roster(draft)
   return (
     <>
+      {view.sttOptions.length > 1 && (
+        <Section title="Transcription">
+          <Field id="dv-stt" label="Provider">
+            <SelectField
+              id="dv-stt"
+              value={draft.sttServiceId}
+              options={view.sttOptions.map(o => ({ value: o.serviceId, label: o.name }))}
+              onChange={value => { edit(d => setSttService(d, value)) }}
+            />
+          </Field>
+        </Section>
+      )}
       {([
         { section: 'vad', title: 'Speech detection' },
         { section: 'turnTaking', title: 'Turn taking' },
