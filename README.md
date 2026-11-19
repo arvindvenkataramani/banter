@@ -71,7 +71,7 @@ Banter runs as a single server. It contains the **control plane** (the registry 
 - **Voice engine** (`voice-engine/`): the voice loop (microphone, speech detection, turn-taking, playback). It runs in the browser, and is used by the web app and by the dsh plugin.
 - **Speech services** (`services/`): separate processes, adapters that put an OpenAI-compatible API in front of speech models. You choose the ones you want and register them; see [docs/guide/models.md](docs/guide/models.md) and [services/README.md](services/README.md), including the [faster-whisper](services/stt/faster-whisper/README.md), [Kokoro](services/tts/kokoro/README.md) and [fluid](services/fluid/README.md) adapters.
 - **Shard** (optional): another Banter server on a second machine, for services that need different hardware. It serves no web app, only the API the primary polls. See [docs/guide/shard.md](docs/guide/shard.md).
-- **Plugins**: [OpenClaw voice-mode](docs/guide/plugins/openclaw.md) tells the agent it is being spoken to, and [dsh voice](docs/guide/plugins/dsh-voice/README.md) brings voice into DeepSeek Harness.
+- **Plugins**: [OpenClaw voice-mode](docs/guide/plugins/openclaw.md) tells the agent it is being spoken to, and [dsh voice](docs/guide/plugins/dsh-voice/README.md) brings voice into DeepSeek Harness. The OpenClaw plugin is optional and only affects sessions opened from Banter; the dsh plugin is required for voice there and needs the Banter server running.
 
 The machines only need to reach each other; for voice from another device, see [remote access](docs/guide/remote-access.md). [docs/reference/architecture.md](docs/reference/architecture.md) has the full picture.
 

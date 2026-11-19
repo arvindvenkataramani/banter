@@ -2,6 +2,8 @@
 
 Banter ships an OpenClaw plugin that injects voice-specific guidance into the system prompt, so the agent knows it is being spoken to rather than read. It lives in `plugins/openclaw/voice-mode/`.
 
+The plugin is optional: Banter works with OpenClaw without it. It only tells the agent it is being spoken to, so its answers suit being read aloud. It runs inside the OpenClaw gateway and makes no calls to the Banter server, so the server does not need to be up for it to load. It adds its guidance only to sessions whose key starts with `sessionKeyPrefix`, so it has an effect when people talk to the agent through Banter's web app, which opens sessions with keys of the form `agent:<agent-id>:<session>`.
+
 ## Install
 
 ```bash
