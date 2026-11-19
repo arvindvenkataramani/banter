@@ -91,6 +91,8 @@ await cp(join(dist, 'host/index.js'), join(out, 'index.js'))
 await cp(resolve(root, '../../../dashboard/public/models'), join(out, 'public/models'), { recursive: true, filter: source => !/\.(br|gz)$/.test(source) })
 await cp(resolve(root, '../../../dashboard/public/tones'), join(out, 'public/tones'), { recursive: true, filter: source => !/\.(br|gz)$/.test(source) })
 
+// dsh's plugin page shows the package's README when no locale detail is given.
+await cp(join(root, 'README.md'), join(out, 'README.md'))
 await writeFile(join(out, 'cordis.patch.yml'), `- insert:\n    - id: dsh-voice\n      name: '${pkg.name}'\n`)
 await writeFile(join(out, 'package.json'), `${JSON.stringify({
   name: pkg.name,
@@ -98,7 +100,7 @@ await writeFile(join(out, 'package.json'), `${JSON.stringify({
   type: 'module',
   main: 'index.js',
   exports: { '.': './index.js', './client': './client.js', './package.json': './package.json' },
-  files: ['index.js', 'client.js', 'assets', 'public', 'cordis.patch.yml'],
+  files: ['index.js', 'client.js', 'assets', 'public', 'cordis.patch.yml', 'README.md'],
   dsh: {
     bundle: { patch: './cordis.patch.yml' },
     client: {

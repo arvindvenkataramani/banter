@@ -172,7 +172,7 @@ function GeneralPanel({ draft, edit }: PanelProps) {
           <p className="dv-help">
             The address of your Banter install: the same address you open Banter's dashboard at. The install script prints it when
             it finishes. The plugin reaches the speech services through it. The provider, model and voice lists were copied from this server
-            when the plugin was installed; re-run the install step to pick up changes.{' '}
+            when the plugin was installed; re-running the install step picks up changes, and also resets these settings to the server's.{' '}
             <a className="dv-link" href={doc('docs/setup/install.md')} target="_blank" rel="noreferrer">Install Banter</a>
           </p>
         </Field>
@@ -364,7 +364,7 @@ function SpeechPanel({ draft, edit }: PanelProps) {
         <RadioChoices<ChunkStrategy>
           name="dv-mode"
           label="How replies are split"
-          description="Speech is generated a piece at a time so it can start before the reply is finished; these settings decide how replies are split into pieces."
+          description="Speech is generated a piece at a time so it can start before the reply is finished; the best split differs between speech models, so these can be kept per model (see Applies to)."
           value={mode}
           choices={MODE_CHOICES.map(choice => ({
             ...choice,
