@@ -8,7 +8,7 @@ import { relinkMutes, toggleSpeechMuted, useMuteStore } from '@platform/voice-en
 import { useTurnManagerStore } from '@platform/voice-engine/store/turn-manager-store'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import type { DshSessionSlotProps } from './dsh-types.ts'
-import { CloseIcon, LinkBreakIcon, MicIcon, MicSlashIcon, SpeakerIcon, SpeakerSlashIcon, SpinnerIcon } from './icons.tsx'
+import { CloseIcon, LinkBreakIcon, MicIcon, MicSlashIcon, SpeakerIcon, SpeakerSlashIcon, SpinnerIcon, WaveformIcon } from './icons.tsx'
 import type { VoiceRuntime } from './runtime.ts'
 import { useBoxMirror } from './use-box-mirror.ts'
 
@@ -126,7 +126,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
       : ended.message || ui.notice || 'Voice ended'
   return (
     <Control name="on" title={title} style={ended === null ? undefined : ERROR} onClick={() => { runtime.start(sessionId, held ? { takeover: true } : undefined) }}>
-      <MicIcon />
+      <WaveformIcon />
     </Control>
   )
 }

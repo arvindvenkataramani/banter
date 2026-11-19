@@ -21,6 +21,15 @@ function Svg({ children, size = 16 }: { children: ReactNode; size?: number }) {
   )
 }
 
+/** Voice on: five bars of a waveform, distinct from dsh's own dictation microphone. */
+export function WaveformIcon() {
+  return (
+    <Svg>
+      <path d="M2.5 6.6v2.8M5.2 4.4v7.2M8 2.4v11.2M10.8 5v6M13.5 6.8v2.4" />
+    </Svg>
+  )
+}
+
 export function MicIcon() {
   return (
     <Svg>
