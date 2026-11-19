@@ -206,7 +206,6 @@ const HELP_LINKS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label:
       { label: 'Plugin docs', href: doc('docs/dsh-voice/README.md'), about: 'What the plugin does, its controls, and how to set it up' },
       { label: 'Install Banter', href: doc('docs/setup/install.md'), about: 'Installing the Banter server, which prints its URL when it finishes' },
       { label: 'Speech servers', href: doc('docs/setup/speech-servers.md'), about: 'Connecting speech servers to Banter' },
-      { label: 'Speech servers on Linux', href: doc('docs/setup/linux-speech-servers.md'), about: 'Which speech servers run on Linux' },
     ],
   },
   {
