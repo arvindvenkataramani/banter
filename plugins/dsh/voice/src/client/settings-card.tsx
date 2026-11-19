@@ -364,7 +364,7 @@ function SpeechPanel({ draft, edit }: PanelProps) {
         <RadioChoices<ChunkStrategy>
           name="dv-mode"
           label="How replies are split"
-          description="A speech model can only voice text that is already written, so instead of waiting for the whole reply, it is spoken in pieces as the agent writes; the best split differs between speech models, so these can be kept per model (see Applies to)."
+          description="Replies arrive a bit at a time and speech models voice limited text at once, so replies are spoken in pieces; the best split varies by model."
           value={mode}
           choices={MODE_CHOICES.map(choice => ({
             ...choice,
