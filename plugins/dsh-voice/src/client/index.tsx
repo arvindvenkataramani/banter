@@ -2,32 +2,65 @@
 // the factory for this package's bare-name row.
 
 import { createElement } from 'react'
-import type { DshClientContext } from './dsh-types.ts'
-import { SettingsCard, type CardFields } from './settings-card.tsx'
+import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
+import type { PluginSettings } from '../host/settings.ts'
+import { ActivationPrompt } from './activation-prompt.tsx'
+import type { DshClientContext, DshSessionSlotProps } from './dsh-types.ts'
+import { createVoiceRuntime } from './runtime.ts'
+import { SettingsCard } from './settings-card.tsx'
 import { createShownSession } from './shown-session.ts'
-import { VoiceButton } from './voice-button.tsx'
+import { VoiceControls } from './voice-button.tsx'
 
 /** The package name keys the bundle config card; the patch row id names the host entry whose config the card edits. */
 export const PACKAGE_NAME = '@banter/dsh-voice'
 export const ENTRY_ID = 'dsh-voice'
 
 /** The dsh services this entry needs before `apply` runs. */
-export const inject = ['slots', 'sessions', 'layout', 'configForms']
+export const inject = ['slots', 'sessions', 'layout', 'configForms', 'shortcuts']
+
+/** Mic mute. Space types in dsh's editor, so the default is a modified key, rebindable in dsh's shortcut settings. INVENTED: the key choice. */
+const MIC_SHORTCUT_BINDING = { code: 'KeyM', modifiers: ['primary', 'alt'] } as const
 
 export function apply(ctx: DshClientContext): void {
+  const origin = window.location.origin
   const shown = createShownSession(ctx)
-  ctx.effect(() => shown.dispose, 'dsh-voice: shown session')
+  const form = ctx.configForms.get<PluginSettings>(ENTRY_ID)
+  const runtime = createVoiceRuntime({ ctx, shown, form, origin })
+  ctx.effect(() => () => {
+    runtime.dispose()
+    shown.dispose()
+  }, 'dsh-voice: runtime')
 
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',
     id: 'dsh-voice',
-  }, VoiceButton))
+  }, (props: DshSessionSlotProps) => createElement(VoiceControls, { ...props, runtime })))
 
-  const form = ctx.configForms.get<CardFields>(ENTRY_ID)
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: PACKAGE_NAME,
   }, () => createElement(SettingsCard, { form })))
 
-  if (__SPIKE__) void import('../../spike/probe.tsx').then(probe => { probe.install(ctx, shown) })
+  ctx.slots.inject('plugins.bundle.activation', () => ctx.slots.register({
+    name: 'plugins.bundle.activation',
+    key: PACKAGE_NAME,
+  }, (props: { onDismiss(): void; onOpenDetails(): void }) => createElement(ActivationPrompt, { runtime, origin, ...props })))
+
+  ctx.effect(() => ctx.shortcuts.register({
+    id: 'voice.toggleMic',
+    label: () => 'Mute or unmute the voice mic',
+    aliases: ['voice mute', 'mute microphone'],
+    defaults: {
+      'desktop:macos': MIC_SHORTCUT_BINDING,
+      'desktop:windows': MIC_SHORTCUT_BINDING,
+      'desktop:linux': MIC_SHORTCUT_BINDING,
+      'web:macos': MIC_SHORTCUT_BINDING,
+      'web:windows': MIC_SHORTCUT_BINDING,
+    },
+    regions: ['page', 'editable'],
+    modals: [],
+    resolve: () => (useVoiceSystemStore.getState().phase === 'live'
+      ? { status: 'handled', run: () => { runtime.toggleMic() } }
+      : { status: 'pass' }),
+  }), 'dsh-voice: mic shortcut')
 }

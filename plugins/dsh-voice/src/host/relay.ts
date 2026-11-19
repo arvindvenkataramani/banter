@@ -4,6 +4,26 @@
 /** Plugin-owned path prefixes on dsh's origin. */
 export const SPEECH_PREFIX = '/dsh-voice/speech'
 export const CONTROL_PREFIX = '/dsh-voice/control'
+/** Where the page tells the host which sessions have voice live. INVENTED: the path and the body shape. */
+export const LIVE_PATH = '/dsh-voice/live'
+
+/** The request headers that cross to an upstream: no cookie, no Origin, no Referer. */
+const FORWARDED_HEADERS = new Set(['accept', 'content-type', 'content-length', 'range', 'user-agent'])
+
+/**
+ * The headers a relayed request carries upstream, for an HTTP request or a
+ * WebSocket upgrade alike. An upgrade keeps the client's handshake headers;
+ * the relay writes `Connection` and `Upgrade` itself.
+ */
+export function upstreamHeaders(incoming: Readonly<Record<string, string | string[] | undefined>>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [name, value] of Object.entries(incoming)) {
+    const key = name.toLowerCase()
+    if (value === undefined || !(FORWARDED_HEADERS.has(key) || key.startsWith('sec-websocket-'))) continue
+    out[key] = Array.isArray(value) ? value.join(', ') : value
+  }
+  return out
+}
 
 /** The settings the relays read. */
 export interface RelaySettings {

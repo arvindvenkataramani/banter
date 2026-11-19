@@ -55,9 +55,9 @@ export function settingsFromVoiceConfig(cfg: VoiceConfig, controlPlaneUrl: strin
 
 /**
  * Rebuilds the engine's VoiceConfig from the stored remainder and the card's current fields.
- * `_relayBase` is part of the spec's signature; VoiceConfig has no endpoint field for it to set.
+ * VoiceConfig has no endpoint field: the engine reaches a service through the endpoint `ensureServiceReady` returns.
  */
-export function voiceConfigFromSettings(settings: PluginSettings, _relayBase?: string): VoiceConfig {
+export function voiceConfigFromSettings(settings: PluginSettings): VoiceConfig {
   const rest = parseRest(settings.rest)
   return {
     ...rest,

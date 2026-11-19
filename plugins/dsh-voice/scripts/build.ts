@@ -1,8 +1,7 @@
 // Builds the installable package into dist/package: the client factory, the
 // host entry, the browser assets the host serves and the manifest dsh reads.
 //
-//   bun scripts/build.ts            package without instrumentation
-//   DSH_VOICE_SPIKE=1 bun scripts/build.ts   package with spike/probe.tsx in the client
+//   bun scripts/build.ts
 
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -13,7 +12,6 @@ import { build } from 'vite'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
 const out = join(dist, 'package')
-const spike = process.env.DSH_VOICE_SPIKE === '1'
 
 /** Path prefix the host serves the Vite-emitted client assets under. */
 const ASSET_BASE = '/dsh-voice/'
@@ -36,13 +34,13 @@ await build({
   root,
   base: ASSET_BASE,
   logLevel: 'warn',
-  define: { __SPIKE__: JSON.stringify(spike), 'import.meta.url': 'document.baseURI' },
+  define: { 'import.meta.url': 'document.baseURI' },
   build: {
     outDir: join(dist, 'client'),
     emptyOutDir: true,
     target: 'es2022',
     assetsInlineLimit: 0,
-    minify: !spike,
+    minify: true,
     sourcemap: false,
     rollupOptions: {
       input: join(root, 'src/client/index.tsx'),
@@ -113,4 +111,4 @@ await writeFile(join(out, 'package.json'), `${JSON.stringify({
   peerDependencies: { '@deepseek-ai/cordis': '~4.1.0', '@deepseek-ai/schemastery': '~3.19.0' },
 }, null, 2)}\n`)
 
-console.log(`built ${out}${spike ? ' (spike probe included)' : ''}`)
+console.log(`built ${out}`)

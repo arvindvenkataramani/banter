@@ -18,5 +18,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src", "spike", "scripts", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "../../voice-engine/src/managed-media-source.d.ts", "scripts", "vite.config.ts", "vitest.config.ts"]
 }

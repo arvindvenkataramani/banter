@@ -1,7 +1,8 @@
 // Host half: the plugin's row in dsh's composition. Serves the browser assets
 // at the paths the client build and the engine reference, relays speech
-// traffic and the three control-plane calls, and exposes the plugin's
-// settings as live config.
+// traffic and the three control-plane calls, adds voice guidance to the
+// prompt of sessions with voice live, and exposes the plugin's settings as
+// live config.
 
 import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -9,16 +10,17 @@ import type { Duplex } from 'node:stream'
 import z from '@deepseek-ai/schemastery'
 import { forwardHttp, forwardUpgrade } from './forward.ts'
 import {
-  CONTROL_PREFIX, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath, resolveSpeechUpstream,
+  CONTROL_PREFIX, LIVE_PATH, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath, resolveSpeechUpstream,
   type RelaySettings,
 } from './relay.ts'
 import { DEFAULT_SETTINGS, type PluginSettings } from './settings.ts'
 import { serveStatic } from './static.ts'
+import voiceGuidance from '../../../voice-mode/voice-guidance.md?raw'
 
 export const name = 'dsh-voice'
 
 /** The route carrier and the trust fence guarding every route. */
-export const inject = ['webServer', 'connection']
+export const inject = ['webServer', 'connection', 'systemPrompt']
 
 /** A config value dsh re-reads on every `get()`, so a card edit applies without a restart. */
 interface Live<T> {
@@ -65,12 +67,37 @@ interface HostContext {
     }): () => void
   }
   connection: { requestRejection(request: { readonly headers: IncomingMessage['headers'] }): 401 | 403 | undefined }
+  systemPrompt: {
+    section(section: { name: string; order: number; text: string | ((context: { scope?: object }) => string); interpolate?: boolean }): () => void
+  }
   effect(callback: () => () => unknown, label?: string): unknown
   on(event: 'loader/volatile-update', listener: () => void): () => void
   logger: { warn(...args: unknown[]): void }
 }
 
-const PACKAGE_ROOT = fileURLToPath(new URL('./', import.meta.url))
+/** A live report is a few bytes; anything larger is refused. */
+const LIVE_REPORT_LIMIT = 4096
+
+/** Reads `{ sessionId, live }` from a live-report request body, or null when it is malformed. */
+async function readLiveReport(req: IncomingMessage): Promise<{ sessionId: string; live: boolean } | null> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    const part = Buffer.from(chunk as Uint8Array)
+    size += part.length
+    if (size > LIVE_REPORT_LIMIT) return null
+    chunks.push(part)
+  }
+  try {
+    const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    const { sessionId, live } = body as { sessionId?: unknown; live?: unknown }
+    return typeof sessionId === 'string' && sessionId !== '' && typeof live === 'boolean' ? { sessionId, live } : null
+  } catch {
+    return null
+  }
+}
+
+const PACKAGE_ROOT =fileURLToPath(new URL('./', import.meta.url))
 
 /** The streaming WebSocket path the engine's STT socket opens, below its endpoint. */
 const STT_STREAM_PATH = '/v1/audio/stream'
@@ -170,6 +197,39 @@ export function apply(ctx: HostContext, config: Config): void {
       forwardHttp(req, res, new URL(`${controlPlaneUrl.replace(/\/+$/, '')}${apiPath}`))
     },
   }), 'dsh-voice: control-plane relay')
+
+  // The page reports which sessions have voice live; their prompt carries the voice guidance.
+  const liveSessions = new Set<string>()
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: LIVE_PATH,
+    handler: async (req, res) => {
+      if (rejected(req, res)) return
+      if (req.method !== 'POST') {
+        res.writeHead(405, { allow: 'POST' }).end()
+        return
+      }
+      const report = await readLiveReport(req)
+      if (report === null) {
+        res.writeHead(400).end()
+        return
+      }
+      if (report.live) liveSessions.add(report.sessionId)
+      else liveSessions.delete(report.sessionId)
+      res.writeHead(204).end()
+    },
+  }), 'dsh-voice: live sessions')
+
+  ctx.effect(() => ctx.systemPrompt.section({
+    name: 'dsh-voice:guidance',
+    // INVENTED: after the deployment persona prefix and before every tool section.
+    order: 100,
+    text: (context) => {
+      const id = (context.scope as { id?: unknown } | undefined)?.id
+      return typeof id === 'string' && liveSessions.has(id) ? voiceGuidance : ''
+    },
+    interpolate: false,
+  }), 'dsh-voice: voice guidance')
 
   // dsh matches upgrade routes by exact path, so the STT stream route follows
   // the configured service id.

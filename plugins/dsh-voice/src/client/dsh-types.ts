@@ -63,21 +63,29 @@ export interface DshInputState {
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting' | 'sending'
 }
 
-/** packages/api/session-controller/src/client/contract/session.ts:98-124 */
-export interface DshSessionLike {
+/** The session face: packages/api/session-controller/src/client/contract/session.ts:98-124. */
+export interface DshSessionFace {
   readonly sessionId: string
   prompt(content: readonly { readonly type: 'text'; readonly text: string }[], mode: 'queue' | 'steer'): Promise<DshRemoteResult<{ accepted: true }>>
   cancel(): Promise<DshRemoteResult<{ accepted: true }>>
 }
 
+/** The binding's event feed (packages/api/session-controller/src/client/contract/events.ts:68-98). */
+export interface DshEventSource {
+  getSnapshot(): DshEventWindow
+  subscribe(listener: () => void): () => void
+}
+
+/** The session face and the binding's event window as one object. */
+export interface DshSessionLike extends DshSessionFace {
+  readonly eventSource: DshEventSource
+}
+
 /** packages/api/session-controller/src/client/sessions/service.ts:105-112 */
 export interface DshSessionBinding {
   readonly sessionId: string
-  readonly session: DshSessionLike
-  readonly eventSource: {
-    getSnapshot(): DshEventWindow
-    subscribe(listener: () => void): () => void
-  }
+  readonly session: DshSessionFace
+  readonly eventSource: DshEventSource
 }
 
 /** The props dsh gives a session-scoped slot component (packages/client/ui-conversation/src/client/contract/slots.ts:385-392). */
@@ -85,6 +93,17 @@ export interface DshSessionSlotProps {
   readonly sessionId: string
   useInput<T>(selector: (state: DshInputState) => T): T
   readonly inputActions: DshInputActions
+}
+
+/** One shortcut command (packages/client/shortcuts/src/client/types.ts:20-31, binding.ts:5-24). */
+export interface DshShortcutCommand {
+  readonly id: string
+  readonly label: () => string
+  readonly aliases: readonly string[]
+  readonly defaults: Readonly<Record<string, { readonly code: string; readonly modifiers: readonly ('primary' | 'control' | 'alt' | 'shift' | 'meta')[] }>>
+  readonly regions: readonly ('page' | 'editable' | 'terminal')[]
+  readonly modals: readonly string[]
+  resolve(context: unknown): { readonly status: 'handled'; run(): void } | { readonly status: 'blocked'; readonly reason: string } | { readonly status: 'pass' }
 }
 
 /** The observable shape dsh's client stores share (packages/client/store). */
@@ -107,6 +126,8 @@ export interface DshClientContext {
   }
   /** packages/client/ui-layout/src/client/service.ts:30; `activePanelId` is null while a session's conversation is shown. */
   layout: { panelInfo: DshObservable<{ activePanelId: string | null }> }
+  /** packages/client/shortcuts/src/client/types.ts:137 */
+  shortcuts: { register(command: DshShortcutCommand): () => void }
   /** packages/client/ui-settings/src/client/config-form-types.ts:30-95 */
   configForms: { get<T>(entryId: string): DshConfigForm<T> }
   effect(callback: () => (() => unknown) | void, label?: string): unknown

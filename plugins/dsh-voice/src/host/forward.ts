@@ -7,22 +7,15 @@ import net from 'node:net'
 import tls from 'node:tls'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
-
-/** The only request headers that cross to the upstream: no cookie, no Origin, no Referer. */
-const FORWARDED_REQUEST_HEADERS = ['accept', 'content-type', 'content-length', 'range', 'user-agent']
+import { upstreamHeaders } from './relay.ts'
 
 /** Response headers that describe one hop and must not be copied across. */
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'set-cookie'])
 
 /** Pipes `req` to `upstream` and the upstream's response back to `res`, chunk by chunk. */
 export function forwardHttp(req: IncomingMessage, res: ServerResponse, upstream: URL, onFailure?: () => void): void {
-  const headers: http.OutgoingHttpHeaders = {}
-  for (const name of FORWARDED_REQUEST_HEADERS) {
-    const value = req.headers[name]
-    if (value !== undefined) headers[name] = value
-  }
   const client = upstream.protocol === 'https:' ? https : http
-  const out = client.request(upstream, { method: req.method, headers }, (upstreamRes) => {
+  const out = client.request(upstream, { method: req.method, headers: upstreamHeaders(req.headers) }, (upstreamRes) => {
     const responseHeaders: http.OutgoingHttpHeaders = {}
     for (const [name, value] of Object.entries(upstreamRes.headers)) {
       if (value !== undefined && !HOP_BY_HOP.has(name)) responseHeaders[name] = value
@@ -67,10 +60,8 @@ export function forwardUpgrade(req: IncomingMessage, socket: Duplex, head: Buffe
       'Connection: Upgrade',
       'Upgrade: websocket',
     ]
-    for (const [name, value] of Object.entries(req.headers)) {
-      if (name.startsWith('sec-websocket-') && value !== undefined) {
-        lines.push(`${name}: ${Array.isArray(value) ? value.join(', ') : value}`)
-      }
+    for (const [name, value] of Object.entries(upstreamHeaders(req.headers))) {
+      if (name.startsWith('sec-websocket-')) lines.push(`${name}: ${value}`)
     }
     connection.write(`${lines.join('\r\n')}\r\n\r\n`)
     if (head.length > 0) connection.write(head)
