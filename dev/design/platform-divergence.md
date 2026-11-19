@@ -46,7 +46,7 @@ These hunks are removals and stay removed.
 
 Harness-agnostic means Banter can work with other harnesses, not that it drops OpenClaw. These OpenClaw tools stay, ported from platform like everything else:
 
-- `plugins/voice-mode/`, the OpenClaw voice-mode plugin.
+- `plugins/openclaw/voice-mode/`, the OpenClaw voice-mode plugin.
 - `control/probe/`, the OpenClaw gateway probe.
 - `dashboard/src/lib/gateway-types.ts`, OpenClaw's protocol types.
 

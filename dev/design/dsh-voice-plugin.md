@@ -56,7 +56,7 @@ The plugin's settings are its own page in dsh's plugin manager (the bundle confi
 
 ### Package
 
-A workspace in this repo at `plugins/dsh-voice/`, beside `plugins/voice-mode/`. It imports the engine from source. The client is built with Vite so the engine's `?url` and `import.meta.url` asset references resolve, then wrapped in dsh's client module format. What dsh installs is a built package with no workspace dependencies. Deploy scripts drop the workspace, as they drop the dashboard and the engine.
+A workspace in this repo at `plugins/dsh/voice/`, beside `plugins/openclaw/voice-mode/`. It imports the engine from source. The client is built with Vite so the engine's `?url` and `import.meta.url` asset references resolve, then wrapped in dsh's client module format. What dsh installs is a built package with no workspace dependencies. Deploy scripts drop the workspace, as they drop the dashboard and the engine.
 
 ## Decisions where the obvious approach is wrong
 

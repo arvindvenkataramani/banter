@@ -36,7 +36,7 @@ Published as-is; occasionally maintained; no support implied. Apache-2.0. Built 
 - **Dashboard** — a React SPA served by the control plane. Two pages: chat (the root route) and services. The whole voice pipeline runs here, in the browser.
 - **Control shard** (optional) — a full second control plane on a worker machine, so services can live on hardware that suits them. See [docs/setup/shard.md](docs/setup/shard.md).
 - **`services/`** — adapter servers that put an OpenAI-compatible API in front of speech models, for example the Python adapters under [`services/stt`](services/stt/faster-whisper/README.md) and [`services/tts`](services/tts/kokoro/README.md), or the Swift servers in [`services/fluid`](services/fluid/README.md) for Apple Silicon. Nothing installs itself; you install the ones you want and register each in the registry. See [docs/setup/models.md](docs/setup/models.md) for the options and [services/README.md](services/README.md) for how to install them.
-- **`plugins/voice-mode/`** — installs into your OpenClaw gateway and tells the agent it is being spoken to rather than read, so it answers in a way that works out loud.
+- **`plugins/openclaw/voice-mode/`** — installs into your OpenClaw gateway and tells the agent it is being spoken to rather than read, so it answers in a way that works out loud.
 - **`scripts/`** — install, deploy, and diagnostic scripts for running the control plane (and shards) as a system service, plus a few standalone tools like driving a service by hand when the API is unavailable. None of it is required for local development. See [scripts/README.md](scripts/README.md) for the index.
 
 [docs/architecture/](docs/architecture/README.md) has the full picture — how a voice turn works end to end, and why the control plane exists at all.
@@ -136,7 +136,7 @@ Most of `scripts/` is maintenance and deploy tooling rather than day-to-day dev 
 
 ### Changing the plugin
 
-Run `bun run build` in `plugins/voice-mode` after every change; the built `dist/` is what OpenClaw loads. [docs/setup/plugin.md](docs/setup/plugin.md#changing-the-plugin) has the details.
+Run `bun run build` in `plugins/openclaw/voice-mode` after every change; the built `dist/` is what OpenClaw loads. [docs/setup/plugin.md](docs/setup/plugin.md#changing-the-plugin) has the details.
 
 ### Where to start reading
 

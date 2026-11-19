@@ -15,7 +15,7 @@ import {
 } from './relay.ts'
 import { DEFAULT_SETTINGS, type PluginSettings } from './settings.ts'
 import { serveStatic } from './static.ts'
-import voiceGuidance from '../../../voice-mode/voice-guidance.md?raw'
+import voiceGuidance from '../../../../openclaw/voice-mode/voice-guidance.md?raw'
 
 export const name = 'dsh-voice'
 

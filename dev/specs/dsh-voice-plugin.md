@@ -20,13 +20,13 @@ These are settled. Changing any of them is a tier-2 brief, not a build decision.
 
 ## 2. Package
 
-- A workspace at `plugins/dsh-voice/`, added to the root `package.json` workspaces. The two deploy scripts' workspace filters (`scripts/control-deploy.sh`, `scripts/shard-deploy.sh`) drop it as they drop `dashboard` and `voice-engine`.
+- A workspace at `plugins/dsh/voice/`, added to the root `package.json` workspaces. The two deploy scripts' workspace filters (`scripts/control-deploy.sh`, `scripts/shard-deploy.sh`) drop it as they drop `dashboard` and `voice-engine`.
 - It depends on `@platform/voice-engine` through the workspace and imports engine modules by package subpath, as the dashboard does (`dashboard/src/lib/voice/system/index.ts`).
 - Two halves: `src/client/` (browser) and `src/host/` (runs in the dsh process).
 - **Client build.** Vite, so the engine's `?url` imports and `new URL(…, import.meta.url)` resolve as they do for the dashboard. The output is one script in dsh's client module format: `window.__ModuleLoader__.load({ id, factory: (require) => { … return module.exports } })`, with dsh's shared module table (React, React DOM, cordis and the other entries in `packages/client/web/src/platform.ts:8`) left as `require` calls and everything else bundled.
 - **Installable package.** A build script produces a self-contained package directory (no `workspace:` dependencies) that `dsh plugin --profile <p> add <dir>` accepts. It declares `dsh.client`, `dsh.bundle` and `engines.dsh` matching the target (`dev/analysis/dsh-voice-plugin.md` § What dsh gives a browser plugin).
 - Scripts: `build`, `test` (vitest), `lint` (the dashboard's eslint config, as `voice-engine/package.json` does), and `install-profile` (section 8).
-- Build output (`plugins/dsh-voice/dist/`) is gitignored.
+- Build output (`plugins/dsh/voice/dist/`) is gitignored.
 
 ### Modules
 
@@ -123,7 +123,7 @@ The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is 
 - **Speech relay.** Under a plugin-owned path prefix, relays HTTP requests and WebSocket upgrades to the configured STT and TTS endpoints only. The upstream is chosen by service id from the plugin's settings; a request naming anything else is refused. No `Origin` header is forwarded upstream. Bodies stream in both directions as they arrive and are never buffered whole: TTS audio is played as it streams, and a buffering relay passes every check while adding the whole synthesis time to each reply.
 - **Control-plane relay.** Relays exactly the calls the dashboard's voice code makes: `GET /api/services/:id`, `POST /api/services/:id/start`, `POST /api/services/:id/ping`, for the configured STT and TTS service ids only, to the configured control-plane URL.
 - **Gating.** Every plugin route, the upgrade included, refuses any request that dsh's `connection.requestRejection(req)` rejects (precedent: `packages/experimental/inspector/src/host/plugin.ts:93-110`).
-- **Voice guidance.** Registers a `ctx.systemPrompt.section` whose text is Banter's voice guidance (`plugins/voice-mode/voice-guidance.md`) for sessions with voice live, and empty otherwise. The client tells the host which sessions have voice live.
+- **Voice guidance.** Registers a `ctx.systemPrompt.section` whose text is Banter's voice guidance (`plugins/openclaw/voice-mode/voice-guidance.md`) for sessions with voice live, and empty otherwise. The client tells the host which sessions have voice live.
 
 ## 8. Settings and install
 
@@ -160,7 +160,7 @@ The spike calls no start, no load and no TTS endpoint. Behaviour that needs a li
 
 ## 10. Tests
 
-Under `plugins/dsh-voice/`, vitest, following `TESTING.md`: promises, not wiring; no UI tests. The suite covers:
+Under `plugins/dsh/voice/`, vitest, following `TESTING.md`: promises, not wiring; no UI tests. The suite covers:
 
 - **Adapter reading:** cumulative text across steps; visible text only; dedup by attempt and index; `replace` re-emits nothing and leaves `known` true; abandoned attempt keeps emitted text; each `turn/end` reason maps as section 5 states; an ended run keeps its `runId`; tool start and result; activity as the dashboard computes it.
 - **Adapter writing:** `queue` mode; annotation prefixes exactly the dashboard's; box emptied before the prompt goes out; failed prompt rejects and hands the words back; `haltAudio` precedes the cancel.

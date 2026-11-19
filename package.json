@@ -3,7 +3,7 @@
   "private": true,
   "license": "Apache-2.0",
   "engines": { "node": ">=22 <25" },
-  "workspaces": ["shared", "voice-engine", "control", "dashboard", "plugins/dsh-voice"],
+  "workspaces": ["shared", "voice-engine", "control", "dashboard", "plugins/dsh/voice"],
   "scripts": {
     "control-dev": "bash scripts/control-dev.sh",
     "control-deploy": "bash scripts/control-deploy.sh",

@@ -1,11 +1,11 @@
 # OpenClaw voice-mode plugin
 
-Banter ships an OpenClaw plugin that injects voice-specific guidance into the system prompt, so the agent knows it is being spoken to rather than read. It lives in `plugins/voice-mode/`.
+Banter ships an OpenClaw plugin that injects voice-specific guidance into the system prompt, so the agent knows it is being spoken to rather than read. It lives in `plugins/openclaw/voice-mode/`.
 
 ## Install
 
 ```bash
-cd plugins/voice-mode
+cd plugins/openclaw/voice-mode
 bun install && bun run build
 openclaw plugins install .
 ```
@@ -18,4 +18,4 @@ Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:`. Sessi
 
 ## Changing the plugin
 
-Run `bun run build` in `plugins/voice-mode` after every change: the built `dist/` is what OpenClaw loads, which is why `dist/` is committed despite the repo's usual no-build-artifacts posture. Installing with `--link` instead of a plain install makes a rebuild take effect without reinstalling.
+Run `bun run build` in `plugins/openclaw/voice-mode` after every change: the built `dist/` is what OpenClaw loads, which is why `dist/` is committed despite the repo's usual no-build-artifacts posture. Installing with `--link` instead of a plain install makes a rebuild take effect without reinstalling.

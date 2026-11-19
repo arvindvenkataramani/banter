@@ -88,8 +88,8 @@ await cp(join(dist, 'client/client.js'), join(out, 'client.js'))
 await mkdir(join(out, 'assets'), { recursive: true })
 if (existsSync(join(dist, 'client/assets'))) await cp(join(dist, 'client/assets'), join(out, 'assets'), { recursive: true })
 await cp(join(dist, 'host/index.js'), join(out, 'index.js'))
-await cp(resolve(root, '../../dashboard/public/models'), join(out, 'public/models'), { recursive: true, filter: source => !/\.(br|gz)$/.test(source) })
-await cp(resolve(root, '../../dashboard/public/tones'), join(out, 'public/tones'), { recursive: true, filter: source => !/\.(br|gz)$/.test(source) })
+await cp(resolve(root, '../../../dashboard/public/models'), join(out, 'public/models'), { recursive: true, filter: source => !/\.(br|gz)$/.test(source) })
+await cp(resolve(root, '../../../dashboard/public/tones'), join(out, 'public/tones'), { recursive: true, filter: source => !/\.(br|gz)$/.test(source) })
 
 await writeFile(join(out, 'cordis.patch.yml'), `- insert:\n    - id: dsh-voice\n      name: '${pkg.name}'\n`)
 await writeFile(join(out, 'package.json'), `${JSON.stringify({

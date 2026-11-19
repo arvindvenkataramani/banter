@@ -73,7 +73,7 @@
         "vitest": "^4.1.12",
       },
     },
-    "plugins/dsh-voice": {
+    "plugins/dsh/voice": {
       "name": "@banter/dsh-voice",
       "version": "0.0.1",
       "dependencies": {
@@ -179,7 +179,7 @@
 
     "@babel/types": ["@babel/types@7.29.14", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.14", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-UjI/dKmwJwT9pOszJitq2G6EObZPnsZUfdCr92z2TlF3EZK9J3EdfOKUrCzHl6wFthbzwhzl1Soc/UIwxRiq6w=="],
 
-    "@banter/dsh-voice": ["@banter/dsh-voice@workspace:plugins/dsh-voice"],
+    "@banter/dsh-voice": ["@banter/dsh-voice@workspace:plugins/dsh/voice"],
 
     "@bramus/specificity": ["@bramus/specificity@2.4.3", "", { "dependencies": { "css-tree": "^3.2.1" }, "bin": { "specificity": "bin/cli.js" } }, "sha512-0GEz8qJWokkUVYQYRukmkSHIFNoBH8QTreeHrAFbvz1XFYc3Y+puhMs8PQ5x8GNugiC2l5jvDBXKLbBIByeSBw=="],
 
