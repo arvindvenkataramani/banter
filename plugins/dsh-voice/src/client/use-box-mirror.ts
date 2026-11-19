@@ -6,7 +6,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { setMicAutoMuted } from '@platform/voice-engine/human/mute-store'
 import { usePendingView } from '@platform/voice-engine/human/use-revealed-transcript'
 import { reportComposerFocus, reportComposerSend } from '@platform/voice-engine/store/turn-manager-store'
-import { editTranscript, takeTranscript, useTranscriptStore } from '@platform/voice-engine/store/transcript-store'
+import { editTranscript, markWordsSent, pendingDisplay, pendingText, takeTranscript, useTranscriptStore } from '@platform/voice-engine/store/transcript-store'
 import type { DshInputActions, DshInputState } from './dsh-types.ts'
 import { createDraftMirror, type DraftMirror } from './draft-mirror.ts'
 import type { VoiceRuntime } from './runtime.ts'
@@ -18,6 +18,13 @@ export interface BoxMirrorOptions {
   active: boolean
   input: DshInputState
   inputActions: DshInputActions
+}
+
+/** The transcript as the box shows it: settled text, then the pending words. */
+function transcriptView(): string {
+  const state = useTranscriptStore.getState()
+  const pending = pendingText(state)
+  return state.settled + (state.settled && pending ? ' ' : '') + pending
 }
 
 export function useBoxMirror({ runtime, sessionId, active, input, inputActions }: BoxMirrorOptions): void {
@@ -44,7 +51,7 @@ export function useBoxMirror({ runtime, sessionId, active, input, inputActions }
     const mirror = createDraftMirror({
       inputActions,
       readInput: () => inputRef.current,
-      engine: { setMicAutoMuted, reportComposerFocus, reportComposerSend, editTranscript, takeTranscript },
+      engine: { setMicAutoMuted, reportComposerFocus, reportComposerSend, editTranscript, takeTranscript, markWordsSent, pendingDisplay: () => pendingDisplay(useTranscriptStore.getState()), transcriptView },
       onTypingChange: (typing) => { runtime.ui.set({ ...runtime.ui.get(), typing }) },
       onSend: () => { runtime.clearSendNotice() },
     })

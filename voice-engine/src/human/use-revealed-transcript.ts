@@ -9,24 +9,16 @@
  * the system keeping up. Every other entry — final, paused, or handed off and
  * transcribing — is shown whole. The pacing runs once, in the store; this is a
  * read of it, so every caller sees the same words at the same moment
- * however many of them are mounted.
+ * however many of them are mounted. Leading words marked as already sent
+ * (`markWordsSent`) are left out.
  */
 
 import { useStore } from 'zustand'
-import { useTranscriptStore, pacedEntry } from '../store/transcript-store'
-import { revealed } from './word-reveal'
+import { useTranscriptStore, pendingText } from '../store/transcript-store'
 
 /** Every pending entry's text as read-only display, in spoken order: its
  * final if it has one, its raw text whole if paused or transcribing, and the
  * paced reveal for the entry being heard. */
 export function usePendingView(): string {
-  return useStore(useTranscriptStore, (s) => {
-    const paced = pacedEntry(s.pending)
-    const parts = s.pending.map((p) => {
-      if (p.final !== null) return p.final
-      if (p.paused) return p.text
-      return p === paced ? revealed(s.reveal) : p.text
-    })
-    return parts.filter(Boolean).join(' ')
-  })
+  return useStore(useTranscriptStore, pendingText)
 }

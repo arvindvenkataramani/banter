@@ -4,7 +4,7 @@ import { resolveChunkingFor } from '@platform/voice-engine/agent/chunking-settin
 import { DEFAULT_SETTINGS, settingsFromVoiceConfig, voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
 import {
   buildWrite, chunkingView, editChunking, resetChunking, roster, seedDraft, setControlPlaneUrl, setKeepVoiceOutside, setModel, setProvider,
-  setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft, type SettingsOp,
+  setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft, type SettingsOp,
 } from './settings-model.ts'
 
 // A control-plane voice config with two TTS providers (the second one's first model is not realtime), two STT options, and every
@@ -79,19 +79,18 @@ describe('seeding', () => {
       ttsSpeed: 1.2,
       keepVoiceOutside: false,
       takeover: 'ask',
-      saveMicSamples: false,
       scope: 'per-model',
       global: { mode: 'sentence', minWords: 3, maxWords: 40 },
       tuning: { minSpeechDurationS: 0.5, pauseThresholdMs: 700, commitMinDelayMs: 200 },
     })
   })
 
-  it('a field the stored config does not set stays unset in the tuning draft, and take-over and debug default as Banter does', () => {
+  it('a field the stored config does not set stays unset in the tuning draft, and take-over defaults as Banter does', () => {
     const draft = draftOf()
     expect(draft.tuning.minSpeechProb).toBeUndefined()
     expect(draft.tuning.smartTurnThreshold).toBeUndefined()
     const bare = draftOf({ ...seeded(), rest: JSON.stringify({ tts: { providers: [] }, stt: {} }) })
-    expect(bare).toMatchObject({ takeover: 'ask', saveMicSamples: false, scope: 'per-model' })
+    expect(bare).toMatchObject({ takeover: 'ask', scope: 'per-model' })
   })
 
   it('settings with no roster seed an empty roster instead of failing', () => {
@@ -249,15 +248,25 @@ describe('buildWrite: rest-backed settings', () => {
     expect(write.next.rest).toBe(settings.rest)
   })
 
-  it('take-over, mic-sample saving and scope each land in their own rest path and leave their siblings', () => {
+  it('take-over and scope each land in their own rest path and leave their siblings', () => {
     const settings = seeded()
-    const draft = setScope(setSaveMicSamples(setTakeover(draftOf(settings), 'always'), true), 'global')
+    const draft = setScope(setTakeover(draftOf(settings), 'always'), 'global')
     const rest = restOf(writeOf(settings, draft).next)
     expect(rest.takeover).toBe('always')
-    expect(rest.debug).toEqual({ saveMicSamples: true })
+    expect(rest.debug).toEqual({ saveMicSamples: false })
     expect(rest.tts.settingsScope).toBe('global')
     expect(rest.tts.options).toEqual(CONFIG.tts.options)
     expect(rest.enabled).toBe(true)
+  })
+
+  it('a stored debug section is carried through a write untouched, and the draft has no switch for it', () => {
+    const base = seeded()
+    const settings = { ...base, rest: JSON.stringify({ ...JSON.parse(base.rest), debug: { saveMicSamples: true, other: 1 } }) }
+    const draft = draftOf(settings)
+    expect('saveMicSamples' in draft).toBe(false)
+    const rest = restOf(writeOf(settings, setTakeover(draft, 'always')).next)
+    expect(rest.takeover).toBe('always')
+    expect(rest.debug).toEqual({ saveMicSamples: true, other: 1 })
   })
 
   it('a tuning edit merges into its own section: vad stays apart from turnTaking, and the section\'s other values and curve survive', () => {

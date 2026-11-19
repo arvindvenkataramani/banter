@@ -52,6 +52,6 @@ export {
 export type { TurnManagerStoreState, SendableSession } from './store/turn-manager-store'
 export {
   useTranscriptStore, setPartial, settle, settleVisible, drop,
-  editTranscript, takeTranscript, configureReveal,
+  editTranscript, takeTranscript, configureReveal, markWordsSent, pendingDisplay,
 } from './store/transcript-store'
 export type { TranscriptStoreState, PendingUtterance } from './store/transcript-store'

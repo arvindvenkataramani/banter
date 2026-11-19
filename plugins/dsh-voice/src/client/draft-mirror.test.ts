@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { editTranscript, settle, takeTranscript, useTranscriptStore } from '@platform/voice-engine/store/transcript-store'
+import {
+  editTranscript, markWordsSent, pendingDisplay, pendingText, setPartial, settle, takeTranscript, useTranscriptStore,
+} from '@platform/voice-engine/store/transcript-store'
 import type { DshInputState } from './dsh-types'
 import { createDraftMirror } from './draft-mirror'
 
@@ -24,6 +26,9 @@ function setup(initialDraft = '') {
     reportComposerSend: vi.fn(() => { log.push('reportComposerSend') }),
     editTranscript: vi.fn((text: string) => { log.push('editTranscript'); editTranscript(text) }),
     takeTranscript: vi.fn(() => { log.push('takeTranscript'); return takeTranscript() }),
+    pendingDisplay: vi.fn(() => pendingDisplay(useTranscriptStore.getState())),
+    markWordsSent: vi.fn((id: string, count: number) => { log.push('markWordsSent'); markWordsSent(id, count) }),
+    transcriptView: vi.fn(() => viewNow()),
   }
   const mirror = createDraftMirror({ inputActions, readInput: () => ({ ...box }), engine })
   return {
@@ -46,14 +51,20 @@ function setup(initialDraft = '') {
   }
 }
 
+/** The transcript as the box shows it: settled text, then the pending words. */
+function viewNow(): string {
+  const { settled } = useTranscriptStore.getState()
+  const pending = pendingText(useTranscriptStore.getState())
+  return settled + (settled && pending ? ' ' : '') + pending
+}
 const transcript = () => useTranscriptStore.getState().settled
 const calledWith = (fn: { mock: { calls: unknown[][] } }, arg: unknown) => fn.mock.calls.some(call => call[0] === arg)
 
 beforeEach(() => {
-  useTranscriptStore.setState({ settled: '', pending: [] })
+  useTranscriptStore.setState({ settled: '', pending: [], sent: {} })
 })
 afterEach(() => {
-  useTranscriptStore.setState({ settled: '', pending: [] })
+  useTranscriptStore.setState({ settled: '', pending: [], sent: {} })
 })
 
 describe('draft mirror', () => {
@@ -171,5 +182,140 @@ describe('draft mirror', () => {
     expect(h.inputActions.setDraft).toHaveBeenLastCalledWith('my draft and more')
     expect(h.engine.setMicAutoMuted.mock.calls.slice(mutes).some(c => c[0] === true)).toBe(false)
     expect(takeTranscript()).toBe('my draft and more')
+  })
+})
+
+describe('draft mirror — a dsh send while an utterance is still being transcribed', () => {
+  /** Speech in progress: the utterance's partial reaches the transcript and the box shows it. */
+  function sayPartial(h: ReturnType<typeof setup>, id: string, text: string) {
+    setPartial(id, text, true)
+    h.speak(viewNow())
+  }
+  /** The person presses dsh's Send; the marks change the transcript view, which the hook reports. */
+  function dshSends(h: ReturnType<typeof setup>) {
+    h.mirror.onDshSend()
+    h.mirror.onTranscriptChange(viewNow())
+  }
+  /** dsh accepts a send: it empties the box. */
+  function dshEmpties(h: ReturnType<typeof setup>) {
+    h.box.draft = ''
+    h.box.draftRev += 1
+    h.mirror.onDraftChange({ ...h.box })
+  }
+
+  it('the engine later sends only the words said after the send, and nothing twice', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'one two three')
+    expect(h.box.draft).toBe('one two three')
+    const sentByDsh = h.box.draft
+
+    dshSends(h)
+    dshEmpties(h)
+    expect(h.box.draft).toBe('')
+
+    sayPartial(h, 'u1', 'one two three four five')
+    expect(h.box.draft).toBe('four five')
+
+    // The final revises the sent words' wording and punctuation, and adds one more.
+    settle('u1', 'One, two three. Four five six')
+    h.speak(viewNow())
+    const sentByEngine = takeTranscript()
+    expect(sentByEngine).toBe('Four five six')
+    expect(h.box.draft).toBe('Four five six')
+    expect(`${sentByDsh} ${sentByEngine}`.split(' ').length).toBe(6)
+  })
+
+  it('an utterance whose words were all in the box sends nothing when it settles', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'all of it')
+
+    dshSends(h)
+    dshEmpties(h)
+    settle('u1', 'all of it')
+    h.speak(viewNow())
+
+    expect(takeTranscript()).toBe('')
+    expect(h.box.draft).toBe('')
+  })
+
+  it('marks the words before the floor hears of the send, so the engine cannot send them first', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'one two')
+    h.log.length = 0
+
+    dshSends(h)
+
+    expect(h.log.indexOf('markWordsSent')).toBeGreaterThanOrEqual(0)
+    expect(h.log.indexOf('markWordsSent')).toBeLessThan(h.log.indexOf('reportComposerSend'))
+  })
+
+  it('words an utterance showed in an earlier dsh send are not counted into the next', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'one two')
+    dshSends(h)
+    dshEmpties(h)
+    sayPartial(h, 'u1', 'one two three four')
+    expect(h.box.draft).toBe('three four')
+
+    dshSends(h)
+    dshEmpties(h)
+    settle('u1', 'one two three four five')
+
+    expect(takeTranscript()).toBe('five')
+  })
+
+  it('text the person typed is sent whole, and pending words that never reached the box stay pending', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    h.type('typed text')
+    setPartial('u1', 'spoken words', true)
+
+    dshSends(h)
+    settle('u1', 'spoken words')
+
+    expect(h.engine.markWordsSent).not.toHaveBeenCalled()
+    expect(takeTranscript()).toBe('spoken words')
+  })
+
+  it('a refused send gives the words back to the pending utterance', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    sayPartial(h, 'u1', 'one two three')
+
+    dshSends(h)
+    // dsh refuses: the box still holds the text.
+    h.mirror.onDshSendRefused()
+
+    expect(pendingText(useTranscriptStore.getState())).toBe('one two three')
+    expect(transcript()).toBe('')
+    settle('u1', 'one two three')
+    expect(transcript()).toBe('one two three')
+  })
+
+  it('the box is brought up to date when the engine takes the transcript for a voice send', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    setPartial('u1', 'first thing', true)
+    settle('u1', 'first thing')
+    h.speak(viewNow())
+    expect(h.box.draft).toBe('first thing')
+    setPartial('u2', 'and more', true)
+    h.speak(viewNow())
+
+    // The turn manager takes the transcript, then the adapter empties the box before prompting.
+    expect(takeTranscript()).toBe('first thing')
+    h.mirror.clear()
+
+    expect(h.box.draft).toBe('and more')
+    setPartial('u2', 'and more', true)
+    settle('u2', 'and more')
+    h.mirror.clear()
+    expect(takeTranscript()).toBe('and more')
+    h.mirror.clear()
+    expect(h.box.draft).toBe('')
   })
 })

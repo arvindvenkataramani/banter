@@ -45,24 +45,34 @@ describe('session adapter writing', () => {
     voiceSession.dispose()
   })
 
-  it('the text box is emptied after the prompt succeeds, not before', async () => {
+  it('the text box is emptied before the prompt goes out, so a dsh Send pressed meanwhile sends nothing', async () => {
+    const order: string[] = []
     let finish!: (r: DshRemoteResult<{ accepted: true }>) => void
-    const { voiceSession, deps } = setup({ prompt: () => new Promise(resolve => { finish = resolve }) })
+    const { voiceSession, deps, prompt } = setup({ prompt: () => { order.push('prompt'); return new Promise(resolve => { finish = resolve }) } })
+    deps.clearDraft.mockImplementation(() => { order.push('clearDraft') })
     const sending = voiceSession.controls.send('hello')
+    expect(deps.clearDraft).toHaveBeenCalledTimes(1)
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(deps.clearDraft).not.toHaveBeenCalled()
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['clearDraft', 'prompt'])
     finish(accepted)
     await sending
     expect(deps.clearDraft).toHaveBeenCalledTimes(1)
     voiceSession.dispose()
   })
 
-  it('a refused prompt rejects the send and leaves the text box alone', async () => {
+  it('a refused prompt rejects the send and hands the words back after the box was emptied', async () => {
+    const order: string[] = []
     const { voiceSession, deps } = setup({ prompt: async () => refused })
+    deps.clearDraft.mockImplementation(() => { order.push('clearDraft') })
+    const sendFailed = vi.fn((_text: string, _message: string) => { order.push('sendFailed') })
+    const failing = createVoiceSession(fakeSession(vi.fn(async () => refused), vi.fn(async () => accepted)), { ...deps, sendFailed })
     let rejected = false
-    await voiceSession.controls.send('hello').catch(() => { rejected = true })
+    await failing.controls.send('hello').catch(() => { rejected = true })
     expect(rejected).toBe(true)
-    expect(deps.clearDraft).not.toHaveBeenCalled()
+    expect(order).toEqual(['clearDraft', 'sendFailed'])
+    expect(sendFailed.mock.calls[0][0]).toBe('hello')
+    failing.dispose()
     voiceSession.dispose()
   })
 

@@ -16,16 +16,16 @@ import { RadioChoices, SelectField, SliderField, type SelectOption } from './set
 import { ReadOnly, SCOPE, ensureStyles } from './settings-style.ts'
 import {
   TUNING_FIELDS, buildWrite, chunkingView, editChunking, resetChunking, roster, seedDraft, setControlPlaneUrl, setKeepVoiceOutside,
-  setModel, setProvider, setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
+  setModel, setProvider, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
 } from './settings-model.ts'
 
-type TabId = 'voice' | 'speech' | 'listening' | 'debug'
+type TabId = 'voice' | 'speech' | 'listening'
 
 const tabId = (tab: TabId): string => `dsh-voice-tab-${tab}`
 const panelId = (tab: TabId): string => `dsh-voice-panel-${tab}`
 
 const tabItem = (value: TabId, label: string) => ({ value, label, id: tabId(value), panelId: panelId(value) })
-const TAB_ITEMS = [tabItem('voice', 'Voice'), tabItem('speech', 'Speech'), tabItem('listening', 'Listening'), tabItem('debug', 'Debug')] as const
+const TAB_ITEMS = [tabItem('voice', 'Voice'), tabItem('speech', 'Speech'), tabItem('listening', 'Listening')] as const
 
 /** What a draft was seeded from: the stored settings and the revision they were read at. */
 interface Base {
@@ -100,7 +100,6 @@ export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) 
           {tab === 'voice' && <VoicePanel draft={draft} edit={edit} />}
           {tab === 'speech' && <SpeechPanel draft={draft} edit={edit} />}
           {tab === 'listening' && <ListeningPanel draft={draft} edit={edit} />}
-          {tab === 'debug' && <DebugPanel draft={draft} edit={edit} />}
         </fieldset>
       </ReadOnly.Provider>
       <div className="dv-footer">
@@ -378,20 +377,6 @@ function ListeningPanel({ draft, edit }: PanelProps) {
           })}
         </Section>
       ))}
-    </>
-  )
-}
-
-function DebugPanel({ draft, edit }: PanelProps) {
-  return (
-    <>
-      <SwitchRow
-        label="Save mic samples to disk"
-        description="Keeps last 50 WAVs sent to STT for debugging."
-        checked={draft.saveMicSamples}
-        onChange={checked => { edit(d => setSaveMicSamples(d, checked)) }}
-      />
-      <p className="dv-help">The plugin does not send samples anywhere yet, so this choice is stored and has no effect.</p>
     </>
   )
 }

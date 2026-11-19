@@ -14,6 +14,12 @@ export interface DraftMirrorDeps {
     reportComposerSend(): void
     editTranscript(text: string): void
     takeTranscript(): string
+    /** The transcript as the box shows it now: settled text plus the pending words. */
+    transcriptView(): string
+    /** What each pending utterance shows, and how many of its leading words are already marked sent. */
+    pendingDisplay(): { id: string; text: string; sent: number }[]
+    /** Marks the first `count` words of an utterance as sent by dsh; zero clears the mark. */
+    markWordsSent(id: string, count: number): void
   }
   /** Called when the mic is auto-muted for typing, or released from it. */
   onTypingChange?(typing: boolean): void
@@ -44,7 +50,7 @@ export interface DraftMirror {
   onDshSend(): void
   /** dsh refused the send: the box still holds the person's text, now theirs again. */
   onDshSendRefused(): void
-  /** The engine sent the transcript: empty the box. */
+  /** The engine is sending the transcript: the box shows what the transcript holds now, which is only words said since. */
   clear(): void
   /** The engine's send failed: put the words back ahead of anything said since. */
   restore(text: string): void
@@ -68,6 +74,10 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   let sendOwn = false
   /** The transcript view as last reported, shown in the box unless the person is typing. */
   let lastView = ''
+  /** The utterances the current dsh send marked, with the mark each had before it. */
+  let marked: { id: string; before: number }[] = []
+  /** The pending words the box held when the current dsh send began. */
+  let sentTail = ''
 
   const setTyping = (value: boolean): void => {
     if (typing === value) return
@@ -105,6 +115,26 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     write(lastView)
   }
 
+  /**
+   * At a dsh send, the pending words the box showed went with it. Marks each
+   * utterance's shown words as sent, counted from its first word, so the
+   * engine neither shows them again nor sends them when the utterance settles.
+   */
+  const markShownWords = (): void => {
+    marked = []
+    sentTail = ''
+    if (!sendOwn) return
+    const tail: string[] = []
+    for (const { id, text, sent } of engine.pendingDisplay()) {
+      const words = text.split(/\s+/).filter(Boolean)
+      if (words.length <= sent) continue
+      marked.push({ id, before: sent })
+      tail.push(...words.slice(sent))
+      engine.markWordsSent(id, words.length)
+    }
+    sentTail = tail.join(' ')
+  }
+
   return {
     snapshot: () => ({ typing, lastWrite }),
 
@@ -114,6 +144,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       awaiting = []
       sendClearing = false
       sending = false
+      marked = []
       lastWrite = snapshot.lastWrite
       // Typing carries over; otherwise the next transcript report brings the box up to date.
       if (snapshot.typing) setTyping(true)
@@ -126,6 +157,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       awaiting = []
       sendClearing = false
       sending = false
+      marked = []
       // The attached session's box is the transcript; text already in it is the person's.
       engine.editTranscript(state.draft)
       if (state.draft !== '') {
@@ -185,6 +217,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       const state = deps.readInput()
       sendOwn = !typing && state.draft !== '' && isOwn(state)
       engine.takeTranscript()
+      markShownWords()
       engine.reportComposerSend()
       engine.setMicAutoMuted(false)
       engine.reportComposerFocus(false)
@@ -202,16 +235,17 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       lastWrite = null
       sendClearing = false
       enterTyping()
-      // The box showed the pending words too, and the engine still holds those as pending.
-      const tail = sendOwn && lastView !== '' && draft.endsWith(lastView) ? lastView : ''
+      // The box showed the pending words too: they are pending again, not sent.
+      for (const { id, before } of marked) engine.markWordsSent(id, before)
+      marked = []
+      const tail = sentTail !== '' && draft.endsWith(sentTail) ? sentTail : ''
       engine.editTranscript(tail === '' ? draft : draft.slice(0, draft.length - tail.length).trimEnd())
     },
 
     clear() {
-      // Only the plugin's own text goes, and not words said since the send.
-      const state = deps.readInput()
-      if (typing || sending || lastView !== '' || state.draft === '' || !isOwn(state) || awaiting[awaiting.length - 1] === '') return
-      write('')
+      // The engine has taken the transcript; the view reported to the mirror is older than that.
+      lastView = engine.transcriptView()
+      showView()
     },
 
     restore(text) {

@@ -15,7 +15,7 @@ const ANNOTATIONS: Record<VoiceAnnotation, string> = {
 export interface VoiceSessionDeps {
   /** Silences agent audio at once. */
   haltAudio(): void
-  /** Empties dsh's text box after a send. */
+  /** Empties dsh's text box, before a voice prompt goes out. */
   clearDraft(): void
   /** A prompt failed: hands the person's words back and says why. */
   sendFailed?(text: string, message: string): void
@@ -67,13 +67,14 @@ export function createVoiceSession(session: DshSessionLike, deps: VoiceSessionDe
     controls: {
       async send(text, opts) {
         const finalText = opts?.annotation ? `${ANNOTATIONS[opts.annotation]} ${text}` : text
+        // The box is emptied first, so a dsh Send pressed meanwhile sends nothing.
+        deps.clearDraft()
         try {
           accepted(await session.prompt([{ type: 'text', text: finalText }], 'queue'), 'Send')
         } catch (err) {
           deps.sendFailed?.(text, err instanceof Error ? err.message : 'Send failed')
           throw err
         }
-        deps.clearDraft()
       },
       async abort() {
         engineAbortedRun = snapshot.runActive ? snapshot.runId : null

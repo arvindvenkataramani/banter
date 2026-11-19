@@ -64,7 +64,6 @@ export interface Draft {
   readonly ttsSpeed: number
   readonly keepVoiceOutside: boolean
   readonly takeover: 'ask' | 'always'
-  readonly saveMicSamples: boolean
   readonly scope: SettingsScope
   readonly global: ChunkingSet
   /** Per-model chunking preferences, keyed by provider then model, so switching models never touches an edited entry. */
@@ -86,7 +85,6 @@ export function seedDraft(settings: PluginSettings): Draft {
     ttsSpeed: settings.ttsSpeed,
     keepVoiceOutside: settings.keepVoiceOutside,
     takeover: config.takeover ?? 'ask',
-    saveMicSamples: config.debug?.saveMicSamples ?? false,
     scope: settingsScopeFrom(config),
     global: globalSetFromConfig(config),
     prefs: readPrefs(config.tts.modelPrefs),
@@ -156,7 +154,6 @@ export const setSttService = (draft: Draft, serviceId: string): Draft => ({ ...d
 export const setControlPlaneUrl = (draft: Draft, url: string): Draft => ({ ...draft, controlPlaneUrl: url })
 export const setKeepVoiceOutside = (draft: Draft, keep: boolean): Draft => ({ ...draft, keepVoiceOutside: keep })
 export const setTakeover = (draft: Draft, takeover: 'ask' | 'always'): Draft => ({ ...draft, takeover })
-export const setSaveMicSamples = (draft: Draft, save: boolean): Draft => ({ ...draft, saveMicSamples: save })
 export const setScope = (draft: Draft, scope: SettingsScope): Draft => ({ ...draft, scope })
 export const setTuning = (draft: Draft, key: TuningKey, value: number): Draft => ({ ...draft, tuning: { ...draft.tuning, [key]: value } })
 
@@ -273,9 +270,6 @@ function patchRest(settings: PluginSettings, draft: Draft): string {
   const stt: Json = { ...(stored.stt as Json | undefined) }
 
   if (draft.takeover !== (config.takeover ?? 'ask')) rest.takeover = draft.takeover
-  if (draft.saveMicSamples !== (config.debug?.saveMicSamples ?? false)) {
-    rest.debug = { ...(stored.debug as Json | undefined), saveMicSamples: draft.saveMicSamples }
-  }
   if (draft.scope !== settingsScopeFrom(config)) tts.settingsScope = draft.scope
 
   const storedTts = stored.tts as Json | undefined

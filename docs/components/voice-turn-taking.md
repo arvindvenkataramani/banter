@@ -170,6 +170,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 | pending[] | utterances not yet settled, in the order heard |
 | pending[].final | null while live; set once transcription (or a forced settle) returns |
 | reveal | pacing state for the entry currently being heard |
+| sent | per utterance id, how many leading words a host already sent; absent means none |
 
 | From | To | On | Guard |
 |---|---|---|---|
@@ -180,11 +181,14 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 | pending[id] | entry removed, remainder drained | drop(id) | — |
 | settled | settled replaced wholesale | editTranscript(text) | composer field focused |
 | settled | settled emptied, old value returned | takeTranscript() | a send |
+| sent[id] | set to n (zero clears) | markWordsSent(id, n) | a host composer sent the first n shown words of utterance id itself |
 
 **Invariants:**
 - `drain` moves only a contiguous leading run of finalized entries; one unfinalized entry blocks every entry behind it.
 - Entries keep utterance order: `upsertPending` appends new ids at the end, never reorders.
 - Only `settled` is emptied by `takeTranscript`; `pending` is untouched by a send.
+- A `sent` mark removes that many leading words, counted by whitespace, from the utterance's text in `pendingText` and from its final when `drain` moves it into `settled`. It is keyed by id, apart from `pending`, so an entry a late final creates anew keeps it. `markWordsSent` discards marks of ids no longer pending, except the one it sets. Nothing marks in the dashboard, so its view and sends are unchanged.
+- `pendingDisplay` is each utterance's text as the composer shows it, before marks: its final, its raw text if paused or transcribing, or the paced reveal for the entry being heard.
 - `pacedEntry` picks the newest entry with `final === null`; earlier unfinaled entries are mid-transcription and shown whole, not paced.
 - The reveal restarts from `emptyReveal()` only when the paced id changes, not on every text change to the same entry.
 

@@ -1,7 +1,7 @@
 // Design: docs/components/voice-turn-taking.md
 
 import { create } from 'zustand'
-import { emptyReveal, receive, advance, backlog, intervalFor } from '../human/word-reveal'
+import { emptyReveal, receive, advance, backlog, intervalFor, revealed } from '../human/word-reveal'
 import type { RevealState } from '../human/word-reveal'
 import { settledText } from '../human/transcript-view'
 
@@ -42,13 +42,31 @@ export interface TranscriptStoreState {
    * specifically and there is nowhere else for it to live without a third
    * store. */
   reveal: RevealState
+  /** Per utterance id, how many of its leading words were already sent by
+   * someone other than the engine (see `markWordsSent`). Absent means none.
+   * Kept apart from `pending` so a mark outlives the entry it was made on. */
+  sent: Record<string, number>
 }
 
 export const useTranscriptStore = create<TranscriptStoreState>(() => ({
   settled: '',
   pending: [],
   reveal: emptyReveal(),
+  sent: {},
 }))
+
+function wordsOf(text: string): string[] {
+  const trimmed = text.trim()
+  return trimmed ? trimmed.split(/\s+/) : []
+}
+
+/** `text` without its first `count` words, single-spaced. Counts words, not
+ * characters, so a final that revises wording or punctuation is cut at the
+ * same position. A count of zero leaves `text` as it was. */
+function withoutFirstWords(text: string, count: number): string {
+  if (!count) return text
+  return wordsOf(text).slice(count).join(' ')
+}
 
 /** Moves every leading entry that already has a final into `settled`, in
  * order, stopping at the first entry that does not — an entry mid-list with
@@ -56,11 +74,11 @@ export const useTranscriptStore = create<TranscriptStoreState>(() => ({
  * out of the order they were spoken. Returns the new `settled` and `pending`
  * without writing; callers combine this with whatever else they write in
  * the same `setState` call. */
-function drain(settled: string, pending: PendingUtterance[]): { settled: string; pending: PendingUtterance[] } {
+function drain(settled: string, pending: PendingUtterance[], sent: Record<string, number>): { settled: string; pending: PendingUtterance[] } {
   let out = settled
   let i = 0
   while (i < pending.length && pending[i].final !== null) {
-    const text = pending[i].final as string
+    const text = withoutFirstWords(pending[i].final as string, sent[pending[i].id] ?? 0)
     if (text) out = out ? `${out} ${text}` : text
     i += 1
   }
@@ -87,9 +105,9 @@ export function setPartial(id: string, text: string, paused: boolean): void {
  * this one included, once it has one — moves into `settled`, in order, in
  * one write. */
 export function settle(id: string, text: string): void {
-  const { settled, pending } = useTranscriptStore.getState()
+  const { settled, pending, sent } = useTranscriptStore.getState()
   const withFinal = upsertPending(pending, id, { final: text })
-  useTranscriptStore.setState(drain(settled, withFinal))
+  useTranscriptStore.setState(drain(settled, withFinal, sent))
 }
 
 /** HumanVoice: a failed commit, a stop past its wait, or an utterance cut
@@ -104,9 +122,9 @@ export function settleVisible(id: string): void {
 /** HumanVoice: an utterance that came back empty — removes its entry
  * outright, with nothing to carry into `settled`. */
 export function drop(id: string): void {
-  const { settled, pending } = useTranscriptStore.getState()
+  const { settled, pending, sent } = useTranscriptStore.getState()
   const without = pending.filter((p) => p.id !== id)
-  useTranscriptStore.setState(drain(settled, without))
+  useTranscriptStore.setState(drain(settled, without, sent))
 }
 
 /** The composer's field, while focused: replaces settled. */
@@ -119,6 +137,51 @@ export function takeTranscript(): string {
   const { settled } = useTranscriptStore.getState()
   useTranscriptStore.setState({ settled: '' })
   return settled
+}
+
+/** What each pending utterance shows, in spoken order: its final if it has
+ * one, its raw text whole if paused or transcribing, and the paced reveal
+ * for the entry being heard. `text` is as the composer renders it before any
+ * marked words are removed; `sent` is the utterance's mark. */
+export function pendingDisplay(state: TranscriptStoreState): { id: string; text: string; sent: number }[] {
+  const paced = pacedEntry(state.pending)
+  return state.pending.map((p) => {
+    let text: string
+    if (p.final !== null) text = p.final
+    else if (p.paused) text = p.text
+    else text = p === paced ? revealed(state.reveal) : p.text
+    return { id: p.id, text, sent: state.sent[p.id] ?? 0 }
+  })
+}
+
+/** The pending portion as the composer shows it: `pendingDisplay` with each
+ * utterance's marked leading words removed, joined in spoken order. */
+export function pendingText(state: TranscriptStoreState): string {
+  return pendingDisplay(state)
+    .map((d) => withoutFirstWords(d.text, d.sent))
+    .filter(Boolean)
+    .join(' ')
+}
+
+/**
+ * Marks the first `count` words of utterance `id` as already sent by someone
+ * other than the engine (a host composer that sent the shown text itself).
+ * The words stop showing in the pending text and are removed from the final
+ * when it settles, so the engine sends only what was said after them; an
+ * utterance with nothing left sends nothing. `count` is absolute, measured
+ * from the utterance's first word as `pendingDisplay` shows it, and zero
+ * clears the mark. The mark belongs to the id, so it holds for an entry a
+ * late final creates anew. Marks of ids no longer pending are discarded
+ * with each call, except `id`'s own.
+ */
+export function markWordsSent(id: string, count: number): void {
+  const { pending, sent } = useTranscriptStore.getState()
+  const next: Record<string, number> = {}
+  for (const [key, value] of Object.entries(sent)) {
+    if (key !== id && pending.some((p) => p.id === key)) next[key] = value
+  }
+  if (count > 0) next[id] = count
+  useTranscriptStore.setState({ sent: next })
 }
 
 // ── The word reveal's single timer ─────────────────────────────────────────
