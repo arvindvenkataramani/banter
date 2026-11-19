@@ -200,49 +200,52 @@ function GeneralPanel({ draft, edit }: PanelProps) {
 const REPO = 'https://github.com/arvindvenkataramani/banter'
 const doc = (path: string): string => `${REPO}/blob/main/${path}`
 
-const HELP_LINKS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: string; href: string }> }> = [
+const HELP_LINKS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: string; href: string; about: string }> }> = [
   {
     heading: 'General',
     links: [
-      { label: 'Plugin docs', href: doc('docs/dsh-voice/README.md') },
-      { label: 'Install Banter', href: doc('docs/setup/install.md') },
-      { label: 'Speech servers', href: doc('docs/setup/speech-servers.md') },
-      { label: 'Speech servers on Linux', href: doc('docs/setup/linux-speech-servers.md') },
+      { label: 'Plugin docs', href: doc('docs/dsh-voice/README.md'), about: 'What the plugin does, its controls, and how to set it up' },
+      { label: 'Install Banter', href: doc('docs/setup/install.md'), about: 'Installing the Banter server, which prints its URL when it finishes' },
+      { label: 'Speech servers', href: doc('docs/setup/speech-servers.md'), about: 'Connecting speech servers to Banter' },
+      { label: 'Speech servers on Linux', href: doc('docs/setup/linux-speech-servers.md'), about: 'Which speech servers run on Linux' },
     ],
   },
   {
     heading: 'Speech (TTS)',
     links: [
-      { label: 'TTS setup', href: doc('docs/setup/tts.md') },
-      { label: 'Speech models', href: doc('docs/setup/models.md#text-to-speech-models') },
-      { label: 'Voices and models', href: doc('docs/setup/voices-and-models.md') },
+      { label: 'TTS setup', href: doc('docs/setup/tts.md'), about: 'Setting up each text-to-speech server' },
+      { label: 'Speech models', href: doc('docs/setup/models.md#text-to-speech-models'), about: 'Which speech models exist and what each needs' },
+      { label: 'Voices and models', href: doc('docs/setup/voices-and-models.md'), about: 'How providers, models and voices fit together' },
     ],
   },
   {
     heading: 'Transcription (STT)',
     links: [
-      { label: 'STT setup', href: doc('docs/setup/stt.md') },
-      { label: 'Transcription models', href: doc('docs/setup/models.md#speech-to-text-models') },
+      { label: 'STT setup', href: doc('docs/setup/stt.md'), about: 'Setting up each speech-to-text server' },
+      { label: 'Transcription models', href: doc('docs/setup/models.md#speech-to-text-models'), about: 'Which transcription models exist and what each needs' },
     ],
   },
-  { heading: 'Project', links: [{ label: 'Repository', href: REPO }] },
+  { heading: 'Project', links: [{ label: 'Repository', href: REPO, about: 'Banter’s source code' }] },
 ]
 
 function HelpSection() {
   return (
     <Section title="Help">
+      <div className="dv-help-groups">
       {HELP_LINKS.map(group => (
         <div key={group.heading} className="dv-links">
           <h4 className="dv-subheading">{group.heading}</h4>
           <ul className="dv-link-list">
             {group.links.map(link => (
-              <li key={link.href}>
+              <li key={link.href} className="dv-link-row">
                 <a className="dv-link" href={link.href} target="_blank" rel="noreferrer">{link.label}</a>
+                <span className="dv-help">{link.about}</span>
               </li>
             ))}
           </ul>
         </div>
       ))}
+      </div>
     </Section>
   )
 }

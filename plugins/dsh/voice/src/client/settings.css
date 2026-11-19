@@ -59,17 +59,30 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* The help links are a reference list, not settings: groups sit closer than the settings' items do. */
+.dsh-voice-settings .dv-help-groups {
+  display: grid;
+  gap: 14px;
+}
+
 .dsh-voice-settings .dv-links {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .dsh-voice-settings .dv-link-list {
   display: grid;
-  gap: 2px;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.dsh-voice-settings .dv-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
 }
 
 .dsh-voice-settings .dv-link {
@@ -109,10 +122,16 @@
   align-items: flex-start;
 }
 
+/* Type scale: section heading 15/600; setting label 14/500; option label and link 14/400; group subheading 13/500 secondary; description, value and notice 12/400. */
 .dsh-voice-settings .dv-label {
   font-size: 14px;
+  font-weight: 500;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
+}
+
+.dsh-voice-settings .dv-radio-text .dv-label {
+  font-weight: 400;
 }
 
 .dsh-voice-settings .dv-help {
@@ -182,7 +201,8 @@
 
 .dsh-voice-settings .dv-problem {
   margin-right: auto;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
 }
 
