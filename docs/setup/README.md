@@ -16,5 +16,6 @@ Everything for installing Banter and configuring it, in the order most installs 
 | [remote-access.md](remote-access.md) | Reaching the dashboard from outside your network, and why `https`; Tailscale as one way |
 | [ios.md](ios.md) | Voice on iPhone and iPad |
 | [plugin.md](plugin.md) | The OpenClaw voice-mode plugin |
+| [dsh-voice/](../dsh-voice/README.md) | The dsh voice plugin: controls, setup, settings |
 
 Reference docs outside this folder: [speech-server-api.md](../speech-server-api.md) (what a speech server must answer), [OPERATIONS.md](../OPERATIONS.md) (running a deployment), [control-shard.md](../control-shard.md) (shard design), [adapting.md](../adapting.md) (another agent harness), and [services/README.md](../../services/README.md) (the adapter servers in this repo).

@@ -4,9 +4,7 @@ A conversational voice interface for agent harnesses, using fully private & self
 
 It hears when you have actually meant to finish speaking, cleans your speech of fillers, replies as the words are written, and lets you cut in mid-sentence. A control plane can start a speech model when a conversation needs it and unload it when it does not, across as many machines as you point it at.
 
-Built against [OpenClaw](https://docs.openclaw.ai/), and adaptable to other agent harnesses.
-
-Published as-is; occasionally maintained; no support implied. Apache-2.0. Built with [Claude Code](https://claude.com/claude-code). Most of the code was written by a model, directed and reviewed by the author. Use at your own risk.
+Built against [OpenClaw](https://docs.openclaw.ai/), and adaptable to other agent harnesses. A plugin for deepseek-harness is available
 
 ![Banter's chat interface, desktop and mobile](docs/images/screenshot.jpg)
 
@@ -22,28 +20,17 @@ Published as-is; occasionally maintained; no support implied. Apache-2.0. Built 
 
 **Full control over your speech and text data.** You install the speech-to-text and text-to-speech servers yourself, and the registry points at them by address, so your audio only ever reaches machines you run. The VAD and turn-detection models download once, verified against pinned SHA-256 hashes, and run in the browser from then on. You can send your audio anywhere, including ElevenLabs or OpenAI's transcription services, but Banter is built on a model where you never need to.
 
-**Tightly contained architecture**: one single port is the access point, and each shard runs off a single port too. Banter does not attempt to solve security, leaving it up to much more mature mechanisms in harnesses and remote network access products. Dependencies are small, and you are free to install whichever speech and transcription services you choose.
-
 **Services can start when needed and unload when idle.** A service whose `lifecycle` settings say so is demand-loaded: started on first use, health-checked until ready, evicted after a timeout. One machine can then host more models than it has memory to run at once. The services page shows health for everything in the registry, with manual start and stop.
 
 **Services can live anywhere.** A service is a registry entry with an address and a health path; the registry has no notion of what the service does. It can run on the same box, on another machine, or under something you manage yourself. Runners cover spawning a process, driving systemd or launchd, delegating to a service's own CLI, and health-checking something already running. Speech models are what this was built for, and anything answering HTTP can be registered alongside them.
 
 **Nothing to install on client devices.** The dashboard ships a web manifest, so it can be saved to a phone's home screen and run standalone. An unattended mode enables a screen lock for hands-free use on phones.
 
-## Architecture
+## Requirements and constraints
 
-- **Control plane** — the always-on process. Serves the dashboard, holds the registry of every known service and host, runs periodic health checks, and exposes the API the dashboard uses.
-- **Dashboard** — a React SPA served by the control plane. Two pages: chat (the root route) and services. The whole voice pipeline runs here, in the browser.
-- **Control shard** (optional) — a full second control plane on a worker machine, so services can live on hardware that suits them. See [docs/setup/shard.md](docs/setup/shard.md).
-- **`services/`** — adapter servers that put an OpenAI-compatible API in front of speech models, for example the Python adapters under [`services/stt`](services/stt/faster-whisper/README.md) and [`services/tts`](services/tts/kokoro/README.md), or the Swift servers in [`services/fluid`](services/fluid/README.md) for Apple Silicon. Nothing installs itself; you install the ones you want and register each in the registry. See [docs/setup/models.md](docs/setup/models.md) for the options and [services/README.md](services/README.md) for how to install them.
-- **`plugins/openclaw/voice-mode/`** — installs into your OpenClaw gateway and tells the agent it is being spoken to rather than read, so it answers in a way that works out loud.
-- **`scripts/`** — install, deploy, and diagnostic scripts for running the control plane (and shards) as a system service, plus a few standalone tools like driving a service by hand when the API is unavailable. None of it is required for local development. See [scripts/README.md](scripts/README.md) for the index.
-
-[docs/architecture/](docs/architecture/README.md) has the full picture — how a voice turn works end to end, and why the control plane exists at all.
-
-**Networking.** Any network where the machines can reach each other will do — nothing is required for control plane–shard connectivity or for reaching services. Endpoints default to plain `http`; set `scheme: "https"` per service or registry-wide when something terminates TLS, whether that's a reverse proxy, your own cert, or Tailscale Serve.
-
-If you want the dashboard on your phone while away from home, you need some way in from outside your network. [Tailscale](https://tailscale.com/) is one answer and the one Banter has built-in support for — set `tailscaleServe` on a service and it registers with `tailscale serve` on start, giving you an HTTPS address on your tailnet without opening a port to the internet. See [docs/setup/remote-access.md](docs/setup/remote-access.md) for the actual steps. Voice on a phone needs a secure page (`https`, or `localhost`); on a LAN, plain `http` is enough for text. Any other remote-access approach works too; Banter simply has no built-in support for it.
+- Speech servers must be OpenAI-compatible and allow CORS from the dashboard's origin; see [docs/setup/speech-servers.md](docs/setup/speech-servers.md).
+- The install scripts target Linux with systemd. On macOS or Linux without systemd, run the control plane under a supervisor you provide; native Windows is not supported. See [docs/setup/install.md](docs/setup/install.md#install-as-a-service).
+- There is no tool-use or action-approval UX, deliberately: a hastily built gate in a voice interface would be insecure. If your harness needs approvals, see [docs/adapting.md](docs/adapting.md#no-tool-approvals).
 
 ## Quick start
 
@@ -55,7 +42,14 @@ cd banter
 scripts/install.sh
 ```
 
-The script prompts for your gateway URL and token, installs the control plane as a service, and prints its address. Open that address (`http://localhost:4200` unless you changed the port) for the dashboard. Typing works at once; voice needs a speech server, and Banter installs none. Install one from its folder's README ([`services/README.md`](services/README.md) lists them), then see [docs/setup/speech-servers.md](docs/setup/speech-servers.md) for CORS and for adding your own. An LLM or agent can follow [docs/setup/install.md](docs/setup/install.md) for you.
+The script installs one thing: the Banter server (the control plane), which also serves the dashboard. It prompts for your gateway URL and token, runs the server as a service, and prints its address when it finishes. Open that address (`http://localhost:4200` unless you changed the port) for the dashboard. Typing works at once.
+
+Two steps are separate, and optional:
+
+- **Speech servers.** Voice needs them; text chat works without. Banter installs none. Install one from its folder's README ([`services/README.md`](services/README.md) lists them), then see [docs/setup/speech-servers.md](docs/setup/speech-servers.md) for CORS and for adding your own.
+- **The dsh plugin.** To use voice inside DeepSeek Harness, [docs/dsh-voice/setup.md](docs/dsh-voice/setup.md) builds and installs it, using the address the script printed.
+
+An LLM or agent can follow [docs/setup/install.md](docs/setup/install.md) for you.
 
 > **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running Banter, `http://localhost:4200` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Serve the dashboard over https for that: [docs/setup/remote-access.md](docs/setup/remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
 
@@ -75,6 +69,12 @@ Setup, in [docs/setup/](docs/setup/README.md):
 - [ios.md](docs/setup/ios.md): voice on iPhone and iPad
 - [plugin.md](docs/setup/plugin.md): the OpenClaw voice-mode plugin
 
+The dsh voice plugin, in [docs/dsh-voice/](docs/dsh-voice/README.md):
+
+- [README.md](docs/dsh-voice/README.md): what it is, the controls and their colours, the mic shortcut
+- [setup.md](docs/dsh-voice/setup.md): build, install into a dsh profile, start dsh
+- [settings.md](docs/dsh-voice/settings.md): the Speech, Listening and General tabs
+
 Everything else:
 
 - [docs/OPERATIONS.md](docs/OPERATIONS.md): running a deployment: where things live, logs, restarts, backups
@@ -86,14 +86,21 @@ Everything else:
 - [services/README.md](services/README.md): the adapter servers in this repo
 - [scripts/README.md](scripts/README.md): deployment, lifecycle, and diagnostic scripts
 
-## Requirements and constraints
+## Architecture
 
-- STT/TTS servers must be OpenAI-compatible (`/v1/audio/speech`-shaped for TTS) and CORS-enabled — the browser calls them cross-origin from the dashboard's own origin.
-- `onnxruntime-web` is pinned to an exact version, loaded at runtime from its prebuilt module and never bundled. The dashboard sends cross-origin isolation headers (`COOP`/`COEP`), so the voice models run multi-threaded. If something in front of the dashboard strips those headers, they fall back to one thread and turn detection slows; the settings dialog says so. See [docs/design/turn-taking.md](docs/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled).
-- The browser's model assets (~10MB) are committed to this repo, so a clone needs no download step for them: [Silero VAD](https://github.com/snakers4/silero-vad) (MIT), [pipecat smart-turn](https://huggingface.co/pipecat-ai/smart-turn-v3) (BSD-2-Clause), and [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny) (Apache-2.0, used only for its preprocessor config) — see NOTICE. Each is pinned by SHA-256 in `dashboard/scripts/fetch-models.ts`; `cd dashboard && bun run setup` re-verifies them against those pins and re-fetches if one is missing. This does not apply to the speech models themselves, which are large and download on first run.
-- Linux with systemd is the platform the install scripts are written for. On macOS or Linux without systemd, the control plane runs from `control-runner.sh` under a supervisor you provide; native Windows is not supported, and WSL2 with systemd follows the Linux path. See [docs/setup/install.md](docs/setup/install.md#install-as-a-service). `scripts/shard-deploy.sh` installs a shard on macOS only.
-- Known-working speech servers, with their tradeoffs, are listed in [docs/setup/models.md](docs/setup/models.md).
-- **No tool-use or action-approval UX.** The gateway connection requests the `operator.approvals` scope in its handshake, but nothing here ever renders an approval request or answers one — whether a tool call runs unconfirmed is between your agent and its own configuration. This is deliberate: tool-permission approval design is still evolving, and a hastily built gate in a voice interface would be insecure and could cause real damage, so this repository doesn't attempt one. If your harness needs approvals, build your own — see [docs/adapting.md](docs/adapting.md#no-tool-approvals) for two working references.
+- **Control plane** — the always-on process. Serves the dashboard, holds the registry of every known service and host, runs periodic health checks, and exposes the API the dashboard uses.
+- **Dashboard** — a React SPA served by the control plane. Two pages: chat (the root route) and services. The whole voice pipeline runs here, in the browser.
+- **Control shard** (optional) — a full second control plane on a worker machine, so services can live on hardware that suits them. See [docs/setup/shard.md](docs/setup/shard.md).
+- **`services/`** — adapter servers that put an OpenAI-compatible API in front of speech models, for example the Python adapters under [`services/stt`](services/stt/faster-whisper/README.md) and [`services/tts`](services/tts/kokoro/README.md), or the Swift servers in [`services/fluid`](services/fluid/README.md) for Apple Silicon. Nothing installs itself; you install the ones you want and register each in the registry. See [docs/setup/models.md](docs/setup/models.md) for the options and [services/README.md](services/README.md) for how to install them.
+- **`plugins/voice-mode/`** — installs into your OpenClaw gateway and tells the agent it is being spoken to rather than read, so it answers in a way that works out loud.
+- **`plugins/dsh/voice/`** — an optional plugin that brings voice into the web UI of DeepSeek Harness (dsh), taking speech from a Banter server. See [docs/dsh-voice/](docs/dsh-voice/README.md).
+- **`scripts/`** — install, deploy, and diagnostic scripts for running the control plane (and shards) as a system service, plus a few standalone tools like driving a service by hand when the API is unavailable. None of it is required for local development. See [scripts/README.md](scripts/README.md) for the index.
+
+[docs/architecture/](docs/architecture/README.md) has the full picture — how a voice turn works end to end, and why the control plane exists at all.
+
+**Networking.** Any network where the machines can reach each other will do — nothing is required for control plane–shard connectivity or for reaching services. Endpoints default to plain `http`; set `scheme: "https"` per service or registry-wide when something terminates TLS, whether that's a reverse proxy, your own cert, or Tailscale Serve.
+
+If you want the dashboard on your phone while away from home, you need some way in from outside your network. [Tailscale](https://tailscale.com/) is one answer and the one Banter has built-in support for — set `tailscaleServe` on a service and it registers with `tailscale serve` on start, giving you an HTTPS address on your tailnet without opening a port to the internet. See [docs/setup/remote-access.md](docs/setup/remote-access.md) for the actual steps. Voice on a phone needs a secure page (`https`, or `localhost`); on a LAN, plain `http` is enough for text. Any other remote-access approach works too; Banter simply has no built-in support for it.
 
 ## Hardening
 
@@ -114,7 +121,7 @@ This ships with defaults for one machine or a trusted network. A few things wort
 
 ## Forking and customising
 
-This is published as-is and not actively maintained; updates come roughly once every six months. If you find bugs, do submit an issue or a PR, and feel free to fork it if a response is slow.
+This is published as-is and only occasionally maintained; expect updates to come roughly once every six months. If you find bugs, do submit an issue or a PR, and feel free to fork it if a response is slow.
 
 ### Running against the source
 
@@ -136,7 +143,7 @@ Most of `scripts/` is maintenance and deploy tooling rather than day-to-day dev 
 
 ### Changing the plugin
 
-Run `bun run build` in `plugins/openclaw/voice-mode` after every change; the built `dist/` is what OpenClaw loads. [docs/setup/plugin.md](docs/setup/plugin.md#changing-the-plugin) has the details.
+Run `bun run build` in `plugins/voice-mode` after every change; the built `dist/` is what OpenClaw loads. [docs/setup/plugin.md](docs/setup/plugin.md#changing-the-plugin) has the details.
 
 ### Where to start reading
 
@@ -149,7 +156,7 @@ Swapping the agent backend is the most likely large change, and the gateway docs
 
 ## Status and license
 
-Published as-is and not actively maintained; no support implied. See [Forking and customising](#forking-and-customising) for what to expect if you open an issue or a PR.
+Published as-is and only occasionally maintained; no support implied. See [Forking and customising](#forking-and-customising) for what to expect if you open an issue or a PR.
 
 **Apache-2.0** — see `LICENSE` for the terms and `NOTICE` for attribution. In short, for the code in this repository:
 
