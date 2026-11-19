@@ -1,5 +1,5 @@
 // Structural types for the dsh fields the plugin reads. Each cites its dsh
-// source (tag dsh-v0.2.2-rc.1); no dsh package is imported.
+// source (tag dsh-v0.2.2-rc.5); no dsh package is imported.
 
 /** packages/typert/protocol/src/types.ts:130 */
 export type DshRemoteResult<T> =
@@ -48,14 +48,14 @@ export interface DshEventWindow {
   readonly change: DshEventChange
 }
 
-/** packages/client/ui-conversation/src/client/contract/input.ts:258-282 */
+/** packages/client/ui-conversation/src/client/contract/input.ts:264-288 */
 export interface DshInputActions {
   /** Replaces the whole draft with plain text; inline reference chips are removed. */
   setDraft(text: string): void
   submit(): void
 }
 
-/** packages/client/ui-conversation/src/client/contract/input.ts:295-315 */
+/** packages/client/ui-conversation/src/client/contract/input.ts:306-326 */
 export interface DshInputState {
   readonly draft: string
   /** Monotonic editor revision; every text change, the plugin's own included, bumps it. */
@@ -88,7 +88,7 @@ export interface DshSessionBinding {
   readonly eventSource: DshEventSource
 }
 
-/** The props dsh gives a session-scoped slot component (packages/client/ui-conversation/src/client/contract/slots.ts:385-392). */
+/** The props dsh gives a session-scoped slot component (packages/client/ui-conversation/src/client/contract/slots.ts:395-402). */
 export interface DshSessionSlotProps {
   readonly sessionId: string
   useInput<T>(selector: (state: DshInputState) => T): T
@@ -135,7 +135,7 @@ export interface DshClientContext {
 
 /**
  * One edit of a settings write: `set` writes the value at the path, `unset` removes it
- * (packages/settings/src/types.ts, `SettingsPathOpView`; lib/types/types.d.ts:47 in rc.1).
+ * (packages/settings/settings/src/types.ts:52, `SettingsPathOpView`).
  */
 export type DshSettingsOp =
   | { readonly op: 'set'; readonly path: string[]; readonly value: unknown }
@@ -143,7 +143,7 @@ export type DshSettingsOp =
 
 /**
  * The accepted values and write queue of one host entry's config (packages/client/ui-settings/src/client/config-form-types.ts:9-95).
- * `mutate` is the atomic write (rc.1 lib/types/client/config-form-types.d.ts:52): every op shares one revision fence
+ * `mutate` is the atomic write (config-form-types.ts:44-55): every op shares one revision fence
  * and Host validation. With `expectedRevision` the write is fenced by that revision, so one read earlier than the
  * latest refuses it rather than overwriting. It resolves false when the Host refuses and rejects on a transport failure.
  */

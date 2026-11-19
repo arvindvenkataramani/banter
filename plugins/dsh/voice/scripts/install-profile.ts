@@ -18,8 +18,8 @@ import { settingsFromVoiceConfig } from '../src/host/settings.ts'
 
 declare const Bun: { YAML: { parse(text: string): unknown; stringify(value: unknown, replacer?: null, space?: number): string } }
 
-/** The dsh release the plugin targets, pinned in every command. */
-const DSH_PACKAGE = '@deepseek-ai/dsh@0.2.2-rc.1'
+/** The dsh package the plugin is added with. */
+const DSH_PACKAGE = '@deepseek-ai/dsh'
 
 /** The patch row id the plugin's host entry is inserted under (scripts/build.ts). */
 const ROW_ID = 'dsh-voice'

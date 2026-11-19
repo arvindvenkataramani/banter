@@ -113,7 +113,7 @@ await writeFile(join(out, 'package.json'), `${JSON.stringify({
       ],
     },
   },
-  engines: { dsh: '>=0.2.2-rc.1 <0.3.0' },
+  engines: { dsh: '>=0.2.2-rc.5' },
   peerDependencies: { '@deepseek-ai/cordis': '~4.1.0', '@deepseek-ai/schemastery': '~3.19.0' },
 }, null, 2)}\n`)
 

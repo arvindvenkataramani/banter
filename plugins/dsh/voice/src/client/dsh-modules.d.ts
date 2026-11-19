@@ -1,7 +1,7 @@
 // The slice of dsh's shared module table the client half imports. The build
 // leaves these as `require` calls answered by the page's module loader.
 // Signatures follow the primitives' declarations (dsh-client-ui-primitives
-// lib/types); rc.1's client bundles use each export named here.
+// lib/types); rc.5's client bundles use each export named here.
 
 declare module '@deepseek-ai/dsh-client-ui-primitives' {
   import type { ButtonHTMLAttributes, ComponentType, ForwardRefExoticComponent, InputHTMLAttributes, ReactElement, ReactNode, RefAttributes } from 'react'
