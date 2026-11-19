@@ -18,35 +18,40 @@ import type { DshSettingsOp } from './dsh-types.ts'
 
 export type SettingsOp = DshSettingsOp
 
-/** The listening fields the Listening tab tunes. `section` names the object under `stt` that holds the field. */
+/**
+ * The listening fields the Listening tab tunes. `section` names the object under `stt` that holds the field. `default` is the value the
+ * engine applies when the config leaves the field out; the engine keeps these as inline fallbacks (not exported), so they are copied here:
+ * minSpeechDurationS and minSpeechProb voice-engine/src/human/mic-loop.ts:380-381, pauseThresholdMs :426, and the commit delays and
+ * smart-turn thresholds :494-497.
+ */
 export const TUNING_FIELDS = [
   {
-    key: 'minSpeechDurationS', section: 'vad', label: 'Min duration', unit: 's', step: 0.05, min: 0, max: 2,
-    description: 'How long speech must last before it counts as you talking rather than a cough or a knock.',
+    key: 'minSpeechDurationS', section: 'vad', label: 'Min duration', unit: 's', step: 0.05, min: 0, max: 2, default: 0.75,
+    description: 'How long a sound must last to count as you talking, not a cough or a knock. Raise it if noises set it off; lower it if short replies like "yes" are missed.',
   },
   {
-    key: 'minSpeechProb', section: 'vad', label: 'Min probability', unit: '', step: 0.05, min: 0, max: 1,
-    description: 'How sure the speech detector must be that a moment is speech. Higher ignores more noise but can miss quiet speech.',
+    key: 'minSpeechProb', section: 'vad', label: 'Min probability', unit: '', step: 0.05, min: 0, max: 1, default: 0.7,
+    description: 'How sure the speech detector must be that a sound is speech. Raise it if background noise sets it off; lower it if quiet speech is missed.',
   },
   {
-    key: 'pauseThresholdMs', section: 'turnTaking', label: 'Pause', unit: 'ms', step: 50, min: 0, max: 2000,
-    description: 'How much silence counts as a pause. At each pause, smart-turn scores whether you have finished.',
+    key: 'pauseThresholdMs', section: 'turnTaking', label: 'Pause', unit: 'ms', step: 50, min: 0, max: 2000, default: 250,
+    description: "How much silence counts as a pause, where smart-turn checks whether you've finished. Raise it if voice jumps in while you're thinking.",
   },
   {
-    key: 'commitMinDelayMs', section: 'turnTaking', label: 'Commit min', unit: 'ms', step: 50, min: 0, max: 2000,
-    description: 'The wait after a pause before your turn ends, when smart-turn is sure you have finished. Speaking again cancels it.',
+    key: 'commitMinDelayMs', section: 'turnTaking', label: 'Commit min', unit: 'ms', step: 50, min: 0, max: 2000, default: 250,
+    description: "The wait after a pause when smart-turn is sure you've finished. Lower it for quicker replies; raise it if you still get cut off. Speaking again cancels it.",
   },
   {
-    key: 'commitMaxDelayMs', section: 'turnTaking', label: 'Commit max', unit: 'ms', step: 50, min: 0, max: 2000,
-    description: 'The wait after a pause before your turn ends, when smart-turn thinks you are still going. Speaking again cancels it.',
+    key: 'commitMaxDelayMs', section: 'turnTaking', label: 'Commit max', unit: 'ms', step: 50, min: 0, max: 2000, default: 2000,
+    description: "The wait after a pause when smart-turn thinks you're still going. Raise it if you get cut off mid-sentence.",
   },
   {
-    key: 'smartTurnThreshold', section: 'turnTaking', label: 'Smart-turn', unit: '', step: 0.05, min: 0, max: 1,
-    description: 'A score at or above this counts as sure you have finished, so the Commit min wait applies.',
+    key: 'smartTurnThreshold', section: 'turnTaking', label: 'Smart-turn', unit: '', step: 0.05, min: 0, max: 1, default: 0.7,
+    description: "How sure smart-turn must be that you've finished before the shorter Commit min wait applies. Lower it for quicker replies; raise it if you get cut off.",
   },
   {
-    key: 'smartTurnLowCutoff', section: 'turnTaking', label: 'Smart-turn low', unit: '', step: 0.05, min: 0, max: 1,
-    description: 'A score below this counts as still going, so the Commit max wait applies. Scores in between get a wait in between.',
+    key: 'smartTurnLowCutoff', section: 'turnTaking', label: 'Smart-turn low', unit: '', step: 0.05, min: 0, max: 1, default: 0.15,
+    description: 'Below this score, smart-turn counts you as still going and the longer Commit max wait applies. Scores in between get a wait in between.',
   },
 ] as const
 
@@ -156,6 +161,11 @@ export const setKeepVoiceOutside = (draft: Draft, keep: boolean): Draft => ({ ..
 export const setTakeover = (draft: Draft, takeover: 'ask' | 'always'): Draft => ({ ...draft, takeover })
 export const setScope = (draft: Draft, scope: SettingsScope): Draft => ({ ...draft, scope })
 export const setTuning = (draft: Draft, key: TuningKey, value: number): Draft => ({ ...draft, tuning: { ...draft.tuning, [key]: value } })
+/** Clears a field back to unset, so the engine's own default applies again. */
+export const resetTuning = (draft: Draft, key: TuningKey): Draft => {
+  const { [key]: _removed, ...tuning } = draft.tuning
+  return { ...draft, tuning }
+}
 
 // ── Chunking ─────────────────────────────────────────────────────────────
 
@@ -294,8 +304,12 @@ function patchRest(settings: PluginSettings, draft: Draft): string {
   const saved = tuningFromConfig(config)
   for (const f of TUNING_FIELDS) {
     const value = draft.tuning[f.key]
-    if (value === undefined || value === saved[f.key]) continue
-    stt[f.section] = { ...(stt[f.section] as Json | undefined), [f.key]: value }
+    if (value === saved[f.key]) continue
+    // An unset draft value over a stored one is a reset: the key is removed so the engine's default applies again.
+    const section = { ...(stt[f.section] as Json | undefined) }
+    if (value === undefined) delete section[f.key]
+    else section[f.key] = value
+    stt[f.section] = section
   }
 
   if (Object.keys(tts).length > 0 || stored.tts !== undefined) rest.tts = tts

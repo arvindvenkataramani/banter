@@ -183,13 +183,29 @@
 
 .dsh-voice-settings .dv-tuning {
   display: grid;
-  grid-template-columns: 7rem 1fr 4.5rem;
+  grid-template-columns: 7rem 1fr 11rem;
   align-items: center;
   gap: 12px;
 }
 
-.dsh-voice-settings .dv-tuning-value {
-  text-align: right;
+.dsh-voice-settings .dv-tuning-end {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dsh-voice-settings .dv-split > .dv-link {
+  font-size: 12px;
+}
+
+.dsh-voice-settings .dv-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .dsh-voice-settings .dv-footer {

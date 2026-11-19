@@ -16,7 +16,7 @@ import { RadioChoices, SelectField, SliderField, type SelectOption } from './set
 import { ReadOnly, SCOPE, ensureStyles } from './settings-style.ts'
 import {
   TUNING_FIELDS, buildWrite, chunkingView, editChunking, resetChunking, roster, seedDraft, setControlPlaneUrl, setKeepVoiceOutside,
-  setModel, setProvider, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
+  resetTuning, setModel, setProvider, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
 } from './settings-model.ts'
 
 type TabId = 'general' | 'speech' | 'listening'
@@ -25,7 +25,7 @@ const tabId = (tab: TabId): string => `dsh-voice-tab-${tab}`
 const panelId = (tab: TabId): string => `dsh-voice-panel-${tab}`
 
 const tabItem = (value: TabId, label: string) => ({ value, label, id: tabId(value), panelId: panelId(value) })
-const TAB_ITEMS = [tabItem('general', 'General'), tabItem('speech', 'Speech'), tabItem('listening', 'Listening')] as const
+const TAB_ITEMS = [tabItem('speech', 'Speech'), tabItem('listening', 'Listening'), tabItem('general', 'General')] as const
 
 /** What a draft was seeded from: the stored settings and the revision they were read at. */
 interface Base {
@@ -39,7 +39,7 @@ export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) 
   const state = useSyncExternalStore(listener => form.subscribe(listener), () => form.getSnapshot())
   const [draft, setDraft] = useState<Draft | null>(null)
   const [base, setBase] = useState<Base | null>(null)
-  const [tab, setTab] = useState<TabId>('general')
+  const [tab, setTab] = useState<TabId>('speech')
   const [saving, setSaving] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -97,9 +97,9 @@ export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) 
           onChange={setTab}
         />
         <fieldset className="dv-panel" role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} disabled={readOnly}>
-          {tab === 'general' && <GeneralPanel draft={draft} edit={edit} />}
           {tab === 'speech' && <SpeechPanel draft={draft} edit={edit} />}
           {tab === 'listening' && <ListeningPanel draft={draft} edit={edit} />}
+          {tab === 'general' && <GeneralPanel draft={draft} edit={edit} />}
         </fieldset>
       </ReadOnly.Provider>
       <div className="dv-footer">
@@ -171,14 +171,15 @@ function GeneralPanel({ draft, edit }: PanelProps) {
           />
           <p className="dv-help">
             The address of your Banter install: the same address you open Banter's dashboard at. The install script prints it when
-            it finishes. The plugin reaches the speech services through it.{' '}
+            it finishes. The plugin reaches the speech services through it. The provider, model and voice lists were copied from this server
+            when the plugin was installed; re-run the install step to pick up changes.{' '}
             <a className="dv-link" href={doc('docs/setup/install.md')} target="_blank" rel="noreferrer">Install Banter</a>
           </p>
         </Field>
         {view.declaresSessions && (
           <SwitchRow
             label="Always take over"
-            description="Our voice servers serve one session at a time. When another session is using one, take it over without asking."
+            description="Speech servers serve one session at a time. When another session is using one, take it over without asking; otherwise you'll be asked."
             checked={draft.takeover === 'always'}
             onChange={checked => { edit(d => setTakeover(d, checked ? 'always' : 'ask')) }}
           />
@@ -264,17 +265,24 @@ const SCOPE_CHOICES = [
 ] as const
 
 const MODE_CHOICES: ReadonlyArray<{ value: ChunkStrategy; label: string; description: string }> = [
-  { value: 'two-chunk', label: '2-chunk', description: 'First sentence boundary, then everything else' },
-  { value: 'paragraph', label: 'Paragraph', description: 'Emit on double newlines' },
-  { value: 'sentence', label: 'Sentence', description: 'Emit at each sentence boundary above min words' },
-  { value: 'greedy', label: 'Greedy', description: 'Pack as many sentences as fit within max words' },
+  { value: 'two-chunk', label: '2-chunk', description: "Speaks the first sentence as soon as it's ready, then the rest as one piece" },
+  { value: 'paragraph', label: 'Paragraph', description: 'Speaks a paragraph at a time' },
+  { value: 'sentence', label: 'Sentence', description: 'Speaks each sentence once it has at least Min words' },
+  { value: 'greedy', label: 'Greedy', description: 'Groups sentences into pieces of up to Max words' },
 ]
 
 function Provenance({ origin, modelName, diverges }: { origin: FieldOrigin; modelName: string; diverges: Array<{ label: string; value: string }> }) {
   const text = origin === 'override' ? 'Yours' : origin === 'model' ? `From ${modelName}` : origin === 'global' ? 'Global' : 'Default'
+  const about = origin === 'override'
+    ? 'You set this'
+    : origin === 'model'
+      ? `${modelName} ships this value`
+      : origin === 'global' ? 'Your setting for every model' : 'Nothing sets this; the built-in default applies'
   return (
     <div className="dv-provenance">
-      <Tag tone={origin === 'override' ? 'info' : origin === 'none' ? 'quiet' : 'neutral'}>{text}</Tag>
+      <Tooltip label={about} side="top" portal>
+        <span><Tag tone={origin === 'override' ? 'info' : origin === 'none' ? 'quiet' : 'neutral'}>{text}</Tag></span>
+      </Tooltip>
       {diverges.length > 0 && <span className="dv-help">{diverges.map(d => `${d.label} ${d.value}`).join(' · ')}</span>}
     </div>
   )
@@ -288,7 +296,7 @@ function SpeechPanel({ draft, edit }: PanelProps) {
   const backendName = (backend: StreamingBackend): string => (backend === 'mms' ? 'MMS' : backend === 'mse' ? 'MSE' : 'Blob')
   const mode = view.fields.mode.value ?? DEFAULT_CHUNK_STRATEGY
   const modelMode = view.draft.modelDefaults.mode
-  const words = (field: 'minWords' | 'maxWords', id: string, label: string, max: number) => (
+  const words = (field: 'minWords' | 'maxWords', id: string, label: string, max: number, description: string) => (
     <Field id={id} label={label}>
       <Input
         id={id}
@@ -300,6 +308,7 @@ function SpeechPanel({ draft, edit }: PanelProps) {
         value={view.fields[field].value ?? ''}
         onChange={event => { edit(d => editChunking(d, field, event.target.value ? parseInt(event.target.value, 10) : undefined)) }}
       />
+      <p className="dv-help">{description}</p>
       <Provenance origin={view.fields[field].from} modelName={view.modelName} diverges={view.divergences[field]} />
     </Field>
   )
@@ -335,6 +344,12 @@ function SpeechPanel({ draft, edit }: PanelProps) {
                 />
               </Field>
             </div>
+            <p className="dv-help">
+              Only models that can stream speech in real time are listed.{' '}
+              <a className="dv-link" href={doc('docs/setup/models.md#text-to-speech-models')} target="_blank" rel="noreferrer">Speech models</a>
+              {' · '}
+              <a className="dv-link" href={doc('docs/setup/voices-and-models.md')} target="_blank" rel="noreferrer">Voices and models</a>
+            </p>
             <div className="dv-field">
               <div className="dv-split">
                 <span className="dv-label">Speed</span>
@@ -345,8 +360,11 @@ function SpeechPanel({ draft, edit }: PanelProps) {
           </>
         )}
       </Section>
-      <Section title="Chunking" aside={draft.scope === 'per-model' ? <span className="dv-help">Values for {view.modelName}</span> : undefined}>
+      <Section title="Chunking" aside={draft.scope === 'per-model' ? <span className="dv-help">Changes here apply only to {view.modelName}</span> : undefined}>
         <RadioChoices<SettingsScope> name="dv-scope" label="Chunking scope" value={draft.scope} choices={SCOPE_CHOICES} onChange={value => { edit(d => setScope(d, value)) }} />
+        <p className="dv-help">
+          <a className="dv-link" href={doc('docs/setup/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How scope works</a>
+        </p>
         <hr className="dv-rule" />
         <RadioChoices<ChunkStrategy>
           name="dv-mode"
@@ -360,8 +378,8 @@ function SpeechPanel({ draft, edit }: PanelProps) {
           onChange={value => { edit(d => editChunking(d, 'mode', value)) }}
         />
         <div className="dv-pair">
-          {words('minWords', 'dv-min-words', 'Min words', 200)}
-          {words('maxWords', 'dv-max-words', 'Max words', 500)}
+          {words('minWords', 'dv-min-words', 'Min words', 200, "The shortest piece spoken on its own; shorter sentences wait to join the next. In 2-chunk, the first piece's minimum.")}
+          {words('maxWords', 'dv-max-words', 'Max words', 500, "The longest piece before it's cut at a sentence or clause. Used by Sentence and Greedy.")}
         </div>
         {view.note !== null && <p className="dv-help">{view.note}</p>}
         <div className="dv-footer">
@@ -388,8 +406,11 @@ function SpeechPanel({ draft, edit }: PanelProps) {
               saveStreamingBackend(choice)
             }}
           />
+          <p className="dv-help">
+            How speech audio reaches the browser. Leave on Auto unless speech stutters or cuts out. Saved in this browser as soon as you change
+            it, apart from Save; takes effect when you reload the page. Now using {backendName(STREAMING_BACKEND)}.
+          </p>
         </Field>
-        <p className="dv-help">Active: {backendName(STREAMING_BACKEND)} — reload to apply</p>
       </Section>
     </>
   )
@@ -411,6 +432,8 @@ function ListeningPanel({ draft, edit }: PanelProps) {
             <p className="dv-help">
               The speech-to-text server that turns what you say into text.{' '}
               <a className="dv-link" href={doc('docs/setup/stt.md')} target="_blank" rel="noreferrer">Setting up STT servers</a>
+              {' · '}
+              <a className="dv-link" href={doc('docs/setup/models.md#speech-to-text-models')} target="_blank" rel="noreferrer">Transcription models</a>
             </p>
           </Field>
         </Section>
@@ -419,7 +442,11 @@ function ListeningPanel({ draft, edit }: PanelProps) {
         { section: 'vad', title: 'Speech detection' },
         { section: 'turnTaking', title: 'Turn taking' },
       ] as const).map(group => (
-        <Section key={group.section} title={group.title}>
+        <Section
+          key={group.section}
+          title={group.title}
+          aside={<a className="dv-link" href={doc('docs/pages/voice-interface.md#what-the-settings-mean')} target="_blank" rel="noreferrer">What these do</a>}
+        >
           {TUNING_FIELDS.filter(f => f.section === group.section).map(f => {
             const value = draft.tuning[f.key]
             return (
@@ -433,11 +460,13 @@ function ListeningPanel({ draft, edit }: PanelProps) {
                     min={f.min}
                     max={f.max}
                     step={f.step}
-                    value={value ?? f.min}
-                    disabled={value === undefined}
+                    value={value ?? f.default}
                     onChange={next => { edit(d => setTuning(d, f.key, next)) }}
                   />
-                  <span className="dv-value dv-tuning-value">{value === undefined ? 'default' : f.unit === '' ? String(value) : `${value} ${f.unit}`}</span>
+                  <span className="dv-tuning-end">
+                    {value !== undefined && <button type="button" className="dv-link dv-reset" onClick={() => { edit(d => resetTuning(d, f.key)) }}>Reset</button>}
+                    <span className="dv-value">{value === undefined ? `default (${f.default}${f.unit})` : `${value}${f.unit}`}</span>
+                  </span>
                 </div>
                 <p className="dv-help">{f.description}</p>
               </div>

@@ -4,7 +4,7 @@ import { resolveChunkingFor } from '@platform/voice-engine/agent/chunking-settin
 import { DEFAULT_SETTINGS, settingsFromVoiceConfig, voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
 import {
   buildWrite, chunkingView, editChunking, resetChunking, roster, seedDraft, setControlPlaneUrl, setKeepVoiceOutside, setModel, setProvider,
-  setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft, type SettingsOp,
+  setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, resetTuning, TUNING_FIELDS, type Draft, type SettingsOp,
 } from './settings-model.ts'
 
 // A control-plane voice config with two TTS providers (the second one's first model is not realtime), two STT options, and every
@@ -299,5 +299,54 @@ describe('buildWrite: rest-backed settings', () => {
     const global = chunkingView(setScope(setModel(draftOf(), 'a-two'), 'global'))
     expect(global.fields.mode).toEqual({ value: 'sentence', from: 'global' })
     expect(global.note).toBe('Saved values for a-two are set aside while every model shares one set.')
+  })
+})
+
+describe('tuning defaults and reset', () => {
+  it('every tuning field carries the engine default it falls back to, inside its slider range', () => {
+    for (const f of TUNING_FIELDS) {
+      expect(f.default).toBeGreaterThanOrEqual(f.min)
+      expect(f.default).toBeLessThanOrEqual(f.max)
+    }
+    expect(Object.fromEntries(TUNING_FIELDS.map(f => [f.key, f.default]))).toEqual({
+      minSpeechDurationS: 0.75, minSpeechProb: 0.7, pauseThresholdMs: 250, commitMinDelayMs: 250,
+      commitMaxDelayMs: 2000, smartTurnThreshold: 0.7, smartTurnLowCutoff: 0.15,
+    })
+  })
+
+  it('a field left unset stays out of rest, and an edit elsewhere does not add it', () => {
+    const settings = seeded()
+    const rest = restOf(writeOf(settings, setTakeover(draftOf(settings), 'always')).next)
+    expect(rest.stt?.vad).toEqual({ minSpeechDurationS: 0.5 })
+    expect(rest.stt?.turnTaking).not.toHaveProperty('smartTurnThreshold')
+    expect(writeOf(settings, draftOf(settings)).ops).toEqual([])
+  })
+
+  it('setting an unset field writes it into its section', () => {
+    const settings = seeded()
+    const rest = restOf(writeOf(settings, setTuning(draftOf(settings), 'minSpeechProb', 0.8)).next)
+    expect(rest.stt?.vad).toEqual({ minSpeechDurationS: 0.5, minSpeechProb: 0.8 })
+  })
+
+  it('reset of a field that was never stored changes nothing', () => {
+    const settings = seeded()
+    const draft = resetTuning(setTuning(draftOf(settings), 'minSpeechProb', 0.8), 'minSpeechProb')
+    expect(draft.tuning.minSpeechProb).toBeUndefined()
+    expect(writeOf(settings, draft).ops).toEqual([])
+  })
+
+  it('reset of a stored field writes its removal and leaves the section\'s other values and curve', () => {
+    const settings = seeded()
+    const write = writeOf(settings, resetTuning(draftOf(settings), 'pauseThresholdMs'))
+    expect(fieldsOf(write.ops)).toEqual(['rest'])
+    const rest = restOf(write.next)
+    expect(rest.stt?.turnTaking).toEqual({ commitMinDelayMs: 200, curve: { type: 'power', exponent: 2 } })
+    expect(voiceConfigFromSettings(write.next).stt?.turnTaking?.pauseThresholdMs).toBeUndefined()
+  })
+
+  it('resetting the last stored field of a section leaves the section empty, not missing', () => {
+    const settings = seeded()
+    const rest = restOf(writeOf(settings, resetTuning(draftOf(settings), 'minSpeechDurationS')).next)
+    expect(rest.stt?.vad).toEqual({})
   })
 })
