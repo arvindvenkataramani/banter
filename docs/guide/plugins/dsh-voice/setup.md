@@ -4,8 +4,7 @@ Build the plugin, install it into a dsh profile, and start dsh. The plugin targe
 
 ## Prerequisites
 
-- **The Banter server, running and reachable at the Banter server URL in the plugin's settings.** The plugin is required to use Banter's voice from DeepSeek Harness, and it is the only way to get voice there. Its speech traffic and the starting of speech services go through that server. Without it, turning voice on fails and the voice button shows the error colour.
-- **A running Banter server with speech services.** The plugin takes its speech recognition and speech synthesis from Banter, so register at least one speech-to-text and one text-to-speech server there. [Install Banter](../../install.md) first, then [connect speech servers](../../speech-servers.md).
+- **A running Banter server with speech services, reachable at the Banter server URL in the plugin's settings.** The plugin is required to use Banter's voice from DeepSeek Harness, and it is the only way to get voice there. It takes its speech recognition and speech synthesis from Banter, so register at least one speech-to-text and one text-to-speech server there: [install Banter](../../install.md) first, then [connect speech servers](../../speech-servers.md). The plugin's speech traffic and the starting of speech services go through that server. Without it, turning voice on fails and the voice button shows the error colour.
 - **A checkout of this repository** with its dependencies installed (`bun install` at the repo root, which [the install script](../../install.md#install-script) also runs).
 - **[Bun](https://bun.sh)** to build and install the plugin, and **Node.js** for `npx`.
 - **A browser that allows the microphone** on the dsh page. `localhost` and `127.0.0.1` count as secure; see [the https note](../../install.md).
