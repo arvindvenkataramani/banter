@@ -67,20 +67,14 @@ Everything else is in the [documentation index](docs/README.md).
 
 ## Architecture
 
-- **Control plane** — the always-on process. Serves the dashboard, holds the registry of every known service and host, runs periodic health checks, and exposes the API the dashboard uses.
-- **Dashboard** — a React SPA served by the control plane. Two pages: chat (the root route) and services. The whole voice pipeline runs here, in the browser.
-- **Control shard** (optional) — a full second control plane on a worker machine, so services can live on hardware that suits them. See [docs/guide/shard.md](docs/guide/shard.md).
-- **`services/`** — adapter servers that put an OpenAI-compatible API in front of speech models, for example the Python adapters under [`services/stt`](services/stt/faster-whisper/README.md) and [`services/tts`](services/tts/kokoro/README.md), or the Swift servers in [`services/fluid`](services/fluid/README.md) for Apple Silicon. Nothing installs itself; you install the ones you want and register each in the registry. See [docs/guide/models.md](docs/guide/models.md) for the options and [services/README.md](services/README.md) for how to install them.
-- **`plugins/openclaw/voice-mode/`** — installs into your OpenClaw gateway and tells the agent it is being spoken to rather than read, so it answers in a way that works out loud.
-- **`plugins/dsh/voice/`** — an optional plugin that brings voice into the web UI of DeepSeek Harness (dsh), taking speech from a Banter server. See [docs/guide/plugins/dsh-voice/](docs/guide/plugins/dsh-voice/README.md).
-- **`ops/`** — what a deployment needs outside the build: the install, deploy, start, stop and uninstall scripts, the systemd and launchd templates, and `service-control.sh` for driving a service by hand when the API is unavailable. None of it is required for local development. See [ops/README.md](ops/README.md) for the index.
-- **`scripts/`** — development tools: running the control plane or shard from source, building and smoke-testing the fluid servers, regenerating the API reference. See [scripts/README.md](scripts/README.md).
+Banter runs as a single server, the Banter server. It contains the **control plane** (the registry of services and machines, health checks, and starting speech services on demand) and serves the **web app**, the chat UI and the services page. Around it:
 
-[docs/reference/architecture.md](docs/reference/architecture.md) has the full picture — how a voice turn works end to end, and why the control plane exists at all.
+- **Voice engine** (`voice-engine/`): the voice loop (microphone, speech detection, turn-taking, playback). It runs in the browser, and is used by the web app and by the dsh plugin.
+- **Speech services** (`services/`): separate processes, adapters that put an OpenAI-compatible API in front of speech models. You choose the ones you want and register them; see [docs/guide/models.md](docs/guide/models.md) and [services/README.md](services/README.md), including the [faster-whisper](services/stt/faster-whisper/README.md), [Kokoro](services/tts/kokoro/README.md) and [fluid](services/fluid/README.md) adapters.
+- **Shard** (optional): another Banter server on a second machine, for services that need different hardware. It serves no web app, only the API the primary polls. See [docs/guide/shard.md](docs/guide/shard.md).
+- **Plugins**: [OpenClaw voice-mode](docs/guide/plugins/openclaw.md) tells the agent it is being spoken to, and [dsh voice](docs/guide/plugins/dsh-voice/README.md) brings voice into DeepSeek Harness.
 
-**Networking.** Any network where the machines can reach each other will do — nothing is required for control plane–shard connectivity or for reaching services. Endpoints default to plain `http`; set `scheme: "https"` per service or registry-wide when something terminates TLS, whether that's a reverse proxy, your own cert, or Tailscale Serve.
-
-If you want the dashboard on your phone while away from home, you need some way in from outside your network. [Tailscale](https://tailscale.com/) is one answer and the one Banter has built-in support for — set `tailscaleServe` on a service and it registers with `tailscale serve` on start, giving you an HTTPS address on your tailnet without opening a port to the internet. See [docs/guide/remote-access.md](docs/guide/remote-access.md) for the actual steps. Voice on a phone needs a secure page (`https`, or `localhost`); on a LAN, plain `http` is enough for text. Any other remote-access approach works too; Banter simply has no built-in support for it.
+The machines only need to reach each other; for voice from another device, see [remote access](docs/guide/remote-access.md). [docs/reference/architecture.md](docs/reference/architecture.md) has the full picture.
 
 ## Hardening
 
@@ -128,6 +122,8 @@ Run `bun run build` in `plugins/openclaw/voice-mode` after every change; the bui
 ### Where to start reading
 
 - [docs/reference/architecture.md](docs/reference/architecture.md) — the three-plane structure, and how the control plane and shard relate
+- [`ops/`](ops/README.md) — what a deployment needs outside the build: the install, deploy, start, stop and uninstall scripts, the systemd and launchd templates, and `service-control.sh` for driving a service by hand when the API is unavailable
+- [`scripts/`](scripts/README.md) — development tools: running the control plane or shard from source, building and smoke-testing the fluid servers, regenerating the API reference
 - [docs/reference/design/voice-system.md](docs/reference/design/voice-system.md) and [docs/reference/components/voice-turn-taking.md](docs/reference/components/voice-turn-taking.md) — how a voice session starts and ends, and how the human, agent and system sides share the floor
 - [docs/reference/protocols/](docs/reference/protocols/) — agent backend protocols, one directory per vendor: [OpenClaw](docs/reference/protocols/openclaw/) is what Banter speaks, [OpenCode](docs/reference/protocols/opencode/) is a second server it could attach to. The place to start if you want to point this at a different agent harness
 - [dashboard/UI.md](dashboard/UI.md) and [dashboard/ui-design-system.md](dashboard/ui-design-system.md) — the visual system
