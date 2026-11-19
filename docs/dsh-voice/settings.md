@@ -18,8 +18,8 @@ How the reply is spoken.
 | Model | The speech model on that provider. Shown when there is more than one. Only models that can stream speech are listed. |
 | Voice | The voice, from the chosen model's list. |
 | Speed | Speaking rate, 0.5x to 2x. |
-| Chunking scope | One set of chunking settings for every model, or settings kept per model. |
-| Chunking mode | How the reply is cut into pieces to speak: 2-chunk, Paragraph, Sentence or Greedy. |
+| Applies to | Whether the chunking settings are shared by every model or kept per model. |
+| How replies are split | The chunking mode: how the reply is cut into pieces to speak. 2-chunk, Paragraph, Sentence or Greedy. |
 | Min words, Max words | The shortest and longest piece spoken at a time. |
 | Reset to model defaults | Clears the per-model edits for the current model. |
 | Playback method | How audio reaches the browser: Auto, MMS, MSE or Blob. Leave on Auto unless speech stutters. Saved in this browser at once, not by Save, and applied when the page reloads. |
