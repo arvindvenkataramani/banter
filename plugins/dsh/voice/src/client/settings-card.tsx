@@ -364,7 +364,7 @@ function SpeechPanel({ draft, edit }: PanelProps) {
         <RadioChoices<ChunkStrategy>
           name="dv-mode"
           label="How replies are split"
-          description="Replies arrive a bit at a time and speech models voice limited text at once, so replies are spoken in pieces; the best split varies by model."
+          description="Replies are streamed and speech models handle limited text, so replies are split into chunks; the best settings depend on the model."
           value={mode}
           choices={MODE_CHOICES.map(choice => ({
             ...choice,
