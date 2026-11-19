@@ -2,7 +2,8 @@
 // of that box read back into the transcript. One mirror serves one attach of
 // voice to one session's box.
 
-import type { DshInputActions, DshInputState } from './dsh-types.ts'
+import type { DshInputActions, DshInputState }
+ from './dsh-types.ts'
 
 export interface DraftMirrorDeps {
   inputActions: DshInputActions
@@ -14,6 +15,8 @@ export interface DraftMirrorDeps {
     reportComposerSend(): void
     editTranscript(text: string): void
     takeTranscript(): string
+    /** The settled part of the transcript alone: typed text and settled utterances. */
+    settledText(): string
     /** The transcript as the box shows it now: settled text plus the pending words. */
     transcriptView(): string
     /** What each pending utterance shows, and how many of its leading words are already marked sent. */
@@ -31,6 +34,8 @@ export interface DraftMirrorDeps {
 export interface MirrorSnapshot {
   typing: boolean
   lastWrite: string | null
+  /** The text last copied from the box into the transcript, which settled words are compared against. */
+  copied: string | null
 }
 
 export interface DraftMirror {
@@ -84,10 +89,36 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   let sending = false
   /** The transcript view as last reported, shown in the box unless the person is typing. */
   let lastView = ''
+  /** The box text last copied into the transcript while typing; null when the box has not been copied. */
+  let copied: string | null = null
+
+  /** Puts the box's text into the transcript as the person's. */
+  const copyBox = (text: string): void => {
+    engine.editTranscript(text)
+    copied = text
+  }
+
+  /**
+   * While typing, words that settled in the transcript after the last copy of
+   * the box are not in the box: a late final, or words put back by a failed
+   * send while the box was away. They join `draft`, after it when they settled
+   * after the copy and ahead of it when they were put back ahead; the result
+   * is returned, and is what the box and the transcript then hold.
+   */
+  const withSettledWords = (draft: string): string => {
+    if (copied === null) return draft
+    const settled = engine.settledText()
+    if (settled === copied) return draft
+    if (settled.startsWith(copied)) return joinText(draft, settled.slice(copied.length).trim())
+    if (settled.endsWith(copied)) return joinText(settled.slice(0, settled.length - copied.length).trim(), draft)
+    return draft
+  }
 
   const setTyping = (value: boolean): void => {
     if (typing === value) return
     typing = value
+    // Settled words are compared against the box only while the person is typing in it.
+    if (!value) copied = null
     deps.onTypingChange?.(value)
   }
 
@@ -137,7 +168,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   }
 
   return {
-    snapshot: () => ({ typing, lastWrite }),
+    snapshot: () => ({ typing, lastWrite, copied }),
 
     onResume(snapshot) {
       seenRev = deps.readInput().draftRev
@@ -146,6 +177,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       sendClearing = false
       sending = false
       lastWrite = snapshot.lastWrite
+      copied = snapshot.copied
       // Typing carries over; otherwise the next transcript report brings the box up to date.
       if (snapshot.typing) setTyping(true)
     },
@@ -158,7 +190,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       sendClearing = false
       sending = false
       // The attached session's box is the transcript; text already in it is the person's.
-      engine.editTranscript(state.draft)
+      copyBox(state.draft)
       if (state.draft !== '') {
         lastWrite = null
         enterTyping()
@@ -192,23 +224,39 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
         return
       }
       sendClearing = false
-      if (!typing) enterTyping()
-      engine.editTranscript(state.draft)
+      if (!typing) {
+        enterTyping()
+        copied = null
+      }
+      const draft = withSettledWords(state.draft)
+      if (draft !== state.draft) deps.inputActions.setDraft(draft)
+      copyBox(draft)
     },
 
     onTranscriptChange(view) {
       lastView = view
+      if (typing) {
+        const draft = withSettledWords(deps.readInput().draft)
+        if (draft !== deps.readInput().draft) {
+          deps.inputActions.setDraft(draft)
+          copyBox(draft)
+        }
+        return
+      }
       showView()
     },
 
     onUnmute() {
       const text = deps.readInput().draft
-      engine.editTranscript(text)
+      copyBox(text)
       engine.setMicAutoMuted(false)
       engine.reportComposerFocus(false)
       lastWrite = text
       sendClearing = false
       setTyping(false)
+      // Words said while typing are pending still, and the box never showed them.
+      lastView = engine.transcriptView()
+      showView()
     },
 
     onDshSend() {
@@ -217,6 +265,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
       const own = !typing && state.draft !== '' && isOwn(state)
       engine.takeTranscript()
       if (own) markShownWords()
+      copied = null
       engine.reportComposerSend()
       engine.setMicAutoMuted(false)
       engine.reportComposerFocus(false)
@@ -241,7 +290,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
         draft = joinText(draft, since)
         deps.inputActions.setDraft(draft)
       }
-      engine.editTranscript(draft)
+      copyBox(draft)
     },
 
     clear() {
@@ -255,7 +304,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
         // The box is the person's: the words go ahead of what they have typed.
         const joined = joinText(text, deps.readInput().draft)
         deps.inputActions.setDraft(joined)
-        engine.editTranscript(joined)
+        copyBox(joined)
         return
       }
       restoreToTranscript(engine, text)

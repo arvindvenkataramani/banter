@@ -93,6 +93,16 @@ describe('transcript store — settleVisible', () => {
 
     expect(state()).toEqual({ settled: 'final', pending: [] })
   })
+
+  it('cuts a marked raw partial by its cleaned word count, so a filler word does not shift the cut', () => {
+    setPartial('a', 'um so I think', true)
+    markWordsSent('a', 4)
+
+    setPartial('a', 'um so I think we go', true)
+    settleVisible('a')
+
+    expect(state()).toEqual({ settled: 'we go', pending: [] })
+  })
 })
 
 describe('transcript store — the composer', () => {

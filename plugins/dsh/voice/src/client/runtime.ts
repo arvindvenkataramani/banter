@@ -120,10 +120,13 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
         patchUi({ notice: null })
       },
       // The words go back into the box, or into the transcript when no box is mounted, and the voice button says why they were not sent.
+      // The transcript is the attached session's draft, so a send that failed after voice moved to another session drops its words.
       sendFailed: (text, message) => {
-        const box = boxes.get(sessionId)
-        if (box) box.restore(text)
-        else restoreToTranscript({ editTranscript, takeTranscript }, text)
+        if (attached?.sessionId === sessionId) {
+          const box = boxes.get(sessionId)
+          if (box) box.restore(text)
+          else restoreToTranscript({ editTranscript, takeTranscript }, text)
+        }
         sendNotice = `Not sent: ${message}`
         patchUi({ notice: sendNotice })
       },

@@ -87,7 +87,10 @@ function drain(settled: string, pending: PendingUtterance[], sent: Record<string
   let out = settled
   let i = 0
   while (i < pending.length && pending[i].final !== null) {
-    const text = withoutFirstWords(pending[i].final as string, sent[pending[i].id]?.cut ?? 0)
+    const mark = sent[pending[i].id]
+    // A final settled from a raw partial still carries its filler words; the cut counts cleaned words.
+    const final = pending[i].final as string
+    const text = mark ? withoutFirstWords(cleanTranscript(final), mark.cut) : final
     if (text) out = out ? `${out} ${text}` : text
     i += 1
   }

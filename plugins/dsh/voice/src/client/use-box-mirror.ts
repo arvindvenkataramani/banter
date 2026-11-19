@@ -52,7 +52,7 @@ export function useBoxMirror({ runtime, sessionId, active, input, inputActions }
     const mirror = createDraftMirror({
       inputActions,
       readInput: () => inputRef.current,
-      engine: { setMicAutoMuted, reportComposerFocus, reportComposerSend, editTranscript, takeTranscript, markWordsSent, pendingDisplay: () => pendingDisplay(useTranscriptStore.getState()), transcriptView },
+      engine: { setMicAutoMuted, reportComposerFocus, reportComposerSend, editTranscript, takeTranscript, settledText: () => useTranscriptStore.getState().settled, markWordsSent, pendingDisplay: () => pendingDisplay(useTranscriptStore.getState()), transcriptView },
       onTypingChange: (typing) => { runtime.ui.set({ ...runtime.ui.get(), typing }) },
       onSend: () => { runtime.clearSendNotice() },
     })

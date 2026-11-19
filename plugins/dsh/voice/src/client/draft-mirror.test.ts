@@ -26,6 +26,7 @@ function setup(initialDraft = '') {
     reportComposerSend: vi.fn(() => { log.push('reportComposerSend') }),
     editTranscript: vi.fn((text: string) => { log.push('editTranscript'); editTranscript(text) }),
     takeTranscript: vi.fn(() => { log.push('takeTranscript'); return takeTranscript() }),
+    settledText: vi.fn(() => useTranscriptStore.getState().settled),
     pendingDisplay: vi.fn(() => pendingDisplay(useTranscriptStore.getState())),
     markWordsSent: vi.fn((id: string, count: number) => { log.push('markWordsSent'); markWordsSent(id, count) }),
     transcriptView: vi.fn(() => viewNow()),
@@ -435,10 +436,79 @@ describe('draft mirror — words in the box and the transcript that settles late
     expect(h.box.draft).toBe('the lost words typed now')
     expect(transcript()).toBe('the lost words typed now')
   })
+})
 
-  it('a failed voice send with no box goes ahead of what settled since', () => {
-    editTranscript('said since')
-    restoreToTranscript({ editTranscript, takeTranscript }, 'the lost words')
-    expect(transcript()).toBe('the lost words said since')
+describe('draft mirror — words that settle while the person types, and unmuting after', () => {
+  it('unmuting then typing before a pending utterance settles loses none of its words', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    setPartial('u1', 'one two three', true)
+    h.speak(viewNow())
+    h.type('one two three and')
+    // Words said while typing reach the transcript, not the box.
+    setPartial('u1', 'one two three four', true)
+    h.mirror.onTranscriptChange(viewNow())
+    expect(h.box.draft).toBe('one two three and')
+
+    h.mirror.onUnmute()
+    expect(h.box.draft).toBe('one two three and four')
+    h.type(`${h.box.draft}!`)
+    settle('u1', 'one two three four')
+    h.mirror.onTranscriptChange(viewNow())
+
+    expect(h.box.draft).toBe('one two three and four!')
+    expect(transcript()).toBe('one two three and four!')
+  })
+
+  it('a word that settles after the person starts typing joins the box and the transcript on the next keystroke, once', () => {
+    vi.useFakeTimers()
+    try {
+      const h = setup()
+      h.mirror.onAttach()
+      setPartial('u1', 'one two three', false)
+      vi.advanceTimersByTime(5000)
+      h.speak(viewNow())
+      // The reveal never shows the last, unsettled word.
+      expect(h.box.draft).toBe('one two')
+
+      h.type('one two!')
+      settle('u1', 'one two three')
+      h.type('one two!?')
+
+      expect(h.box.draft).toBe('one two!? three')
+      expect(transcript()).toBe('one two!? three')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a word that settles while typing shows in the box at once, and the next keystroke does not repeat it', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    setPartial('u1', 'one two', true)
+    h.speak(viewNow())
+    h.type('one two!')
+    settle('u1', 'one two three')
+    h.mirror.onTranscriptChange(viewNow())
+    expect(h.box.draft).toBe('one two! three')
+
+    h.type('one two! three?')
+
+    expect(h.box.draft).toBe('one two! three?')
+    expect(transcript()).toBe('one two! three?')
+  })
+
+  it('words put back by a failed voice send while the box was away survive the person typing when it returns', () => {
+    const h = setup()
+    h.mirror.onAttach()
+    h.type('typed')
+    const away = h.mirror.snapshot()
+
+    restoreToTranscript(h.engine, 'the lost words')
+    h.mirror.onResume(away)
+    h.type('typed!')
+
+    expect(h.box.draft).toBe('the lost words typed!')
+    expect(transcript()).toBe('the lost words typed!')
   })
 })
