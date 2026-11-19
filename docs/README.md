@@ -36,6 +36,7 @@ How it works, and what the knobs are.
 
 | Page | What it covers |
 |---|---|
+| [README.md](reference/README.md) | The developer guide: running from source, tests, changing a plugin, repository layout, where to start reading |
 | [configuration.md](reference/configuration.md) | `config.json` and `registry.json`: the minimum, services, runners, endpoints, CORS, voice settings, deployment, reloading |
 | [api.md](reference/api.md) | The control plane's HTTP API, generated from the route definitions |
 | [speech-server-api.md](reference/speech-server-api.md) | What a speech server must answer |

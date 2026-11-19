@@ -2,13 +2,14 @@
 
 ## Testing
 
-Run what covers the change before committing it:
+Run what covers the change before committing it. The commands are in the [developer guide's Tests section](docs/reference/README.md#tests).
 
-| Area | Command |
+| Area | Run |
 |---|---|
-| Control plane and shard | `bun test ./control` |
-| Dashboard | `bunx tsc -b` and `bunx vitest run`, in `dashboard/` |
-| Fluid servers | `swift test`, in `services/fluid/` |
+| Control plane and shard | The control tests |
+| Dashboard and voice engine | The dashboard's tests, lint and typecheck |
+| dsh plugin | The plugin's tests, lint and typecheck |
+| Fluid servers | The Swift tests, in `services/fluid/` |
 | `fluid-stt` as deployed | `scripts/fluid-smoke.sh`, after changes to `services/fluid` or the dashboard's voice clients |
 
 `fluid-smoke.sh` deploys into a scratch directory under a throwaway bundle identifier, so it never touches a running server, and removes everything it deployed on exit. [services/fluid/DEVELOPING.md](services/fluid/DEVELOPING.md) has the details.

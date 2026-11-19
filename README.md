@@ -55,19 +55,18 @@ An LLM or agent can follow [docs/guide/install.md](docs/guide/install.md) for yo
 
 ## Documentation
 
-Start with [install](docs/guide/install.md), then [speech servers](docs/guide/speech-servers.md)
-and [which models to run](docs/guide/models.md). Plugins:
-[OpenClaw](docs/guide/plugins/openclaw.md) · [DeepSeek Harness](docs/guide/plugins/dsh-voice/README.md).
-
+Start with [install](docs/guide/install.md), then [speech servers](docs/guide/speech-servers.md) and [which models to run](docs/guide/models.md).  
 Running it: [operations](docs/guide/operations.md) · [remote access](docs/guide/remote-access.md).
-Reference: [configuration](docs/reference/configuration.md) · [architecture](docs/reference/architecture.md) ·
-[adapting to another harness](docs/guide/adapting.md).
+
+Plugins: [OpenClaw](docs/guide/plugins/openclaw.md) · [DeepSeek Harness](docs/guide/plugins/dsh-voice/README.md).
+
+Reference: [configuration](docs/reference/configuration.md) · [architecture](docs/reference/architecture.md) · [adapting to another harness](docs/guide/adapting.md).
 
 Everything else is in the [documentation index](docs/README.md).
 
 ## Architecture
 
-Banter runs as a single server, the Banter server. It contains the **control plane** (the registry of services and machines, health checks, and starting speech services on demand) and serves the **web app**, the chat UI and the services page. Around it:
+Banter runs as a single server. It contains the **control plane** (the registry of services and machines, health checks, and starting speech services on demand) and serves the **web app**, the chat UI and the services page. Around it:
 
 - **Voice engine** (`voice-engine/`): the voice loop (microphone, speech detection, turn-taking, playback). It runs in the browser, and is used by the web app and by the dsh plugin.
 - **Speech services** (`services/`): separate processes, adapters that put an OpenAI-compatible API in front of speech models. You choose the ones you want and register them; see [docs/guide/models.md](docs/guide/models.md) and [services/README.md](services/README.md), including the [faster-whisper](services/stt/faster-whisper/README.md), [Kokoro](services/tts/kokoro/README.md) and [fluid](services/fluid/README.md) adapters.
@@ -95,40 +94,9 @@ This ships with defaults for one machine or a trusted network. A few things wort
 
 ## Forking and customising
 
-This is published as-is and only occasionally maintained; expect updates to come roughly once every six months. If you find bugs, do submit an issue or a PR, and feel free to fork it if a response is slow.
-
-### Running against the source
-
-```bash
-bun run control-dev
-```
-
-Control plane with Vite and HMR against the web app source. It reads the *deployed* config and registry, so it needs a completed install first — it iterates on an installation rather than replacing one. Re-run `ops/control-deploy.sh` to promote your changes.
-
-```bash
-cd dashboard && bun run test      # vitest
-cd dashboard && bun run lint      # eslint
-cd control && bun test            # control plane and shard
-```
-
-`bun test` in `control/` runs all of it; that package's own `test` script covers only the shared module.
-
-The install and deploy tooling lives in `ops/` ([ops/README.md](ops/README.md)), and the dev tools in `scripts/` ([scripts/README.md](scripts/README.md)); neither is needed for day-to-day dev beyond `bun run control-dev`.
-
-### Changing the plugin
-
-Run `bun run build` in `plugins/openclaw/voice-mode` after every change; the built `dist/` is what OpenClaw loads. [docs/guide/plugins/openclaw.md](docs/guide/plugins/openclaw.md#changing-the-plugin) has the details.
-
-### Where to start reading
-
-- [docs/reference/architecture.md](docs/reference/architecture.md) — the three-plane structure, and how the control plane and shard relate
-- [`ops/`](ops/README.md) — what a deployment needs outside the build: the install, deploy, start, stop and uninstall scripts, the systemd and launchd templates, and `service-control.sh` for driving a service by hand when the API is unavailable
-- [`scripts/`](scripts/README.md) — development tools: running the control plane or shard from source, building and smoke-testing the fluid servers, regenerating the API reference
-- [docs/reference/design/voice-system.md](docs/reference/design/voice-system.md) and [docs/reference/components/voice-turn-taking.md](docs/reference/components/voice-turn-taking.md) — how a voice session starts and ends, and how the human, agent and system sides share the floor
-- [docs/reference/protocols/](docs/reference/protocols/) — agent backend protocols, one directory per vendor: [OpenClaw](docs/reference/protocols/openclaw/) is what Banter speaks, [OpenCode](docs/reference/protocols/opencode/) is a second server it could attach to. The place to start if you want to point this at a different agent harness
-- [dashboard/UI.md](dashboard/UI.md) and [dashboard/ui-design-system.md](dashboard/ui-design-system.md) — the visual system
-
-Swapping the agent backend is the most likely large change, and the gateway docs exist for exactly that.
+Published as-is and only occasionally maintained (roughly every six months); issues and PRs
+are welcome, and forking is fine if a response is slow. To run it from source, run the tests,
+or change a plugin, see the [developer guide](docs/reference/README.md). Swapping the agent backend is the most likely large change; [protocols](docs/reference/protocols/) is where to start.
 
 ## Status and license
 
