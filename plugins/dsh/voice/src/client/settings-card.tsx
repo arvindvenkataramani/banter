@@ -117,10 +117,10 @@ interface PanelProps {
   edit: (change: (current: Draft) => Draft) => void
 }
 
-function Section({ title, aside, children }: { title: ReactNode; aside?: ReactNode; children: ReactNode }) {
+function Section({ title, aside, children }: { title?: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
     <section className="dv-section">
-      {aside === undefined ? (
+      {title === undefined ? null : aside === undefined ? (
         <h3 className="dv-heading">{title}</h3>
       ) : (
         <div className="dv-split">
@@ -161,7 +161,7 @@ function GeneralPanel({ draft, edit }: PanelProps) {
   const view = roster(draft)
   return (
     <>
-      <Section title="Banter server">
+      <Section>
         <Field id="dv-control-plane" label="Banter server URL">
           <Input
             id="dv-control-plane"
@@ -183,8 +183,6 @@ function GeneralPanel({ draft, edit }: PanelProps) {
             onChange={checked => { edit(d => setTakeover(d, checked ? 'always' : 'ask')) }}
           />
         )}
-      </Section>
-      <Section title="Conversation">
         <SwitchRow
           label="Keep voice on outside a conversation"
           description="Voice keeps running when you leave a conversation for another dsh page, instead of turning off."
@@ -372,8 +370,8 @@ function SpeechPanel({ draft, edit }: PanelProps) {
           </Button>
         </div>
       </Section>
-      <Section title="Playback">
-        <Field id="dv-streaming" label="Streaming method">
+      <Section>
+        <Field id="dv-streaming" label="Playback method">
           <SelectField
             id="dv-streaming"
             value={streaming}
@@ -401,15 +399,19 @@ function ListeningPanel({ draft, edit }: PanelProps) {
   const view = roster(draft)
   return (
     <>
-      {view.sttOptions.length > 1 && (
-        <Section title="Transcription">
-          <Field id="dv-stt" label="Provider">
+      {view.sttOptions.length > 0 && (
+        <Section>
+          <Field id="dv-stt" label="Transcription provider">
             <SelectField
               id="dv-stt"
               value={draft.sttServiceId}
               options={view.sttOptions.map(o => ({ value: o.serviceId, label: o.name }))}
               onChange={value => { edit(d => setSttService(d, value)) }}
             />
+            <p className="dv-help">
+              The speech-to-text server that turns what you say into text.{' '}
+              <a className="dv-link" href={doc('docs/setup/stt.md')} target="_blank" rel="noreferrer">Setting up STT servers</a>
+            </p>
           </Field>
         </Section>
       )}
@@ -417,7 +419,7 @@ function ListeningPanel({ draft, edit }: PanelProps) {
         { section: 'vad', title: 'Speech detection' },
         { section: 'turnTaking', title: 'Turn taking' },
       ] as const).map(group => (
-        <Section key={group.section} title={<>{group.title}<code>stt.{group.section}</code></>}>
+        <Section key={group.section} title={group.title}>
           {TUNING_FIELDS.filter(f => f.section === group.section).map(f => {
             const value = draft.tuning[f.key]
             return (
