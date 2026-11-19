@@ -1,6 +1,6 @@
 # services/
 
-For **which** models to run and what each one needs, see [../docs/setup/models.md](../docs/setup/models.md). This page is about the adapter code.
+For **which** models to run and what each one needs, see [../docs/guide/models.md](../docs/guide/models.md). This page is about the adapter code.
 
 Adapter code and install docs for the STT/TTS model servers this repo ships. Banter installs none of them, and installs no Python: each adapter's README says how to install it. Once you've installed one and registered it, the control plane starts it via the service's `runner` entry in your `registry.json` (as its `lifecycle` settings say), health-gates it on `network.healthPath`, and, if the entry sets `tailscaleServe`, exposes it to the browser via `tailscale serve`.
 
@@ -20,7 +20,7 @@ Two kinds of entries here:
 | `fluid` (`fluid-stt`) | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`, `WS /v1/audio/stream` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
 | `fluid` (`fluid-tts`) | TTS | `GET /healthz`, `POST /v1/audio/speech`, `WS /v1/audio/stream` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
 
-Every adapter reads its allowlist as a comma-separated list of origins and sends no CORS headers when it is unset, so the browser refuses every call. Set it under the service's `ops.env.variables` to the origins you open the dashboard from. `scripts/install.sh` fills each `*_CORS_ORIGINS` variable in a fresh registry it seeds; see [docs/setup/speech-servers.md](../docs/setup/speech-servers.md#cors).
+Every adapter reads its allowlist as a comma-separated list of origins and sends no CORS headers when it is unset, so the browser refuses every call. Set it under the service's `ops.env.variables` to the origins you open the dashboard from. `scripts/install.sh` fills each `*_CORS_ORIGINS` variable in a fresh registry it seeds; see [docs/guide/speech-servers.md](../docs/guide/speech-servers.md#cors).
 
 A Python adapter runs from its service's `ops.env.workingDirectory`, so the install is the same for each: create `<workingDirectory>/logs` (the control plane writes the service's output there and fails to start it otherwise), copy `server.py` and `requirements.txt` into the working directory, and create `.venv` there with `pip install -r requirements.txt`. The adapter's own README gives the exact commands and anything extra.
 
@@ -33,7 +33,7 @@ Registry `runner.main` forms. Python adapters run under the venv's interpreter d
 .venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port {port}   # whisper
 ```
 
-`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags: what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/setup/voices-and-models.md](../docs/setup/voices-and-models.md)). `services/fluid/registry.fluid.example.json` registers them as:
+`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags: what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/guide/voices-and-models.md](../docs/guide/voices-and-models.md)). `services/fluid/registry.fluid.example.json` registers them as:
 
 ```
 fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt

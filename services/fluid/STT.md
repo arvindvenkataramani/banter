@@ -52,7 +52,7 @@ The server starts holding no model. The first request that needs one loads it â€
 
 `--bind local` (the default) listens on `127.0.0.1` only, which is what a local proxy such as Tailscale Serve forwards to: the proxy sits in front, registered for the service by the node that runs it, and the process itself binds no public interface. `--bind all` listens on every interface, the Tailscale one included, over plain HTTP, which is what a LAN setup uses. Any other value fails at startup.
 
-Optional CORS: set `FLUID_CORS_ORIGINS` (comma-separated origins) before starting. When the browser reaches the server directly, it must list the dashboard's origin; [../../docs/setup/shard.md](../../docs/setup/shard.md) describes that path.
+Optional CORS: set `FLUID_CORS_ORIGINS` (comma-separated origins) before starting. When the browser reaches the server directly, it must list the dashboard's origin; [../../docs/guide/shard.md](../../docs/guide/shard.md) describes that path.
 
 ## Models
 

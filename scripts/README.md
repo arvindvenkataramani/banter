@@ -8,7 +8,7 @@ Nothing here is required to run banter — `bun run control-dev` needs none of i
 
 | Script | What it does |
 |---|---|
-| `install.sh` | Everything in [docs/setup/install.md](../docs/setup/install.md) up through a running control plane: dependencies, model assets, config (prompts for the OpenClaw gateway URL/token, or reads `OPENCLAW_GATEWAY_URL`/`OPENCLAW_GATEWAY_TOKEN`), and deploying as a service on Linux or macOS. Writes `registry.json` and `config.json` at the top of `$BANTER_PROD` from the example files, filling in the gateway URL and token and every `*_CORS_ORIGINS` variable. It installs no speech servers and no Python packages, and builds nothing under `services/`; see [docs/setup/speech-servers.md](../docs/setup/speech-servers.md). |
+| `install.sh` | Everything in [docs/guide/install.md](../docs/guide/install.md) up through a running control plane: dependencies, model assets, config (prompts for the OpenClaw gateway URL/token, or reads `OPENCLAW_GATEWAY_URL`/`OPENCLAW_GATEWAY_TOKEN`), and deploying as a service on Linux or macOS. Writes `registry.json` and `config.json` at the top of `$BANTER_PROD` from the example files, filling in the gateway URL and token and every `*_CORS_ORIGINS` variable. It installs no speech servers and no Python packages, and builds nothing under `services/`; see [docs/guide/speech-servers.md](../docs/guide/speech-servers.md). |
 
 ## Control plane
 
@@ -32,7 +32,7 @@ Two of these are called by the machinery rather than by you:
 
 ## Worker machine (shard)
 
-Run these on the worker. See [../docs/setup/shard.md](../docs/setup/shard.md).
+Run these on the worker. See [../docs/guide/shard.md](../docs/guide/shard.md).
 
 | Script | What it does |
 |---|---|
@@ -77,4 +77,4 @@ A non-default `BANTER_PROD` under the default `BANTER_UNIT` is refused: every st
 
 A unit file cannot expand a shell variable, so `ops/systemd/banter.service.template` is rendered at install time with the deploy path substituted in.
 
-See [../docs/setup/configuration.md](../docs/setup/configuration.md#deployment) for the rest.
+See [../docs/reference/configuration.md](../docs/reference/configuration.md#deployment) for the rest.

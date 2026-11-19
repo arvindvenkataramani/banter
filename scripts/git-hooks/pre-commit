@@ -3,19 +3,19 @@
 # core.hooksPath here. In a clone that did not run it:
 #   git config core.hooksPath scripts/git-hooks
 
-# docs/api-reference.md is generated from the route definitions under control/.
+# docs/reference/api.md is generated from the route definitions under control/.
 # A commit touching control/ carries the reference regenerated from it, so the
 # file in the repo always matches the code beside it. A failed generation warns
 # and lets the commit through.
 if git diff --cached --name-only -- control/ | grep -q .; then
   root="$(git rev-parse --show-toplevel)"
   if (cd "$root" && bun run docs >/dev/null 2>&1); then
-    if ! git diff --quiet -- "$root/docs/api-reference.md"; then
-      git add -- "$root/docs/api-reference.md"
-      echo "[pre-commit] docs/api-reference.md regenerated and added to this commit."
+    if ! git diff --quiet -- "$root/docs/reference/api.md"; then
+      git add -- "$root/docs/reference/api.md"
+      echo "[pre-commit] docs/reference/api.md regenerated and added to this commit."
     fi
   else
-    echo "[pre-commit] warning: bun run docs failed; docs/api-reference.md not regenerated." >&2
+    echo "[pre-commit] warning: bun run docs failed; docs/reference/api.md not regenerated." >&2
   fi
 fi
 

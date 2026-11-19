@@ -1,5 +1,5 @@
 // The routes only a shard serves: /status, demand-loaded start and stop, the
-// roster, and registry reload. Promises: docs/control-shard.md, "Additional
+// roster, and registry reload. Promises: docs/reference/components/control-shard.md, "Additional
 // HTTP endpoints". The ping route is tested with idle eviction in idle.test.ts.
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";

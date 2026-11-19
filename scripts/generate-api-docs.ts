@@ -256,6 +256,6 @@ if (spec.components?.schemas && Object.keys(spec.components.schemas).length > 0)
 }
 
 // Write output
-const outPath = join(import.meta.dir, "../docs/api-reference.md");
+const outPath = join(import.meta.dir, "../docs/reference/api.md");
 await writeFile(outPath, md.join("\n") + "\n");
 console.log(`Wrote ${outPath}`);

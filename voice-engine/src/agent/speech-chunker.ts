@@ -1,4 +1,4 @@
-// Design: docs/components/voice-turn-taking.md
+// Design: docs/reference/components/voice-turn-taking.md
 
 import { TextChunker } from './text-chunker'
 import type { VoiceSession } from '../session'

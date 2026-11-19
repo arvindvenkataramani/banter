@@ -1,4 +1,4 @@
-// Design: docs/components/voice-turn-taking.md
+// Design: docs/reference/components/voice-turn-taking.md
 
 import { create } from 'zustand'
 import { emptyReveal, receive, advance, backlog, intervalFor, revealed } from '../human/word-reveal'

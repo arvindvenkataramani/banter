@@ -8,7 +8,7 @@ import type { VoiceConfig, VoiceSelection } from '../voice-config'
 import type { SttTransport } from '../human/stt-transport'
 import type { VoiceSession } from '../session'
 
-// Design record: docs/design/voice-system.md. The collaborators are fakes; the
+// Design record: docs/reference/design/voice-system.md. The collaborators are fakes; the
 // turn manager's mode, the mutes and the session store are the real stores.
 
 // ── Fixtures ─────────────────────────────────────────────────────────────

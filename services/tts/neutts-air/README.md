@@ -64,7 +64,7 @@ Copy `voices.example.yaml` to `voices.yaml` beside `server.py` and point it at y
 }
 ```
 
-[docs/setup/tts.md](../../../docs/setup/tts.md#neutts-air) has the matching `roster.providers` entry and `config.json` selection.
+[docs/guide/tts.md](../../../docs/guide/tts.md#neutts-air) has the matching `roster.providers` entry and `config.json` selection.
 
 ## Test
 

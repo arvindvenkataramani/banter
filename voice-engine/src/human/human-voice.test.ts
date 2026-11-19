@@ -5,7 +5,7 @@ import type { Report, Utterance } from '../turn-manager'
 
 // The loop is faked with the state it exposes to HumanVoice — `micState`,
 // `utteranceInProgress`, `micMuted` — kept the way the real loop keeps them
-// (docs/components/voice-turn-taking.md, MicLoop), and driven through
+// (docs/reference/components/voice-turn-taking.md, MicLoop), and driven through
 // its callbacks. mic-loop.test.ts covers the loop itself.
 class FakeMicLoop {
   static last: FakeMicLoop

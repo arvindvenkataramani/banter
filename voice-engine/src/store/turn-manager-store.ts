@@ -1,4 +1,4 @@
-// Design: docs/components/voice-turn-taking.md
+// Design: docs/reference/components/voice-turn-taking.md
 
 import { create } from 'zustand'
 import { initialTurnManagerState, reduce, snapshot } from '../turn-manager'

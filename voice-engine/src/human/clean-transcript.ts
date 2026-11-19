@@ -1,4 +1,4 @@
-// Design: docs/components/voice-turn-taking.md
+// Design: docs/reference/components/voice-turn-taking.md
 
 /** Strip filler words from Parakeet transcripts. */
 export function cleanTranscript(text: string): string {

@@ -4,7 +4,7 @@
 
 *Read against dsh `66491b05e3` (`dsh-v0.2.2-rc.1`, the npm `latest` release), checked out at `~/Code/contrib/deepseek-harness`. Line citations below are at that commit.*
 
-Companions: [`dev/design/agent-backend-abstraction.md`](../design/agent-backend-abstraction.md) for where dsh sits among Banter's backends, [`dev/design/voice-engine-package.md`](../design/voice-engine-package.md) for the engine package the plugin would consume, and [`docs/gateway/dsh/dsh-web-protocol.md`](../../docs/gateway/dsh/dsh-web-protocol.md) for dsh's wire.
+Companions: [`dev/design/agent-backend-abstraction.md`](../design/agent-backend-abstraction.md) for where dsh sits among Banter's backends, [`dev/design/voice-engine-package.md`](../design/voice-engine-package.md) for the engine package the plugin would consume, and [`docs/reference/protocols/dsh/dsh-web-protocol.md`](../../docs/reference/protocols/dsh/dsh-web-protocol.md) for dsh's wire.
 
 ---
 

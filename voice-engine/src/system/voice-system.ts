@@ -1,4 +1,4 @@
-// Design: docs/design/voice-system.md
+// Design: docs/reference/design/voice-system.md
 //
 // The system: the third actor the voice floor names, alongside the human and
 // agent sides. It owns the phase, the session id, the session's services and

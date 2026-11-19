@@ -11,7 +11,7 @@
 # reported and its service skipped; a service whose artifacts all match what is
 # installed is not touched at all, so running this on every deploy is cheap.
 #
-# Design: docs/design/service-install.md.
+# Design: docs/reference/design/service-install.md.
 
 source "$(dirname "${BASH_SOURCE[0]}")/deploy-env.sh"
 

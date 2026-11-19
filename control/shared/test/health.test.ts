@@ -1,5 +1,5 @@
 // Probing services and recording what the probe finds.
-// Promises: docs/components/health-checker.md; healthExpect and managed runners in registry.md.
+// Promises: docs/reference/components/health-checker.md; healthExpect and managed runners in registry.md.
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";

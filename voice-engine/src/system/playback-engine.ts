@@ -1,4 +1,4 @@
-// Design: docs/components/voice-turn-taking.md
+// Design: docs/reference/components/voice-turn-taking.md
 
 import { STREAMING_BACKEND } from './streaming-backend'
 import { element as deviceElement, unlockElement as unlockDeviceElement } from '../devices'

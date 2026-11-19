@@ -8,7 +8,7 @@
  * inside the loop is the design failing, because the difference is supposed to
  * be here.
  *
- * Design record: docs/design/voice-loop-streaming-stt.md.
+ * Design record: docs/reference/design/voice-loop-streaming-stt.md.
  */
 
 export interface SttTransport {

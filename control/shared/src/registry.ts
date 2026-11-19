@@ -58,7 +58,7 @@ const DEFAULTABLE_GROUPS = new Set(["permissions", "network", "lifecycle"]);
 // http unless `scheme` says otherwise — per service, or once in
 // `defaults.network` for the whole registry. Banter does not assume a tailnet,
 // so a LAN or plain-IP install works as shipped; a tailnet install sets
-// `scheme: "https"` in `defaults.network`. See docs/setup/remote-access.md for why
+// `scheme: "https"` in `defaults.network`. See docs/guide/remote-access.md for why
 // https is the safer choice where it is available.
 //
 // Nothing infers the protocol. `listenAddress` says which address, and

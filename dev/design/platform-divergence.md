@@ -68,7 +68,7 @@ Banter changes that platform lacks. They stay.
 - **Dashboard lint fixes:** `caughtErrorsIgnorePattern` in `eslint.config.js`, `gateway-context.tsx` deriving the connection with `useMemo`, the `use-session-manager.ts` effect dependencies, `use-wake-lock.ts`'s targeted exemption, `services/page.tsx` depending on `[load]`, and `service-history.tsx` deriving its loading state.
 - **`CONTRIBUTING.md`:** the testing table and the human-review list.
 - **Open-source files with no platform counterpart:** `LICENSE`, `NOTICE`, `SECURITY.md`, `.github/`, `.nvmrc`, `install.sh`, `render-plist.sh`, `dashboard/scripts/fetch-models.ts` and the `setup` script, the example registries and config, `services/README.md`, `services/fluid/README.md` and `DEVELOPING.md`.
-- **Harness-agnostic docs:** `docs/gateway/dsh/` and `docs/gateway/opencode/`.
+- **Harness-agnostic docs:** `docs/reference/protocols/dsh/` and `docs/reference/protocols/opencode/`.
 - **Page security notice:** the settings dialog warns when the page is not a secure context, so voice can't reach the microphone, and notes when a secure page is not cross-origin isolated, so the voice models run on one thread (`features/settings/page-security-notice.tsx`, `voice-page-support.ts`). Platform is always served over https, so it never shows.
 - **Cross-platform example services:** the example registries register Banter's own `services/stt/faster-whisper` and `services/tts/kokoro` adapters; the fluid servers are an Apple Silicon option in `services/fluid/registry.fluid.example.json`. Every Python adapter reads its CORS allowlist from a `*_CORS_ORIGINS` variable and sends no CORS headers without one.
 
@@ -121,6 +121,6 @@ Live config's git-backed history of the live files (`history.ts`).
 - **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
 - **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
-  - `onnxruntime-web` 1.31.1, in `voice-engine/package.json`: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade; [turn-taking.md](../../docs/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.
+  - `onnxruntime-web` 1.31.1, in `voice-engine/package.json`: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade; [turn-taking.md](../../docs/reference/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.
   - The FluidAudio fork, at a commit: Banter's patches depend on it.
 - **OpenClaw tools stay** (see above).

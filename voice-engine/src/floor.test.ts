@@ -16,7 +16,7 @@ import type { Activity } from './run-event'
 
 // The turn manager's reduction rules, one test per rule, grouped by subject.
 // Each test is named by the rule it protects; the transitions they add up to
-// are described in docs/design/voice-floor.md and `turn-manager.ts`.
+// are described in docs/reference/design/voice-floor.md and `turn-manager.ts`.
 
 const CONFIG: TurnManagerConfig = { interruptionMinRemainingS: 0.5 }
 const ABOVE = 2.0

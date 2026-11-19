@@ -8,7 +8,7 @@
  * A socket dies once and is not reopened. Reconnecting means building another,
  * which is the voice loop's work, not this class's.
  *
- * Protocol: docs/speech-server-api.md.
+ * Protocol: docs/reference/speech-server-api.md.
  */
 
 /** Proof the client is alive while it sends no audio. The server keeps a quiet session regardless, reclaiming only after thirty minutes of nothing, so this is well inside it. */
@@ -16,7 +16,7 @@ const KEEPALIVE_INTERVAL_MS = 4000
 
 /**
  * Close codes 4001–4010 map onto the protocol's error codes
- * (docs/speech-server-api.md). A close in this range with no preceding error frame — `replaced`
+ * (docs/reference/speech-server-api.md). A close in this range with no preceding error frame — `replaced`
  * closes with no error frame at all — is mapped here so the caller still
  * gets the code.
  */
@@ -57,7 +57,7 @@ export interface SttSocketCallbacks {
   /**
    * The session is over: a close, an error frame, or a failure to connect.
    * Fires exactly once per socket. `code` is the protocol error code
-   * (docs/speech-server-api.md) when the server named one, either on an error
+   * (docs/reference/speech-server-api.md) when the server named one, either on an error
    * frame or as a close in the 4001–4010 range; null otherwise.
    */
   onClosed: (reason: string, code: string | null) => void

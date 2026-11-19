@@ -4,7 +4,7 @@
 
 The tool-permission approval layer (item 5 below) can be built on its own, against OpenClaw's gateway, with no ACP work.
 
-Wire-level detail lives with the protocol notes: [`docs/gateway/openclaw/`](../../docs/gateway/openclaw/) for what Banter speaks today, [`docs/gateway/opencode/opencode-server-protocol.md`](../../docs/gateway/opencode/opencode-server-protocol.md) for a second server it could attach to, and [`docs/gateway/dsh/dsh-web-protocol.md`](../../docs/gateway/dsh/dsh-web-protocol.md) for a third that has a native server but refuses outside clients.
+Wire-level detail lives with the protocol notes: [`docs/reference/protocols/openclaw/`](../../docs/reference/protocols/openclaw/) for what Banter speaks today, [`docs/reference/protocols/opencode/opencode-server-protocol.md`](../../docs/reference/protocols/opencode/opencode-server-protocol.md) for a second server it could attach to, and [`docs/reference/protocols/dsh/dsh-web-protocol.md`](../../docs/reference/protocols/dsh/dsh-web-protocol.md) for a third that has a native server but refuses outside clients.
 
 ---
 

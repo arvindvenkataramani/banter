@@ -10,7 +10,7 @@ import Foundation
 /// weights.
 ///
 /// Contract: `schemas/platform.schema.json#/$defs/ttsModel`. Design record:
-/// `docs/design/model-roster.md`.
+/// `docs/reference/design/model-roster.md`.
 
 /// One model as the roster declares it.
 struct TtsRosterEntry: Sendable, Codable {

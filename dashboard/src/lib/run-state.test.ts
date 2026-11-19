@@ -10,7 +10,7 @@ import {
 } from './run-state'
 import type { ChatEventPayload } from './gateway-types'
 
-// Promises: docs/components/chat.md, "Run signalling" and "Run state".
+// Promises: docs/reference/components/chat.md, "Run signalling" and "Run state".
 //
 // Fixtures are trimmed to the fields normalizeAgentEvent reads, lifted from
 // probe captures under control/probe/captures/: tool phases and lifecycle

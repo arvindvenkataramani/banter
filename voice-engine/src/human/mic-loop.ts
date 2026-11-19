@@ -1,4 +1,4 @@
-// Design: docs/components/voice-turn-taking.md
+// Design: docs/reference/components/voice-turn-taking.md
 
 import { UtteranceBuffer } from './utterance-buffer'
 import { SileroVad } from './silero-vad'

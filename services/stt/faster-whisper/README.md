@@ -11,7 +11,7 @@ faster-whisper has no Metal backend, so on a Mac it runs on the CPU. On Apple Si
 | `GET /healthz` | `{"status": "ok", "model": "<name>"}`, once the model is loaded |
 | `POST /audio/transcriptions` and `POST /v1/audio/transcriptions` | multipart `file`, plus optional `language` and `response_format` |
 
-`response_format` `text` returns plain text. Every other value, `verbose_json`, `srt` and `vtt` included, returns JSON with `text`, `language` and, where faster-whisper reports it, `duration`. The model is fixed when the server starts: a `model` field in the request is accepted and ignored. There are no streaming or `/v1/models` routes, so leave `voice.stt.model` unset and the dashboard transcribes in batch ([speech-server-api.md](../../../docs/speech-server-api.md)).
+`response_format` `text` returns plain text. Every other value, `verbose_json`, `srt` and `vtt` included, returns JSON with `text`, `language` and, where faster-whisper reports it, `duration`. The model is fixed when the server starts: a `model` field in the request is accepted and ignored. There are no streaming or `/v1/models` routes, so leave `voice.stt.model` unset and the dashboard transcribes in batch ([speech-server-api.md](../../../docs/reference/speech-server-api.md)).
 
 ## Install
 
