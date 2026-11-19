@@ -118,7 +118,7 @@ Live config's git-backed history of the live files (`history.ts`).
   - whisper's loopback bind
 - **The Kokoro and NeuTTS-Air adapters stay**, as cross-platform speech options. Platform has retired them.
 - **Banter installs no Python.** `install.sh` seeds the registry and points at each adapter's README, which tells a user how to install it.
-- **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
+- **`dev/probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
 - **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
   - `onnxruntime-web` 1.31.1, in `voice-engine/package.json`: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade; [turn-taking.md](../../docs/reference/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.

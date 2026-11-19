@@ -9,7 +9,7 @@ It is a single HTML page with no build step, no framework and no imports from th
 ## Running it
 
 ```bash
-probes/browser-audio/serve.sh
+dev/probes/browser-audio/serve.sh
 ```
 
 It prints the address to open. You need `python3`; Tailscale is optional.

@@ -144,7 +144,7 @@ Status: implemented. Which STT and TTS services exist is whatever the registry l
 
 ### Streamed audio seams
 
-A server that encodes each streamed chunk as a complete standalone container file puts one container header per chunk in the response and an audible gap at every chunk boundary. A server must hold one encoder open per response, so the stream is one continuous file. `probes/browser-audio/` is a browser test page for this class of problem: it reports what the browser's MediaSource actually accepts and what arrives off the wire, which the dashboard's own playback path does not show.
+A server that encodes each streamed chunk as a complete standalone container file puts one container header per chunk in the response and an audible gap at every chunk boundary. A server must hold one encoder open per response, so the stream is one continuous file. `dev/probes/browser-audio/` is a browser test page for this class of problem: it reports what the browser's MediaSource actually accepts and what arrives off the wire, which the dashboard's own playback path does not show.
 
 Two consequences for the browser side, relevant if the response format changes:
 

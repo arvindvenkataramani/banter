@@ -2,7 +2,7 @@
 
 Instruments for questions Banter cannot answer about itself, because Banter is the thing under test.
 
-[`control/probe`](../control/probe/README.md) states the principle for the gateway: reading the dashboard's behaviour tells you what the dashboard understands. The same holds wherever a question is about the browser, the device or the network rather than about Banter's code. An answer measured through the dashboard is an answer about the dashboard.
+[`control/probe`](../../control/probe/README.md) states the principle for the gateway: reading the dashboard's behaviour tells you what the dashboard understands. The same holds wherever a question is about the browser, the device or the network rather than about Banter's code. An answer measured through the dashboard is an answer about the dashboard.
 
 What lives here is deliberately primitive: no build step, no framework, no imports from this repo. A probe that shares the application's machinery shares its assumptions, and a probe that needs the application to run cannot be used when the application is what is broken.
 
