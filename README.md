@@ -94,9 +94,7 @@ This ships with defaults for one machine or a trusted network. A few things wort
 
 ## Forking and customising
 
-Published as-is and only occasionally maintained (roughly every six months); issues and PRs
-are welcome, and forking is fine if a response is slow. To run it from source, run the tests,
-or change a plugin, see the [developer guide](docs/reference/README.md). Swapping the agent backend is the most likely large change; [protocols](docs/reference/protocols/) is where to start.
+Published as-is and only occasionally maintained (roughly every six months); issues and PRs are welcome, and forking is fine if a response is slow. To run it from source, run the tests, or change a plugin, see the [developer guide](docs/reference/README.md). Swapping the agent backend is the most likely large change; [protocols](docs/reference/protocols/) is where to start.
 
 ## Status and license
 
