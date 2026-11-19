@@ -14,7 +14,7 @@ openclaw plugins install .
 
 Build first: OpenClaw loads `dist/index.js`, so an unbuilt plugin installs and does nothing. Point the install at the directory, not the file; the entry point comes from `package.json`.
 
-Set `sessionKeyPrefix` in the plugin's config to `agent:<your-agent-id>:`. Session keys are `agent:<agent-id>:<session>`, and the agent id comes from your gateway. The shipped default is a placeholder and matches nothing.
+The plugin works with a dedicated agent for voice: every session of that agent gets the voice guidance, and your other agents are untouched. Session keys are `agent:<agent-id>:<session>`, and the plugin matches them against `sessionKeyPrefix`, which defaults to `agent:voice:`, an agent with the id `voice`. If your voice agent has another id, set `sessionKeyPrefix` to `agent:<that-id>:`, and point Banter at that agent.
 
 `openclaw plugins list` shows the plugin as enabled once installed.
 
