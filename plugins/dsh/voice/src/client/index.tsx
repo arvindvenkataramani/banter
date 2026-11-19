@@ -18,11 +18,6 @@ export const ENTRY_ID = 'dsh-voice'
 /** The dsh services this entry needs before `apply` runs. */
 export const inject = ['slots', 'sessions', 'layout', 'configForms', 'shortcuts']
 
-/** Mic mute. Space types in dsh's editor, so the default is a modified key, rebindable in dsh's shortcut settings. */
-const MIC_SHORTCUT_BINDING = { code: 'KeyM', modifiers: ['primary', 'alt'] } as const
-/** dsh admits only three web combinations on Linux, and this is the one no dsh command uses. */
-const MIC_SHORTCUT_WEB_LINUX = { code: 'Comma', modifiers: ['primary', 'shift'] } as const
-
 export function apply(ctx: DshClientContext): void {
   const origin = window.location.origin
   const shown = createShownSession(ctx)
@@ -52,14 +47,7 @@ export function apply(ctx: DshClientContext): void {
     id: 'voice.toggleMic',
     label: () => 'Mute or unmute the voice mic',
     aliases: ['voice mute', 'mute microphone'],
-    defaults: {
-      'desktop:macos': MIC_SHORTCUT_BINDING,
-      'desktop:windows': MIC_SHORTCUT_BINDING,
-      'desktop:linux': MIC_SHORTCUT_BINDING,
-      'web:macos': MIC_SHORTCUT_BINDING,
-      'web:windows': MIC_SHORTCUT_BINDING,
-      'web:linux': MIC_SHORTCUT_WEB_LINUX,
-    },
+    defaults: {},
     regions: ['page', 'editable'],
     modals: [],
     resolve: () => (useVoiceSystemStore.getState().phase === 'live'

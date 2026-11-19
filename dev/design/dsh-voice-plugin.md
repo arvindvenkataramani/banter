@@ -71,7 +71,7 @@ A workspace in this repo at `plugins/dsh/voice/`, beside `plugins/openclaw/voice
 |---|---|---|---|
 | Auto-mute trigger | Focusing the text field | A draft change the plugin did not make | Chosen in design review: the slot contract gives a plugin the draft and its revision (`slots.ts:385-392`), and a change the plugin did not make is what it can observe without reaching into dsh's editor |
 | Auto-mute end | Blur | Send through dsh, or manual unmute | Follows the trigger (impossible) |
-| Mute shortcut | Space | A registered dsh shortcut | Space types in dsh's editor (fragile) |
+| Mute shortcut | Space | No default; bindable in dsh's shortcuts settings | A default key risks conflicts with system and keyboard-layout shortcuts, and dsh already provides the binding UI |
 | Save mic samples | A Debug tab switch posts samples to the control plane's server | Absent, with the Debug tab | It posts to Banter's own server route, which dsh's origin does not serve |
 | Reply already streaming at attach | Spoken | Not spoken; the next reply is | A plugin joins a UI that already shows the reply, so it does not read out text already on screen |
 | Error notice | Toast | Error colour on the voice button, reason in its tooltip | No plugin toast found in dsh's slot contracts (impossible, unconfirmed) |

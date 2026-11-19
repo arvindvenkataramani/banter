@@ -100,7 +100,7 @@ export interface DshShortcutCommand {
   readonly id: string
   readonly label: () => string
   readonly aliases: readonly string[]
-  readonly defaults: Readonly<Record<string, { readonly code: string; readonly modifiers: readonly ('primary' | 'control' | 'alt' | 'shift' | 'meta')[] }>>
+  readonly defaults: Readonly<Partial<Record<string, { readonly code: string; readonly modifiers: readonly ('primary' | 'control' | 'alt' | 'shift' | 'meta')[] }>>>
   readonly regions: readonly ('page' | 'editable' | 'terminal')[]
   readonly modals: readonly string[]
   resolve(context: unknown): { readonly status: 'handled'; run(): void } | { readonly status: 'blocked'; readonly reason: string } | { readonly status: 'pass' }

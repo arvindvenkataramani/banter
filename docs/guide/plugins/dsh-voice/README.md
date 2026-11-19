@@ -42,15 +42,7 @@ If voice cannot start, the microphone button turns red and its tooltip gives the
 
 ## The mic shortcut
 
-While voice is on, a keyboard shortcut mutes and unmutes the mic.
-
-| Platform | Shortcut |
-|---|---|
-| macOS | Command + Option + M |
-| Windows | Ctrl + Alt + M |
-| Linux | Ctrl + Shift + comma |
-
-It is the command "Mute or unmute the voice mic" in dsh's shortcut settings, where you can rebind it. It works from the text box too, and does nothing while voice is off.
+The mic has no keyboard shortcut by default. You can give "Mute or unmute the voice mic" a key in dsh's Settings, under General, in Keyboard shortcuts (Edit shortcuts). Once bound, it works from the text box too, and does nothing while voice is off.
 
 ## Typing while voice is on
 

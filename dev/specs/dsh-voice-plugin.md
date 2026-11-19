@@ -58,7 +58,7 @@ In dsh's composer tool row, slot `conversation.input.right`. Registered from the
 
 - **Mutes are Banter's** (`voice-engine/src/human/mute-store.ts`): mic mute while linked mutes both and reads "Mute everything"; muting speech alone unlinks; relink restores the link. Tooltips use Banter's wording.
 - **State is colour, never text.** The mic button carries the human side: listening, hearing, muted (manual), muted while typing. The speech button carries one state of its own: agent audio playing. Nothing shows agent working or thinking.
-- **Shortcut.** Mic mute is registered through `ctx.shortcuts.register` (rebindable in dsh's settings), not bare Space.
+- **Shortcut.** Mic mute is registered through `ctx.shortcuts.register` with no default key; bind it in dsh's keyboard shortcuts settings. It is not bare Space.
 - **The click is the user gesture** that opens the mic and starts audio.
 
 ## 4. The voice system on dsh
