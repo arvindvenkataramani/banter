@@ -363,8 +363,8 @@ function SpeechPanel({ draft, edit }: PanelProps) {
       <Section title="Chunking" aside={draft.scope === 'per-model' ? <span className="dv-help">Changes here apply only to {view.modelName}</span> : undefined}>
         <RadioChoices<ChunkStrategy>
           name="dv-mode"
-          label="How replies are split"
-          description="The agent's reply is spoken in pieces. Speech starts once the first piece is ready, so smaller pieces start sooner and larger ones flow more naturally."
+          label="How speech is generated"
+          description="The speech server needs a piece's full text before it can voice it, so the reply is sent in pieces while the agent is still writing, and speech starts before the reply is finished. Each piece adds a moment of startup: a short first piece starts speaking sooner, and fewer, larger pieces waste less."
           value={mode}
           choices={MODE_CHOICES.map(choice => ({
             ...choice,
