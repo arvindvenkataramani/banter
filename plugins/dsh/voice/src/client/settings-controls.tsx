@@ -90,18 +90,23 @@ export interface RadioChoice<Value extends string> {
 }
 
 /** A radio group of labelled choices, each with a one-line description under its label. */
-export function RadioChoices<Value extends string>({ name, label, value, choices, onChange }: {
+export function RadioChoices<Value extends string>({ name, label, description, value, choices, onChange }: {
   /** Prefix of the choices' element ids. */
   name: string
-  /** The group's accessible name. */
+  /** The group's name, shown above the choices as a field label. */
   label: string
+  /** What the choice decides, shown under the label. */
+  description?: string
   value: Value
   choices: readonly RadioChoice<Value>[]
   onChange: (value: Value) => void
 }) {
   const readOnly = useContext(ReadOnly)
   return (
-    <RadioGroup.Root className="dv-radios" value={value} onValueChange={next => { onChange(next as Value) }} disabled={readOnly} aria-label={label}>
+    <div className="dv-field">
+      <span id={`${name}-label`} className="dv-label">{label}</span>
+      {description !== undefined && <p className="dv-help">{description}</p>}
+    <RadioGroup.Root className="dv-radios" value={value} onValueChange={next => { onChange(next as Value) }} disabled={readOnly} aria-labelledby={`${name}-label`}>
       {choices.map(choice => (
         <div key={choice.value} className="dv-field">
           <div className="dv-radio-row">
@@ -117,5 +122,6 @@ export function RadioChoices<Value extends string>({ name, label, value, choices
         </div>
       ))}
     </RadioGroup.Root>
+    </div>
   )
 }

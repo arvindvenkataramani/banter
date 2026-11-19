@@ -361,14 +361,10 @@ function SpeechPanel({ draft, edit }: PanelProps) {
         )}
       </Section>
       <Section title="Chunking" aside={draft.scope === 'per-model' ? <span className="dv-help">Changes here apply only to {view.modelName}</span> : undefined}>
-        <RadioChoices<SettingsScope> name="dv-scope" label="Chunking scope" value={draft.scope} choices={SCOPE_CHOICES} onChange={value => { edit(d => setScope(d, value)) }} />
-        <p className="dv-help">
-          <a className="dv-link" href={doc('docs/setup/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How scope works</a>
-        </p>
-        <hr className="dv-rule" />
         <RadioChoices<ChunkStrategy>
           name="dv-mode"
-          label="Chunking mode"
+          label="How replies are split"
+          description="The agent's reply is spoken in pieces. Speech starts once the first piece is ready, so smaller pieces start sooner and larger ones flow more naturally."
           value={mode}
           choices={MODE_CHOICES.map(choice => ({
             ...choice,
@@ -381,6 +377,17 @@ function SpeechPanel({ draft, edit }: PanelProps) {
           {words('minWords', 'dv-min-words', 'Min words', 200, "The shortest piece spoken on its own; shorter sentences wait to join the next. In 2-chunk, the first piece's minimum.")}
           {words('maxWords', 'dv-max-words', 'Max words', 500, "The longest piece before it's cut at a sentence or clause. Used by Sentence and Greedy.")}
         </div>
+        <RadioChoices<SettingsScope>
+          name="dv-scope"
+          label="Applies to"
+          description="Whether these chunking settings are shared by every speech model or kept per model."
+          value={draft.scope}
+          choices={SCOPE_CHOICES}
+          onChange={value => { edit(d => setScope(d, value)) }}
+        />
+        <p className="dv-help">
+          <a className="dv-link" href={doc('docs/setup/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How scope works</a>
+        </p>
         {view.note !== null && <p className="dv-help">{view.note}</p>}
         <div className="dv-footer">
           <Button variant="outline" size="sm" disabled={draft.scope === 'global' || !view.overridePresent} onClick={() => { edit(resetChunking) }}>
