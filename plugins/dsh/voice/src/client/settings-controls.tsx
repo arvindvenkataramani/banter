@@ -96,7 +96,7 @@ export function RadioChoices<Value extends string>({ name, label, description, v
   /** The group's name, shown above the choices as a field label. */
   label: string
   /** What the choice decides, shown under the label. */
-  description?: string
+  description?: ReactNode
   value: Value
   choices: readonly RadioChoice<Value>[]
   onChange: (value: Value) => void

@@ -380,14 +380,16 @@ function SpeechPanel({ draft, edit }: PanelProps) {
         <RadioChoices<SettingsScope>
           name="dv-scope"
           label="Applies to"
-          description="Whether these chunking settings are shared by every speech model or kept per model."
+          description={
+            <>
+              Whether these chunking settings are shared by every speech model or kept per model.{' '}
+              <a className="dv-link" href={doc('docs/setup/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How per-model values are chosen</a>
+            </>
+          }
           value={draft.scope}
           choices={SCOPE_CHOICES}
           onChange={value => { edit(d => setScope(d, value)) }}
         />
-        <p className="dv-help">
-          <a className="dv-link" href={doc('docs/setup/configuration.md#settings-scope')} target="_blank" rel="noreferrer">How scope works</a>
-        </p>
         {view.note !== null && <p className="dv-help">{view.note}</p>}
         <div className="dv-footer">
           <Button variant="outline" size="sm" disabled={draft.scope === 'global' || !view.overridePresent} onClick={() => { edit(resetChunking) }}>
