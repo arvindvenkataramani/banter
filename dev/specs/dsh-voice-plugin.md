@@ -69,7 +69,9 @@ The client half builds one `VoiceSystem` per page, as `dashboard/src/lib/voice/s
 
 **Voice config.** The client puts a `VoiceConfig` and `VoiceSelection` into the engine's voice session store, as the dashboard's chat page does after `fetchVoiceConfig()`. Both come from the plugin's settings (section 6), not from `/api/voice`.
 
-**Session follow.** Voice belongs to the page. When the person opens another session while voice is live, the system re-attaches to that session's adapter (`attachSession`), as Banter's page does when the active session changes (`docs/design/voice-system.md`). Leaving the conversation view does not stop voice.
+**Session follow.** Voice belongs to the page. When the person opens another session while voice is live, the system re-attaches to that session's adapter (`attachSession`), as Banter's page does when the active session changes (`docs/design/voice-system.md`).
+
+**Leaving the conversation.** The setting "Keep voice on outside a conversation" (section 8, off by default) decides what happens when the person goes to a dsh view with no composer (the Plugins page, settings). Off: voice turns off and releases the mic, as the voice-off button does. On: voice keeps running, as Banter's does. A session switch is not leaving: a composer is shown again in the same navigation.
 
 **Hidden tab.** Voice keeps running when the tab is hidden or the window loses focus. The plugin copies none of dsh's dictation handlers for `blur`, `visibilitychange` or Escape.
 
@@ -116,7 +118,7 @@ The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is 
 
 ## 8. Settings and install
 
-- **Settings** (dsh bundle config card, `plugins.bundle.config`; each field saves on change): control-plane URL; STT service id and model; TTS service id, model, voice and speed; input device. The rest of the `VoiceConfig` (turn-taking, reveal, chunking) is stored as seeded and not edited in the card.
+- **Settings** (dsh bundle config card, `plugins.bundle.config`; each field saves on change): control-plane URL; STT service id and model; TTS service id, model, voice and speed; input device; "Keep voice on outside a conversation" (off by default; section 4). The rest of the `VoiceConfig` (turn-taking, reveal, chunking) is stored as seeded and not edited in the card.
 - **Activation prompt** (`plugins.bundle.activation`): asks for microphone permission and checks the configured services through the relay.
 - **`install-profile <profile> <control-plane-url>`**: builds the package, installs it into the named profile with `dsh plugin --profile <profile> add`, reads `GET <control-plane-url>/api/voice` once, and writes the plugin's settings from it into the profile. It writes nothing anywhere else.
 
@@ -133,6 +135,7 @@ Run first, in a throwaway dsh profile (`DSH_HOME` under `/var/tmp`), launched wi
 | Draft | A plugin write to the box is visible in `useInput`; typing into the box produces a revision the plugin did not record | Stop |
 | Send recognised | A send through dsh's Send can be told apart from the person clearing the box (for example a user message appearing in the window that the plugin did not prompt, or the input state's submission) | The box going from non-empty to empty while muted-while-typing counts as a send, logged |
 | Session follow | With two sessions created (creating one makes no model call), one page-level object is reachable from each session's slot after switching, and the plugin learns the shown session's id; voice is never started | Voice turns off on a session switch, logged |
+| Leaving the conversation | The plugin can tell a dsh view with no composer (the Plugins page) apart from a session switch, without starting voice | The setting is left out and voice keeps running outside a conversation, logged |
 | Settings | The bundle card shows the plugin's fields and a change persists across a dsh restart | Stop |
 
 The spike calls no start, no load and no TTS endpoint. Behaviour that needs a live turn (live-chunk mapping against a real stream, cancel, prompt mid-turn, a switch during a turn) is covered by unit tests over recorded or constructed event windows and is checked by the person at the first stop.
@@ -145,6 +148,7 @@ Under `plugins/dsh-voice/`, vitest, following `TESTING.md`: promises, not wiring
 - **Adapter writing:** `queue` mode; annotation prefixes exactly the dashboard's; box emptied after a successful prompt; failed prompt rejects; `haltAudio` precedes the cancel.
 - **Draft rules:** own writes never trigger the mute; one foreign revision does; while muted the plugin writes nothing; attaching to a session with text in its box starts muted and does not write; a dsh send empties the transcript, reports a composer send and ends the mute; a manual unmute adopts the box text and sends nothing; the engine's turn send after an unmute carries the adopted text.
 - **Session follow:** a live system re-attaches to the shown session's adapter.
+- **Leaving the conversation:** with the setting off, a view with no composer turns voice off; with it on, voice keeps running; a session switch never turns it off.
 - **Relay:** only configured service ids reach an upstream; an unknown id is refused; no `Origin` forwarded; control-plane relay allows only the three calls.
 - **Install seeding:** a `/api/voice` response maps to the plugin's settings with endpoints pointing at the relay.
 
