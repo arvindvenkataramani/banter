@@ -162,8 +162,8 @@ mkdir -p "$PROD/control"
 cp -r "$SRC/control/shared"        "$PROD/control/shared"
 cp -r "$SRC/control/control-shard" "$PROD/control/control-shard"
 cp    "$SRC/control/package.json"  "$PROD/control/package.json"
-# Strip the dashboard and voice-engine workspaces from package.json — the shard is API-only, no dashboard is built or deployed
-bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard' && w !== 'voice-engine'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
+# Strip the dashboard, voice-engine and dsh-voice workspaces from package.json — the shard is API-only, no dashboard is built or deployed
+bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard' && w !== 'voice-engine' && w !== 'plugins/dsh-voice'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
 cp    "$SRC/tsconfig.json"         "$PROD/tsconfig.json"
 cp    "$SRC/bun.lock"              "$PROD/bun.lock" 2>/dev/null || true
 

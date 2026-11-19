@@ -1,0 +1,73 @@
+// Pure upstream selection and allowlist for the two relays. Nothing here
+// touches the network; the host entry feeds it settings and request paths.
+
+/** Plugin-owned path prefixes on dsh's origin. */
+export const SPEECH_PREFIX = '/dsh-voice/speech'
+export const CONTROL_PREFIX = '/dsh-voice/control'
+
+/** The settings the relays read. */
+export interface RelaySettings {
+  sttServiceId: string
+  ttsServiceId: string
+  controlPlaneUrl: string
+  /** Real endpoint of each service the control plane has reported, by service id. */
+  endpoints: Readonly<Record<string, string>>
+}
+
+/** The service ids the relays serve, configured ones only. */
+export function configuredServiceIds(settings: Pick<RelaySettings, 'sttServiceId' | 'ttsServiceId'>): string[] {
+  return [...new Set([settings.sttServiceId, settings.ttsServiceId].filter(id => id !== ''))]
+}
+
+/** Splits `<SPEECH_PREFIX>/<serviceId>/<rest>?query` into its service id and the upstream-relative remainder. */
+export function parseSpeechPath(path: string): { serviceId: string; rest: string } | null {
+  if (!path.startsWith(`${SPEECH_PREFIX}/`)) return null
+  const tail = path.slice(SPEECH_PREFIX.length + 1)
+  const slash = tail.search(/[/?]/)
+  if (slash <= 0) return null
+  const serviceId = decodeId(tail.slice(0, slash))
+  const rest = tail.slice(slash)
+  return serviceId === null || !rest.startsWith('/') ? null : { serviceId, rest }
+}
+
+/** The upstream URL for a request to the speech relay, or null when the request names anything but a configured service. */
+export function resolveSpeechUpstream(settings: RelaySettings, path: string): URL | null {
+  const parsed = parseSpeechPath(path)
+  if (parsed === null || !configuredServiceIds(settings).includes(parsed.serviceId)) return null
+  const endpoint = settings.endpoints[parsed.serviceId]
+  if (endpoint === undefined) return null
+  const rawPath = parsed.rest.split('?')[0] ?? ''
+  if (hasDotSegment(rawPath) || /%2e|%2f|%5c|\\/i.test(rawPath)) return null
+  const target = new URL(parsed.rest, 'http://relay.invalid')
+  const base = new URL(endpoint)
+  const basePath = base.pathname.replace(/\/+$/, '')
+  return new URL(`${base.origin}${basePath}${target.pathname}${target.search}`)
+}
+
+/** Whether the control-plane relay may forward this call: the three calls the dashboard's voice code makes, for configured services. */
+export function isAllowedControlCall(
+  settings: Pick<RelaySettings, 'sttServiceId' | 'ttsServiceId'>,
+  method: string,
+  path: string,
+): boolean {
+  const match = /^\/api\/services\/([^/?#]+)(\/start|\/ping)?$/.exec(path.split('?')[0] ?? '')
+  if (match === null) return false
+  const id = decodeId(match[1] ?? '')
+  if (id === null || !configuredServiceIds(settings).includes(id)) return false
+  const verb = match[2]
+  if (verb === undefined) return method === 'GET'
+  return method === 'POST'
+}
+
+function decodeId(raw: string): string | null {
+  try {
+    const id = decodeURIComponent(raw)
+    return id !== '' && !id.includes('/') ? id : null
+  } catch {
+    return null
+  }
+}
+
+function hasDotSegment(rawPath: string): boolean {
+  return rawPath.split('/').some(segment => segment === '..' || segment === '.')
+}

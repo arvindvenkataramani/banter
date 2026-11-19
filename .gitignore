@@ -69,3 +69,6 @@ control/control-shard/ops/com.banter.control-shard.plist
 
 # Playwright MCP browser session logs/artifacts
 .playwright-mcp/
+
+# The dsh voice plugin's build output (client bundle, host entry, installable package)
+plugins/dsh-voice/dist/
