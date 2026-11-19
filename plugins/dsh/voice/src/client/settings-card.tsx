@@ -19,13 +19,13 @@ import {
   resetTuning, setModel, setProvider, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
 } from './settings-model.ts'
 
-type TabId = 'general' | 'speech' | 'listening'
+type TabId = 'speech' | 'listening' | 'general' | 'help'
 
 const tabId = (tab: TabId): string => `dsh-voice-tab-${tab}`
 const panelId = (tab: TabId): string => `dsh-voice-panel-${tab}`
 
 const tabItem = (value: TabId, label: string) => ({ value, label, id: tabId(value), panelId: panelId(value) })
-const TAB_ITEMS = [tabItem('speech', 'Speech'), tabItem('listening', 'Listening'), tabItem('general', 'General')] as const
+const TAB_ITEMS = [tabItem('speech', 'Speech'), tabItem('listening', 'Listening'), tabItem('general', 'General'), tabItem('help', 'Help')] as const
 
 /** What a draft was seeded from: the stored settings and the revision they were read at. */
 interface Base {
@@ -100,6 +100,7 @@ export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) 
           {tab === 'speech' && <SpeechPanel draft={draft} edit={edit} />}
           {tab === 'listening' && <ListeningPanel draft={draft} edit={edit} />}
           {tab === 'general' && <GeneralPanel draft={draft} edit={edit} />}
+          {tab === 'help' && <HelpSection />}
         </fieldset>
       </ReadOnly.Provider>
       <div className="dv-footer">
@@ -191,7 +192,6 @@ function GeneralPanel({ draft, edit }: PanelProps) {
           onChange={checked => { edit(d => setKeepVoiceOutside(d, checked)) }}
         />
       </Section>
-      <HelpSection />
     </>
   )
 }
@@ -229,7 +229,7 @@ const HELP_LINKS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label:
 
 function HelpSection() {
   return (
-    <Section title="Help">
+    <Section>
       <div className="dv-help-groups">
       {HELP_LINKS.map(group => (
         <div key={group.heading} className="dv-links">

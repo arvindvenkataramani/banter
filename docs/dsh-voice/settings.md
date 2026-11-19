@@ -1,6 +1,6 @@
 # Settings
 
-The plugin's settings are on its card in dsh's **Plugins** page, in three tabs: Speech, Listening and General. Each setting carries a short description on the page itself, so this page only says where things are.
+The plugin's settings are on its card in dsh's **Plugins** page, in four tabs: Speech, Listening, General and Help. Each setting carries a short description on the page itself, so this page only says where things are.
 
 Edits are staged. **Save** writes them all; **Cancel** discards them. Both stay disabled until something changes. A new session picks up saved settings the next time voice starts.
 
@@ -45,6 +45,9 @@ Each slider shows its default until you change it, and has a Reset. For what the
 | Banter server URL | The address of your Banter install, the one you open its dashboard at. The plugin reaches the speech services through it. |
 | Always take over | Shown when a speech server serves one session at a time. When another session holds it, take it over without asking. |
 | Keep voice on outside a conversation | Voice keeps running when you move to another dsh page, instead of turning off. |
-| Help | Links to these docs and to Banter's setup pages. |
 
 The provider, model and voice lists come from the Banter server when the plugin is installed; run the install step again to refresh them ([setup.md](setup.md#what-install-seeds)).
+
+## Help
+
+Links to these docs and to Banter's setup pages, grouped by topic.
