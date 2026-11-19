@@ -46,7 +46,7 @@ Companions: [`dev/analysis/dsh-voice-plugin.md`](../analysis/dsh-voice-plugin.md
 
 ### Settings
 
-The plugin's settings live in dsh's bundle config card: control-plane URL, STT service and model, TTS service, model, voice and speed, and input device. The install step seeds them by reading the control plane's voice config once; after that the plugin reads its own settings. The engine receives them in its `VoiceConfig` shape, with endpoints pointing at the relay.
+The plugin's settings live in dsh's bundle config card: control-plane URL, STT service and model, TTS service, model, voice and speed, and whether voice stays on outside a conversation. There is no input-device setting, as in Banter. The install step seeds them by reading the control plane's voice config once; after that the plugin reads its own settings. The engine receives them in its `VoiceConfig` shape, with endpoints pointing at the relay.
 
 ### Package
 

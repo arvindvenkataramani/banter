@@ -122,7 +122,7 @@ The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is 
 
 ## 8. Settings and install
 
-- **Settings** (dsh bundle config card, `plugins.bundle.config`; each field saves on change): control-plane URL; STT service id and model; TTS service id, model, voice and speed; input device; "Keep voice on outside a conversation" (off by default; section 4). The rest of the `VoiceConfig` (turn-taking, reveal, chunking) is stored as seeded and not edited in the card.
+- **Settings** (dsh bundle config card, `plugins.bundle.config`; each field saves on change): control-plane URL; STT service id and model; TTS service id, model, voice and speed; "Keep voice on outside a conversation" (off by default; section 4). The rest of the `VoiceConfig` (turn-taking, reveal, chunking) is stored as seeded and not edited in the card. There is no input-device setting: the engine uses the browser's default microphone, as Banter does.
 - **Activation prompt** (`plugins.bundle.activation`): asks for microphone permission and checks the configured services through the relay.
 - **`install-profile <profile> <control-plane-url>`**: builds the package, installs it into the named profile with `dsh plugin --profile <profile> add`, reads `GET <control-plane-url>/api/voice` once, and writes the plugin's settings from it into the profile. It writes nothing anywhere else.
 
