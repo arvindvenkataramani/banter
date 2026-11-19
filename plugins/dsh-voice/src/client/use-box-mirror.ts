@@ -46,12 +46,18 @@ export function useBoxMirror({ runtime, sessionId, active, input, inputActions }
       readInput: () => inputRef.current,
       engine: { setMicAutoMuted, reportComposerFocus, reportComposerSend, editTranscript, takeTranscript },
       onTypingChange: (typing) => { runtime.ui.set({ ...runtime.ui.get(), typing }) },
+      onSend: () => { runtime.clearSendNotice() },
     })
     mirrorRef.current = mirror
-    const unregister = runtime.registerBox(sessionId, mirror)
-    skipView.current = true
+    const { resume, unregister } = runtime.registerBox(sessionId, mirror)
     previousPhase.current = inputRef.current.phase
-    mirror.onAttach()
+    if (resume === null) {
+      skipView.current = true
+      mirror.onAttach()
+    } else {
+      // Voice never re-attached: the transcript is current and this commit's view shows it.
+      mirror.onResume(resume)
+    }
     return () => {
       unregister()
       mirrorRef.current = null

@@ -17,11 +17,23 @@ export interface DraftMirrorDeps {
   }
   /** Called when the mic is auto-muted for typing, or released from it. */
   onTypingChange?(typing: boolean): void
+  /** Called when the person sends through dsh's own Send. */
+  onSend?(): void
+}
+
+/** What a mirror carries across the box leaving and coming back while voice stays attached. */
+export interface MirrorSnapshot {
+  typing: boolean
+  lastWrite: string | null
 }
 
 export interface DraftMirror {
   /** Voice attached to the session whose box this is. */
   onAttach(): void
+  /** The box came back while voice stayed attached: the transcript is current, the box is not. */
+  onResume(snapshot: MirrorSnapshot): void
+  /** The state to resume from when this box goes away. */
+  snapshot(): MirrorSnapshot
   /** dsh published a box state. */
   onDraftChange(state: DshInputState): void
   /** The transcript view (settled text plus pending utterances) changed. */
@@ -50,6 +62,10 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
   let seenRev = 0
   /** After a dsh send, the revision that empties the box is dsh's own clearing. */
   let sendClearing = false
+  /** From a dsh send until dsh empties the box or refuses; dsh owns the box meanwhile. */
+  let sending = false
+  /** Whether the box held the plugin's own text when the dsh send began. */
+  let sendOwn = false
   /** The transcript view as last reported, shown in the box unless the person is typing. */
   let lastView = ''
 
@@ -79,13 +95,37 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     else awaiting.push(text)
   }
 
+  /** Shows the transcript view in the box when the plugin may write there. */
+  const showView = (): void => {
+    if (typing || sending) return
+    const state = deps.readInput()
+    if (lastView === state.draft) return
+    // Never write over text the plugin did not put there.
+    if (state.draft !== '' && !isOwn(state)) return
+    write(lastView)
+  }
+
   return {
+    snapshot: () => ({ typing, lastWrite }),
+
+    onResume(snapshot) {
+      seenRev = deps.readInput().draftRev
+      ownRevs.clear()
+      awaiting = []
+      sendClearing = false
+      sending = false
+      lastWrite = snapshot.lastWrite
+      // Typing carries over; otherwise the next transcript report brings the box up to date.
+      if (snapshot.typing) setTyping(true)
+    },
+
     onAttach() {
       const state = deps.readInput()
       seenRev = state.draftRev
       ownRevs.clear()
       awaiting = []
       sendClearing = false
+      sending = false
       // The attached session's box is the transcript; text already in it is the person's.
       engine.editTranscript(state.draft)
       if (state.draft !== '') {
@@ -102,6 +142,14 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
     onDraftChange(state) {
       if (state.draftRev === seenRev) return
       seenRev = state.draftRev
+      if (sending && state.draft === '') {
+        // dsh accepted the send and emptied the box; words said meanwhile show now.
+        sending = false
+        sendClearing = false
+        ownRevs.add(state.draftRev)
+        showView()
+        return
+      }
       if (!typing && isOwn(state)) {
         ownRevs.add(state.draftRev)
         const matched = awaiting.indexOf(state.draft)
@@ -119,12 +167,7 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
 
     onTranscriptChange(view) {
       lastView = view
-      if (typing) return
-      const state = deps.readInput()
-      if (view === state.draft) return
-      // Never write over text the plugin did not put there.
-      if (state.draft !== '' && !isOwn(state)) return
-      write(view)
+      showView()
     },
 
     onUnmute() {
@@ -139,27 +182,35 @@ export function createDraftMirror(deps: DraftMirrorDeps): DraftMirror {
 
     onDshSend() {
       // The words are sent once, by dsh: empty the transcript before the floor hears of the send.
+      const state = deps.readInput()
+      sendOwn = !typing && state.draft !== '' && isOwn(state)
       engine.takeTranscript()
       engine.reportComposerSend()
       engine.setMicAutoMuted(false)
       engine.reportComposerFocus(false)
       lastWrite = ''
       sendClearing = true
+      sending = true
       setTyping(false)
+      deps.onSend?.()
     },
 
     onDshSendRefused() {
       // The refused text stays in the box; it is the person's draft again, under the typing mute.
+      const draft = deps.readInput().draft
+      sending = false
       lastWrite = null
       sendClearing = false
       enterTyping()
-      engine.editTranscript(deps.readInput().draft)
+      // The box showed the pending words too, and the engine still holds those as pending.
+      const tail = sendOwn && lastView !== '' && draft.endsWith(lastView) ? lastView : ''
+      engine.editTranscript(tail === '' ? draft : draft.slice(0, draft.length - tail.length).trimEnd())
     },
 
     clear() {
       // Only the plugin's own text goes, and not words said since the send.
       const state = deps.readInput()
-      if (typing || lastView !== '' || state.draft === '' || !isOwn(state) || awaiting[awaiting.length - 1] === '') return
+      if (typing || sending || lastView !== '' || state.draft === '' || !isOwn(state) || awaiting[awaiting.length - 1] === '') return
       write('')
     },
 

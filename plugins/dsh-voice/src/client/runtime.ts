@@ -11,7 +11,7 @@ import { toggleMuteAll, useMuteStore } from '@platform/voice-engine/human/mute-s
 import { LIVE_HEARTBEAT_MS, LIVE_PATH } from '../host/relay.ts'
 import { DEFAULT_SETTINGS, voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
 import type { DshClientContext, DshConfigForm, DshObservable } from './dsh-types.ts'
-import type { DraftMirror } from './draft-mirror.ts'
+import type { DraftMirror, MirrorSnapshot } from './draft-mirror.ts'
 import { createValue, type Value } from './observable.ts'
 import { followShownSession } from './presence.ts'
 import { createPluginServices, type PluginServices } from './services.ts'
@@ -39,8 +39,13 @@ export interface VoiceRuntime {
   stop(): void
   /** Mic mute, or the end of the mute for typing. */
   toggleMic(): void
-  /** The mirror of a mounted text box, so the runtime can reach it from the engine's side. */
-  registerBox(sessionId: string, mirror: DraftMirror): () => void
+  /**
+   * The mirror of a mounted text box, so the runtime can reach it from the engine's side.
+   * `resume` is the state of this attach's previous box for the session when it comes back, else null.
+   */
+  registerBox(sessionId: string, mirror: DraftMirror): { resume: MirrorSnapshot | null; unregister(): void }
+  /** Clears the "Not sent" notice once the person sends through dsh instead. */
+  clearSendNotice(): void
   dispose(): void
 }
 
@@ -58,6 +63,10 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
   let settings: PluginSettings = DEFAULT_SETTINGS
   let attached: { sessionId: string; adapter: ReturnType<typeof createVoiceSession>; release(): void } | null = null
   const boxes = new Map<string, DraftMirror>()
+  /** The attached session's box state while its composer is away (a panel is open). */
+  let away: { sessionId: string; snapshot: MirrorSnapshot } | null = null
+  /** The notice a failed send set, so a later send can clear that notice and no other. */
+  let sendNotice: string | null = null
   const ui = createValue<VoiceUi>({ attachedSessionId: null, typing: false, notice: null })
   const patchUi = (patch: Partial<VoiceUi>): void => { ui.set({ ...ui.get(), ...patch }) }
 
@@ -92,6 +101,7 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
     if (attached === null) return
     const { adapter, release } = attached
     attached = null
+    away = null
     adapter.dispose()
     release()
     publishSession(null)
@@ -111,7 +121,8 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
       // The words go back into the box and the voice button says why they were not sent.
       sendFailed: (text, message) => {
         boxes.get(sessionId)?.restore(text)
-        patchUi({ notice: `Not sent: ${message}` })
+        sendNotice = `Not sent: ${message}`
+        patchUi({ notice: sendNotice })
       },
     }
     const adapter = createVoiceSession({
@@ -200,10 +211,20 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
     },
     registerBox(sessionId, mirror) {
       boxes.set(sessionId, mirror)
-      return () => {
-        if (boxes.get(sessionId) === mirror) boxes.delete(sessionId)
-        patchUi({ typing: false })
+      const resume = away?.sessionId === sessionId ? away.snapshot : null
+      away = null
+      return {
+        resume,
+        unregister: () => {
+          if (boxes.get(sessionId) === mirror) boxes.delete(sessionId)
+          // A box that goes while voice stays on this session comes back to the same attach.
+          if (attached?.sessionId === sessionId) away = { sessionId, snapshot: mirror.snapshot() }
+          patchUi({ typing: false })
+        },
       }
+    },
+    clearSendNotice() {
+      if (sendNotice !== null && ui.get().notice === sendNotice) patchUi({ notice: null })
     },
     dispose() {
       stopSettings()
