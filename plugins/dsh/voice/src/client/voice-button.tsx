@@ -8,7 +8,14 @@ import { relinkMutes, toggleSpeechMuted, useMuteStore } from '@platform/voice-en
 import { useTurnManagerStore } from '@platform/voice-engine/store/turn-manager-store'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import type { DshSessionSlotProps } from './dsh-types.ts'
-import { CloseIcon, LinkBreakIcon, MicIcon, MicSlashIcon, SpeakerIcon, SpeakerSlashIcon, SpinnerIcon, WaveformIcon } from './icons.tsx'
+import { CircleNotchIcon } from '@phosphor-icons/react/dist/csr/CircleNotch'
+import { LinkBreakIcon } from '@phosphor-icons/react/dist/csr/LinkBreak'
+import { MicrophoneIcon } from '@phosphor-icons/react/dist/csr/Microphone'
+import { MicrophoneSlashIcon } from '@phosphor-icons/react/dist/csr/MicrophoneSlash'
+import { SpeakerHighIcon } from '@phosphor-icons/react/dist/csr/SpeakerHigh'
+import { SpeakerSlashIcon } from '@phosphor-icons/react/dist/csr/SpeakerSlash'
+import { WaveformIcon } from '@phosphor-icons/react/dist/csr/Waveform'
+import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import type { VoiceRuntime } from './runtime.ts'
 import { useBoxMirror } from './use-box-mirror.ts'
 
@@ -29,6 +36,18 @@ const MUTED_TYPING: CSSProperties = { color: 'var(--dsw-alias-state-warn-label)'
 const ERROR: CSSProperties = { color: 'var(--dsw-alias-state-error-primary)' }
 
 const ICON_BUTTON: CSSProperties = { width: 28, padding: 0 }
+
+/** Phosphor's regular weight at the size of dsh's outline icons; colour comes from currentColor. */
+const ICON = 16
+
+/** The turning ring: animated in the SVG itself, since the bundle carries no stylesheet. */
+function Spinner() {
+  return (
+    <CircleNotchIcon size={ICON}>
+      <animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="0.9s" repeatCount="indefinite" />
+    </CircleNotchIcon>
+  )
+}
 
 function Control({ name, title, style, onClick, busy, children }: {
   name: string
@@ -74,7 +93,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
   if (phase === 'starting' || (phase === 'live' && reconfiguring)) {
     return (
       <Control name="starting" title="Starting voice — press to cancel" busy onClick={() => { runtime.stop() }}>
-        <SpinnerIcon />
+        <Spinner />
       </Control>
     )
   }
@@ -86,7 +105,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
       <>
         {!muteLinked && (
           <Control name="relink" title="Mic and speech are set separately — link them" onClick={relinkMutes}>
-            <LinkBreakIcon />
+            <LinkBreakIcon size={ICON} />
           </Control>
         )}
         <Control
@@ -95,7 +114,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
           style={speechMuted ? MUTED : playing ? HEARING : undefined}
           onClick={toggleSpeechMuted}
         >
-          {speechMuted ? <SpeakerSlashIcon /> : <SpeakerIcon />}
+          {speechMuted ? <SpeakerSlashIcon size={ICON} /> : <SpeakerHighIcon size={ICON} />}
         </Control>
         <Control
           name="mic"
@@ -103,7 +122,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
           style={mic}
           onClick={() => { runtime.toggleMic() }}
         >
-          {micMuted ? <MicSlashIcon /> : <MicIcon />}
+          {micMuted ? <MicrophoneSlashIcon size={ICON} /> : <MicrophoneIcon size={ICON} />}
         </Control>
         <Control
           name="off"
@@ -111,7 +130,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
           style={ui.notice === null ? undefined : ERROR}
           onClick={() => { runtime.stop() }}
         >
-          <CloseIcon />
+          <XIcon size={ICON} />
         </Control>
       </>
     )
@@ -126,7 +145,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
       : ended.message || ui.notice || 'Voice ended'
   return (
     <Control name="on" title={title} style={ended === null ? undefined : ERROR} onClick={() => { runtime.start(sessionId, held ? { takeover: true } : undefined) }}>
-      <WaveformIcon />
+      <WaveformIcon size={ICON} />
     </Control>
   )
 }
