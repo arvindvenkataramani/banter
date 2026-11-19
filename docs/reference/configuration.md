@@ -5,7 +5,7 @@ Two files per node, both at the top of its deployment folder (`~/services/banter
 - **`registry.json`** — hosts and services
 - **`config.json`** — gateway credentials and voice settings
 
-The repo tracks `config.example.json` and `registry.example.json` (under `control/control-plane/data/`; the shard's registry example is under `control/control-shard/data/`), not the live files. `scripts/install.sh` seeds the live files from them, and every later deploy merges the examples into them; see [Deployment](#deployment). Beside the two files the folder holds `shipped/` (what the last deploy shipped, the merge base) and `state/state.json` (the last agent used and the last session per agent). [design/live-config.md](design/live-config.md) describes how these files are kept.
+The repo tracks `config.example.json` and `registry.example.json` (under `control/control-plane/data/`; the shard's registry example is under `control/control-shard/data/`), not the live files. `ops/install.sh` seeds the live files from them, and every later deploy merges the examples into them; see [Deployment](#deployment). Beside the two files the folder holds `shipped/` (what the last deploy shipped, the merge base) and `state/state.json` (the last agent used and the last session per agent). [design/live-config.md](design/live-config.md) describes how these files are kept.
 
 A normal run needs no environment variables.
 
@@ -135,7 +135,7 @@ If most of your services are https, set it once for the whole registry:
 
 The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
 
-Each speech server takes its allowlist from an environment variable, set under the service's `ops.env.variables`. Every Python adapter in this repo reads a comma-separated `*_CORS_ORIGINS` variable (`FASTER_WHISPER_CORS_ORIGINS`, `KOKORO_CORS_ORIGINS`, `NEUTTS_CORS_ORIGINS`, `WHISPER_CORS_ORIGINS`), and the [fluid servers](../../services/fluid/README.md) read `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all: not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `scripts/install.sh` fills in every `*_CORS_ORIGINS` variable it finds in a fresh registry from the registry's own `control` service port, covering `http://localhost` and `http://127.0.0.1` on that port and on Vite's `5173`:
+Each speech server takes its allowlist from an environment variable, set under the service's `ops.env.variables`. Every Python adapter in this repo reads a comma-separated `*_CORS_ORIGINS` variable (`FASTER_WHISPER_CORS_ORIGINS`, `KOKORO_CORS_ORIGINS`, `NEUTTS_CORS_ORIGINS`, `WHISPER_CORS_ORIGINS`), and the [fluid servers](../../services/fluid/README.md) read `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all: not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `ops/install.sh` fills in every `*_CORS_ORIGINS` variable it finds in a fresh registry from the registry's own `control` service port, covering `http://localhost` and `http://127.0.0.1` on that port and on Vite's `5173`:
 
 ```json
 "ops": {
@@ -151,7 +151,7 @@ The origins `install.sh` writes cover only the machine itself. Opening the dashb
 
 A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
 
-**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `scripts/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open the dashboard from, such as a LAN address, too. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/reference/protocols/openclaw/gateway-session-lifecycle.md](protocols/openclaw/gateway-session-lifecycle.md#browser-origin-check).
+**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `ops/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open the dashboard from, such as a LAN address, too. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/reference/protocols/openclaw/gateway-session-lifecycle.md](protocols/openclaw/gateway-session-lifecycle.md#browser-origin-check).
 
 ---
 
@@ -246,13 +246,13 @@ Each has an environment override (`BANTER_CONTROL_HOST`, `BANTER_EVENTS_PATH`, `
 | `DASHBOARD_DIST` | `dashboard/dist` | Built assets to serve |
 | `MIC_SAMPLE_DIR` | `banter-voice-debug/mic-samples` in the OS temp directory | Where `DEBUG` mic captures land; set it to keep them somewhere durable |
 
-`BANTER_PROD` and `BANTER_UNIT` are better set in `scripts/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. It stays in the checkout's `scripts/` because it names the deployment folder; a deploy copies it into `$BANTER_PROD/scripts/`, so the scripts systemd runs read the same settings. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
+`BANTER_PROD` and `BANTER_UNIT` are better set in `ops/deploy.conf` (copy `deploy.conf.example`) than exported on every call — it is an untracked per-machine file that all the scripts read. It stays in the checkout's `scripts/` because it names the deployment folder; a deploy copies it into `$BANTER_PROD/scripts/`, so the scripts systemd runs read the same settings. They must be set together; `deploy-env.sh` refuses a non-default directory under the default unit name, since every start and stop would address the other install.
 
 A unit file cannot expand a shell variable, so `ops/systemd/banter.service.template` is rendered at install time with the deploy path and unit name substituted in, and the rendered unit passes `BANTER_PROD` back to the runner through `Environment=`.
 
 `control-deploy.sh` runs `deploy-preflight.sh` first, which refuses when the destination is non-empty and was not created by a previous banter deploy or install, or when the unit name belongs to something running elsewhere. It is a refusal, not a prompt; override deliberately with `BANTER_DEPLOY_FORCE=1`.
 
-A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, `ops/`, `scripts/`), so it never touches `config.json`, `registry.json`, `shipped/` or `state/`. What it does with them is a three-way merge of the last-shipped copy (`shipped/`), the live file and the repo's example, field by field, before anything is stopped:
+A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, `ops/`), so it never touches `config.json`, `registry.json`, `shipped/` or `state/`. What it does with them is a three-way merge of the last-shipped copy (`shipped/`), the live file and the repo's example, field by field, before anything is stopped:
 
 - changed only in the repo, the repo's value is taken;
 - changed only on the node (by hand, or through the dashboard), the node's value stays;

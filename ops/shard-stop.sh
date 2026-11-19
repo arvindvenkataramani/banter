@@ -29,4 +29,4 @@ SHARD_PORT="${SHARD_PORT:-4200}"
 echo "[shard] Tearing down Tailscale Serve on port $SHARD_PORT..."
 tailscale serve --bg --https="$SHARD_PORT" off 2>/dev/null || true
 
-echo "[shard] Stopped. Run 'scripts/shard-start.sh' to re-enable."
+echo "[shard] Stopped. Run 'ops/shard-start.sh' to re-enable."

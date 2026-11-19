@@ -1,5 +1,5 @@
 {
-  "_comment": "The fluid speech servers (Apple Silicon), as registry entries to add to your registry.json. Append the two services to services, the two providers to roster.providers, and the voices to roster.voices; nothing in it collides with the example registries, because the voice ids carry a fluid- prefix and the model ids (kokoro-ane, pocket-tts, luxtts) differ from theirs. Set each service's hostId to a host in your registry (this-machine in the control-plane example). Build with scripts/fluid-build.sh, install with scripts/control-install-services.sh, and set FLUID_CORS_ORIGINS to your dashboard origins. scripts/fluid-smoke.sh reads this file.",
+  "_comment": "The fluid speech servers (Apple Silicon), as registry entries to add to your registry.json. Append the two services to services, the two providers to roster.providers, and the voices to roster.voices; nothing in it collides with the example registries, because the voice ids carry a fluid- prefix and the model ids (kokoro-ane, pocket-tts, luxtts) differ from theirs. Set each service's hostId to a host in your registry (this-machine in the control-plane example). Build with scripts/fluid-build.sh, install with ops/control-install-services.sh, and set FLUID_CORS_ORIGINS to your dashboard origins. scripts/fluid-smoke.sh reads this file.",
   "services": [
     {
       "id": "fluid-stt",

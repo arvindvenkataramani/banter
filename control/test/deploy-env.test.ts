@@ -6,17 +6,17 @@ import { join, resolve } from "node:path";
 // deploy-env.sh is sourced by every deploy, install, run and dev script, so what
 // it resolves is what all of them act on. Each test sources a copy of it in a
 // fresh bash with a temporary HOME and only the variables the test names. The
-// copy sits in a temporary scripts/ so a deploy.conf can sit beside it, where
+// copy sits in a temporary ops/ so a deploy.conf can sit beside it, where
 // the real one does.
 
-const DEPLOY_ENV = resolve(import.meta.dir, "../../scripts/deploy-env.sh");
+const DEPLOY_ENV = resolve(import.meta.dir, "../../ops/deploy-env.sh");
 
 let home: string;
 let scripts: string;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "deploy-env-"));
-  scripts = join(home, "checkout/scripts");
+  scripts = join(home, "checkout/ops");
   await mkdir(scripts, { recursive: true });
   await copyFile(DEPLOY_ENV, join(scripts, "deploy-env.sh"));
 });
@@ -42,7 +42,7 @@ describe("deploy.conf", () => {
     expect(r.out).toBe(`/env/events.jsonl|/conf/stage|${home}/services/banter`);
   });
 
-  it("is read from the scripts/ folder beside deploy-env.sh", async () => {
+  it("is read from the ops/ folder beside deploy-env.sh", async () => {
     await writeConf(`BANTER_STAGE_DIR=/from-checkout\n`);
     expect(source(`echo "$BANTER_STAGE_DIR"`).out).toBe("/from-checkout");
   });

@@ -40,4 +40,4 @@ Tests cover what the code decides: that each location derives from the identifie
 
 The bundle is the form every macOS mechanism fully recognises, and its Info.plist is an ordinary file written after the build. An Info.plist embedded in a bare executable through a linker flag is invisible to Swift Package Manager's dependency tracking, so a changed plist can go unlinked and a build can ship a stale identity or version; the bundle has no such path.
 
-The shard registry's `fluid-stt` and `fluid-tts` entries install the bundle directory as their artifact (`scripts/install-artifacts.sh` already installs directories) and launch `fluid-stt.app/Contents/MacOS/fluid-stt` from the install directory.
+The shard registry's `fluid-stt` and `fluid-tts` entries install the bundle directory as their artifact (`ops/install-artifacts.sh` already installs directories) and launch `fluid-stt.app/Contents/MacOS/fluid-stt` from the install directory.

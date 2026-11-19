@@ -50,7 +50,7 @@ IDLE_MS=4000
 KEEP=false
 [[ "${1:-}" == "--keep" ]] && KEEP=true
 
-source "$REPO/scripts/install-artifacts.sh"
+source "$REPO/ops/install-artifacts.sh"
 BUN="$(platform_find_bun)"
 
 log() { echo "[fluid-smoke] $*"; }

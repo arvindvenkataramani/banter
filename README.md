@@ -39,7 +39,7 @@ Needs [Bun](https://bun.sh), `jq`, `lsof` and an [OpenClaw](https://github.com/o
 ```bash
 git clone https://github.com/arvindvenkataramani/banter.git
 cd banter
-scripts/install.sh
+ops/install.sh
 ```
 
 The script installs one thing: the Banter server (the control plane), which also serves the dashboard. It prompts for your gateway URL and token, runs the server as a service, and prints its address when it finishes. Open that address (`http://localhost:4200` unless you changed the port) for the dashboard. Typing works at once.
@@ -84,7 +84,8 @@ Everything else:
 - [docs/reference/speech-server-api.md](docs/reference/speech-server-api.md): what a speech server must answer
 - [docs/reference/api.md](docs/reference/api.md): generated HTTP API reference
 - [services/README.md](services/README.md): the adapter servers in this repo
-- [scripts/README.md](scripts/README.md): deployment, lifecycle, and diagnostic scripts
+- [ops/README.md](ops/README.md): install, deploy and run scripts and templates
+- [scripts/README.md](scripts/README.md): development tools
 
 ## Architecture
 
@@ -94,7 +95,8 @@ Everything else:
 - **`services/`** — adapter servers that put an OpenAI-compatible API in front of speech models, for example the Python adapters under [`services/stt`](services/stt/faster-whisper/README.md) and [`services/tts`](services/tts/kokoro/README.md), or the Swift servers in [`services/fluid`](services/fluid/README.md) for Apple Silicon. Nothing installs itself; you install the ones you want and register each in the registry. See [docs/guide/models.md](docs/guide/models.md) for the options and [services/README.md](services/README.md) for how to install them.
 - **`plugins/openclaw/voice-mode/`** — installs into your OpenClaw gateway and tells the agent it is being spoken to rather than read, so it answers in a way that works out loud.
 - **`plugins/dsh/voice/`** — an optional plugin that brings voice into the web UI of DeepSeek Harness (dsh), taking speech from a Banter server. See [docs/guide/plugins/dsh-voice/](docs/guide/plugins/dsh-voice/README.md).
-- **`scripts/`** — install, deploy, and diagnostic scripts for running the control plane (and shards) as a system service, plus a few standalone tools like driving a service by hand when the API is unavailable. None of it is required for local development. See [scripts/README.md](scripts/README.md) for the index.
+- **`ops/`** — what a deployment needs outside the build: the install, deploy, start, stop and uninstall scripts, the systemd and launchd templates, and `service-control.sh` for driving a service by hand when the API is unavailable. None of it is required for local development. See [ops/README.md](ops/README.md) for the index.
+- **`scripts/`** — development tools: running the control plane or shard from source, building and smoke-testing the fluid servers, regenerating the API reference. See [scripts/README.md](scripts/README.md).
 
 [docs/reference/architecture.md](docs/reference/architecture.md) has the full picture — how a voice turn works end to end, and why the control plane exists at all.
 
@@ -129,7 +131,7 @@ This is published as-is and only occasionally maintained; expect updates to come
 bun run control-dev
 ```
 
-Control plane with Vite and HMR against the dashboard source. It reads the *deployed* config and registry, so it needs a completed install first — it iterates on an installation rather than replacing one. Re-run `scripts/control-deploy.sh` to promote your changes.
+Control plane with Vite and HMR against the dashboard source. It reads the *deployed* config and registry, so it needs a completed install first — it iterates on an installation rather than replacing one. Re-run `ops/control-deploy.sh` to promote your changes.
 
 ```bash
 cd dashboard && bun run test      # vitest
@@ -139,7 +141,7 @@ cd control && bun test            # control plane and shard
 
 `bun test` in `control/` runs all of it; that package's own `test` script covers only the shared module.
 
-Most of `scripts/` is maintenance and deploy tooling rather than day-to-day dev — `deploy-preflight.sh`, `branch-status.sh`, `service-control.sh`, and the rest of what a fork's own install/upgrade path would lean on. See [scripts/README.md](scripts/README.md).
+The install and deploy tooling lives in `ops/` ([ops/README.md](ops/README.md)), and the dev tools in `scripts/` ([scripts/README.md](scripts/README.md)); neither is needed for day-to-day dev beyond `bun run control-dev`.
 
 ### Changing the plugin
 

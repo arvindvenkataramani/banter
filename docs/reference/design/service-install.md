@@ -8,10 +8,10 @@ Stopping a running service, swapping its files, recording what went in and resta
 
 **A build** is per package. It produces artifacts inside the source tree and touches nothing installed. Packages build differently — SwiftPM, `xcodebuild`, nothing at all for a Python service — so each keeps its own build command. `scripts/fluid-build.sh` checks the toolchain the package needs, then runs `swift build -c release` on `services/fluid`, and nothing else.
 
-**An install** is one mechanism, the same for every service, performed by `scripts/shard-install-services.sh`. It reads what to install from the registry, so it holds no knowledge of any particular service. A shard deploy already runs it; after a build it runs on its own:
+**An install** is one mechanism, the same for every service, performed by `ops/shard-install-services.sh`. It reads what to install from the registry, so it holds no knowledge of any particular service. A shard deploy already runs it; after a build it runs on its own:
 
 ```bash
-scripts/fluid-build.sh && scripts/shard-install-services.sh
+scripts/fluid-build.sh && ops/shard-install-services.sh
 ```
 
 ## The registry declares a service's artifacts
@@ -47,7 +47,7 @@ The registry validator in `control/shared/src/registry.ts` checks `ops.install`:
 
 Plist installation for launchd runners is unchanged and stays registry-driven through `runner.plist`.
 
-The per-service steps live in `scripts/install-artifacts.sh`, sourced by both `shard-install-services.sh` and `control-install-services.sh`, so every node reads the same field the same way.
+The per-service steps live in `ops/install-artifacts.sh`, sourced by both `shard-install-services.sh` and `control-install-services.sh`, so every node reads the same field the same way.
 
 ## Install is never an endpoint
 

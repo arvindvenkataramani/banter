@@ -59,13 +59,13 @@ jq --slurpfile f services/fluid/registry.fluid.example.json --arg host this-mach
 
 Replace `this-machine` with your host's id. The command also expands the leading `~/` in each `ops.env.workingDirectory` to your home directory, since nothing downstream expands it. On a shard, merge into the shard's own registry and use its host id; keep each fluid entry on the one node that runs it (see [Two nodes, one model id](../../docs/guide/voices-and-models.md#two-nodes-one-model-id)).
 
-Then set `FLUID_CORS_ORIGINS` on both entries to the origins you open the dashboard from. The file carries `http://localhost:4200,http://localhost:5173`; `scripts/install.sh` fills `*_CORS_ORIGINS` only in a fresh registry it seeds, so entries merged afterwards keep what the file says. Point `config.json`'s `voice.stt` and `voice.tts.selection` at the fluid services and models to use them, and reload ([Applying an edit](../../docs/guide/voices-and-models.md#applying-an-edit)).
+Then set `FLUID_CORS_ORIGINS` on both entries to the origins you open the dashboard from. The file carries `http://localhost:4200,http://localhost:5173`; `ops/install.sh` fills `*_CORS_ORIGINS` only in a fresh registry it seeds, so entries merged afterwards keep what the file says. Point `config.json`'s `voice.stt` and `voice.tts.selection` at the fluid services and models to use them, and reload ([Applying an edit](../../docs/guide/voices-and-models.md#applying-an-edit)).
 
 ## Install
 
 1. **Prerequisites.** macOS 15 or later on Apple Silicon, a Swift 6 toolchain (`xcode-select --install`, or Xcode 16), and `brew install opus`.
-2. **Build:** `scripts/fluid-build.sh`. It checks the prerequisites first and names anything missing with the command to install it. The servers land in `services/fluid/.build/release/` as `fluid-stt.app` and `fluid-tts.app`. `scripts/install.sh` does not build them.
-3. **Install:** `scripts/control-install-services.sh` on a single machine, or `scripts/shard-install-services.sh` on a [shard](../../docs/guide/shard.md). Each copies the app bundles to `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, as each registry entry's `ops.install` declares. A full `scripts/control-deploy.sh` does the same. A server that is running is stopped for the swap and started again, and a bundle that hasn't changed is left alone.
+2. **Build:** `scripts/fluid-build.sh`. It checks the prerequisites first and names anything missing with the command to install it. The servers land in `services/fluid/.build/release/` as `fluid-stt.app` and `fluid-tts.app`. `ops/install.sh` does not build them.
+3. **Install:** `ops/control-install-services.sh` on a single machine, or `ops/shard-install-services.sh` on a [shard](../../docs/guide/shard.md). Each copies the app bundles to `~/services/fluid/fluid-stt/` and `~/services/fluid/fluid-tts/`, as each registry entry's `ops.install` declares. A full `ops/control-deploy.sh` does the same. A server that is running is stopped for the swap and started again, and a bundle that hasn't changed is left alone.
 
 After a code change, run the same two scripts again.
 

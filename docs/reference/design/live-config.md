@@ -6,7 +6,7 @@ A machine runs one node, a control plane or a shard, never both, so there is one
 
 ## Files
 
-The live files sit at the top of the deployment folder (`$BANTER_PROD`, and `$BANTER_SHARD_PROD` for a shard). A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, and on the control plane `ops/` and `scripts/`), so it never touches these.
+The live files sit at the top of the deployment folder (`$BANTER_PROD`, and `$BANTER_SHARD_PROD` for a shard). A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, and on the control plane `ops/`), so it never touches these.
 
 | Node | File | Holds |
 |---|---|---|
@@ -17,9 +17,9 @@ The live files sit at the top of the deployment folder (`$BANTER_PROD`, and `$BA
 | Shard | `registry.json` | the shard's services and roster |
 | | `shipped/registry.json` | the merge base |
 
-The repo tracks `control/control-plane/data/config.example.json`, `control/control-plane/data/registry.example.json` and `control/control-shard/data/registry.example.json`. These are what deploys ship, and what `scripts/install.sh` seeds a first install from. Only developers write them. Event logs stay where they are.
+The repo tracks `control/control-plane/data/config.example.json`, `control/control-plane/data/registry.example.json` and `control/control-shard/data/registry.example.json`. These are what deploys ship, and what `ops/install.sh` seeds a first install from. Only developers write them. Event logs stay where they are.
 
-`scripts/deploy.conf` is the one configuration file outside the folder. It names the folder, so the deployed scripts cannot find it without help; it stays in the checkout's `scripts/` and a deploy copies it into `$BANTER_PROD/scripts/`.
+`ops/deploy.conf` is the one configuration file outside the folder. It names the folder, so the deployed scripts cannot find it without help; it stays in the checkout's `ops/` and a deploy copies it into `$BANTER_PROD/ops/`.
 
 **Configuration and registry** hold everything a deploy ships and everything set through the dashboard: service definitions, placement, tuning, voice and model selections, chunking, turn-taking and speech-detection settings, a service's enabled flag, and the fields the service editor changes. A field may be changed in the repo, on the node, or both; the deploy merge decides between them.
 
@@ -72,7 +72,7 @@ The deploy runs `control/scripts/deploy-config.ts`, which `control-deploy.sh` an
 
 With no live file, a first deploy seeds it from these files when they exist: `$BANTER_PROD/control/control-plane/data/config.json` and `registry.json` on a control plane, `~/services/shard/registry.json` on a shard. Otherwise it seeds it from the example. `shipped/` starts empty, so the merge keeps every value the node has, and the runtime state moves out of the configuration into `state/state.json` by the repair rule on first load.
 
-A fresh install gets its live files from `scripts/install.sh`, which writes them at the top of the deployment folder from the examples (filling in the gateway URL and token) before the first deploy; the deploy then merges the examples into them.
+A fresh install gets its live files from `ops/install.sh`, which writes them at the top of the deployment folder from the examples (filling in the gateway URL and token) before the first deploy; the deploy then merges the examples into them.
 
 ## Dev
 

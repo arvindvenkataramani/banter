@@ -22,6 +22,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 source "$(dirname "$0")/deploy-env.sh"
 PROD="$BANTER_PROD"
 SCRIPTS_DIR="$REPO/scripts"
+OPS_DIR="$REPO/ops"
 
 # Temporary directories to remove on exit. Bash keeps only one EXIT trap, so
 # every temporary directory registers in this list rather than installing its
@@ -36,7 +37,7 @@ trap cleanup EXIT
 
 # Refuse before anything is modified if the destination belongs to something
 # else. This runs first: before the branch check, the build, and any copy.
-bash "$SCRIPTS_DIR/deploy-preflight.sh" "$BANTER_PROD" || {
+bash "$OPS_DIR/deploy-preflight.sh" "$BANTER_PROD" || {
   echo "[control-deploy] Aborted by preflight." >&2
   exit 1
 }
@@ -156,12 +157,11 @@ mkdir -p "$PROD/dashboard"
 cp -r "$SRC/dashboard/dist"          "$PROD/dashboard/dist"
 
 cp -r "$SRC/ops"          "$PROD/ops"
-cp -r "$SRC/scripts"      "$PROD/scripts"
 # deploy.conf is untracked, so a deploy from main has none in its stage. It stays
 # in the checkout because it names this folder; the copy lets the deployed
 # scripts, which systemd runs, read the same settings.
-if [[ -f "$SCRIPTS_DIR/deploy.conf" ]]; then
-  cp "$SCRIPTS_DIR/deploy.conf" "$PROD/scripts/deploy.conf"
+if [[ -f "$OPS_DIR/deploy.conf" ]]; then
+  cp "$OPS_DIR/deploy.conf" "$PROD/ops/deploy.conf"
 fi
 # Strip the dashboard, voice-engine and dsh-voice workspaces from package.json — only the built dist is deployed
 bun -e "const p = JSON.parse(require('fs').readFileSync('$SRC/package.json','utf8')); p.workspaces = p.workspaces.filter(w => w !== 'dashboard' && w !== 'voice-engine' && w !== 'plugins/dsh/voice'); require('fs').writeFileSync('$PROD/package.json', JSON.stringify(p, null, 2))"
@@ -177,7 +177,7 @@ bun install
 printf '{"project":"banter","deployedAt":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$PROD/.banter-deploy.json"
 
 echo "[control-deploy] Making wrapper scripts executable..."
-chmod +x "$PROD/scripts/"*.sh
+chmod +x "$PROD/ops/"*.sh
 
 echo "[control-deploy] Installing service units and scripts..."
 # A deploy from main installs no built artifacts: its git archive holds none.
@@ -186,7 +186,7 @@ echo "[control-deploy] Installing service units and scripts..."
 INSTALL_FAILED=false
 INSTALL_ARGS=("$SRC")
 [[ "$SRC" != "$REPO" ]] && INSTALL_ARGS=(--no-artifacts "$SRC")
-bash "$PROD/scripts/control-install-services.sh" "${INSTALL_ARGS[@]}" || INSTALL_FAILED=true
+bash "$PROD/ops/control-install-services.sh" "${INSTALL_ARGS[@]}" || INSTALL_FAILED=true
 
 echo "[control-deploy] Starting control plane..."
 systemctl --user daemon-reload

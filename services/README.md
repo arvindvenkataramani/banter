@@ -20,7 +20,7 @@ Two kinds of entries here:
 | `fluid` (`fluid-stt`) | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`, `WS /v1/audio/stream` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
 | `fluid` (`fluid-tts`) | TTS | `GET /healthz`, `POST /v1/audio/speech`, `WS /v1/audio/stream` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
 
-Every adapter reads its allowlist as a comma-separated list of origins and sends no CORS headers when it is unset, so the browser refuses every call. Set it under the service's `ops.env.variables` to the origins you open the dashboard from. `scripts/install.sh` fills each `*_CORS_ORIGINS` variable in a fresh registry it seeds; see [docs/guide/speech-servers.md](../docs/guide/speech-servers.md#cors).
+Every adapter reads its allowlist as a comma-separated list of origins and sends no CORS headers when it is unset, so the browser refuses every call. Set it under the service's `ops.env.variables` to the origins you open the dashboard from. `ops/install.sh` fills each `*_CORS_ORIGINS` variable in a fresh registry it seeds; see [docs/guide/speech-servers.md](../docs/guide/speech-servers.md#cors).
 
 A Python adapter runs from its service's `ops.env.workingDirectory`, so the install is the same for each: create `<workingDirectory>/logs` (the control plane writes the service's output there and fails to start it otherwise), copy `server.py` and `requirements.txt` into the working directory, and create `.venv` there with `pip install -r requirements.txt`. The adapter's own README gives the exact commands and anything extra.
 

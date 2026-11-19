@@ -16,7 +16,7 @@ The point is to run services on whatever machine suits them — a GPU box, a Mac
 
 ## Platform support
 
-The shard's code is platform-neutral. Its installer is not: `scripts/shard-deploy.sh` compiles a Swift supervisor and installs a launchd agent, so it runs on macOS only.
+The shard's code is platform-neutral. Its installer is not: `ops/shard-deploy.sh` compiles a Swift supervisor and installs a launchd agent, so it runs on macOS only.
 
 A Linux shard needs a systemd counterpart to that script — a unit where it installs a launchd agent. Nothing in the shard itself is in the way; `systemd` is already a supported runner type.
 
@@ -35,19 +35,19 @@ jq --arg home "$HOME" \
   control/control-shard/data/registry.example.json > ~/services/banter/registry.json
 ```
 
-That destination is the shard's live registry, at the top of its deployment folder (`$BANTER_SHARD_PROD`, `~/services/banter` by default; one node per machine, so the shard shares the plane's default). It is a copy across directories, not a rename in place. The `jq` filter is the same one `scripts/install.sh` uses to expand a leading `~/` in each service's `ops.env.workingDirectory` to your home directory — a plain `cp` would leave the literal `~/` in place, which nothing downstream expands.
+That destination is the shard's live registry, at the top of its deployment folder (`$BANTER_SHARD_PROD`, `~/services/banter` by default; one node per machine, so the shard shares the plane's default). It is a copy across directories, not a rename in place. The `jq` filter is the same one `ops/install.sh` uses to expand a leading `~/` in each service's `ops.env.workingDirectory` to your home directory — a plain `cp` would leave the literal `~/` in place, which nothing downstream expands.
 
 Edit the host ids, hostnames, and service entries to match what runs there; the example's service entries and origins are placeholders to replace. The registry's `type` must be `"shard"`. Without a live registry, the deploy seeds one from the example.
 
 **3. Deploy:**
 
 ```bash
-scripts/shard-deploy.sh
+ops/shard-deploy.sh
 ```
 
 This merges the example registry into the live one (see [live-config](../reference/design/live-config.md#deploy)), copies files into place, compiles and code-signs the `shard-runner` Swift supervisor, and installs the launchd agent. It is short enough to read, and it is where the exact commands live — including the `swiftc` invocation, if you want to run the steps by hand.
 
-The launchd agent is generated, not hand-edited. launchd will not expand `~` or `$HOME` in a plist, so the installed file has to carry absolute paths — but the tracked one does not. `control/control-shard/ops/com.banter.control-shard.plist.template` carries a `__HOME__` placeholder, and the deploy substitutes your home directory into it before installing the result.
+The launchd agent is generated, not hand-edited. launchd will not expand `~` or `$HOME` in a plist, so the installed file has to carry absolute paths — but the tracked one does not. `ops/launchd/com.banter.control-shard.plist.template` carries a `__HOME__` placeholder, and the deploy substitutes your home directory into it before installing the result.
 
 ---
 

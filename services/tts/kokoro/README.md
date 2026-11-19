@@ -36,7 +36,7 @@ The weights download to `~/.cache/huggingface` the first time the pipeline loads
 
 | Variable | Default | |
 |---|---|---|
-| `KOKORO_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call. `scripts/install.sh` fills it in the registry it seeds |
+| `KOKORO_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call. `ops/install.sh` fills it in the registry it seeds |
 
 ## Registry
 

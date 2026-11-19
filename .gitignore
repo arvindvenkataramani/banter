@@ -58,7 +58,7 @@ scratchpad/
 .review/
 
 # Per-machine deploy settings — deploy.conf.example ships instead
-scripts/deploy.conf
+ops/deploy.conf
 
 # Event log written by a local (non-deployed) control plane run
 logs/
@@ -66,7 +66,7 @@ logs/
 # Build-process working docs (design, plans, test logs) — process scratch, not source
 plans/
 
-# Rendered from ops/com.banter.control-shard.plist.template at deploy time.
+# Rendered from ops/launchd/com.banter.control-shard.plist.template at deploy time.
 control/control-shard/ops/com.banter.control-shard.plist
 
 # Playwright MCP browser session logs/artifacts

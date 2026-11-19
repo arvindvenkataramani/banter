@@ -10,7 +10,7 @@ Registry and config edits go in the files in your *deployed* folder, not in the 
 
 ## The example registry
 
-`scripts/install.sh` seeds your registry from the example registry. The example registry registers a faster-whisper STT server and a Kokoro TTS server as process runners, both demand-loaded: the control plane starts each on first use and stops it after it has been idle for `idleTimeout`. Keep, change or delete those entries. They are examples of how a speech server is registered, and the control plane starts without either.
+`ops/install.sh` seeds your registry from the example registry. The example registry registers a faster-whisper STT server and a Kokoro TTS server as process runners, both demand-loaded: the control plane starts each on first use and stops it after it has been idle for `idleTimeout`. Keep, change or delete those entries. They are examples of how a speech server is registered, and the control plane starts without either.
 
 To use them, install each on the machine that runs it from its folder's README:
 
@@ -54,7 +54,7 @@ curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
 
 An `access-control-allow-origin` line back means the origin is allowed. Nothing back means the browser will refuse the server even though `curl` reaches it. Use the route the server answers: `/v1/audio/transcriptions` for an STT server, and use the dashboard's real origin.
 
-When it seeds a fresh registry, `scripts/install.sh` sets every `*_CORS_ORIGINS` variable it finds to `http://localhost` and `http://127.0.0.1` on the control plane's port and on `5173`, four origins. Anything added to the registry afterwards, including entries from an example file, keeps the origins written in that file until you edit them. Opening the dashboard from another address, such as a LAN IP or an `https` hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder `https` tailnet origins; replace them with the origins you use.
+When it seeds a fresh registry, `ops/install.sh` sets every `*_CORS_ORIGINS` variable it finds to `http://localhost` and `http://127.0.0.1` on the control plane's port and on `5173`, four origins. Anything added to the registry afterwards, including entries from an example file, keeps the origins written in that file until you edit them. Opening the dashboard from another address, such as a LAN IP or an `https` hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder `https` tailnet origins; replace them with the origins you use.
 
 The OpenClaw gateway checks browser origins too, separately from any speech server. Add every origin you open the dashboard from to `gateway.controlUi.allowedOrigins`. See [configuration.md](../reference/configuration.md#cors) for both.
 
@@ -89,10 +89,10 @@ Then build and install:
 
 ```bash
 scripts/fluid-build.sh
-scripts/control-install-services.sh   # or scripts/shard-install-services.sh on a shard
+ops/control-install-services.sh   # or ops/shard-install-services.sh on a shard
 ```
 
-`fluid-build.sh` compiles the servers in `services/fluid`, first checking its prerequisites (Swift 6 toolchain, `libopus`) and naming what is missing. The install script copies the built app bundles into the deployed tree, as each entry's `ops.install` declares; a full `scripts/control-deploy.sh` does the same. Run both again after any pull that changes the fluid sources.
+`fluid-build.sh` compiles the servers in `services/fluid`, first checking its prerequisites (Swift 6 toolchain, `libopus`) and naming what is missing. The install script copies the built app bundles into the deployed tree, as each entry's `ops.install` declares; a full `ops/control-deploy.sh` does the same. Run both again after any pull that changes the fluid sources.
 
 [`services/fluid/README.md`](../../services/fluid/README.md) has the prerequisites, the merge command, and what the servers offer. On Linux the fluid servers do not build; see [Speech servers on Linux](#linux).
 

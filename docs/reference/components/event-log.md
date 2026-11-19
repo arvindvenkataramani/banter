@@ -42,7 +42,7 @@ broken), `service.down` / `service.stopped` / `service.unloaded` → `down`.
 
 The API reports one more state, `off`: a service whose run intent (see [Reading](#reading)) is not to run, or a demand-loaded one never started, and whose last health event is not a running one. `down` therefore means meant to run and not answering. A check that finds the service answering still wins, so one started outside Banter shows what it is.
 
-`service.installed` never decides health: `deriveHealthMap` skips it, so the event before it still does. The install scripts append it, one line written by `scripts/install-artifacts.sh`, with `data` holding the source `commit`, `dirty`, and each artifact's `path` and `sha256` — a record of what is on disk, which a stopped service must not lose its `down` to.
+`service.installed` never decides health: `deriveHealthMap` skips it, so the event before it still does. The install scripts append it, one line written by `ops/install-artifacts.sh`, with `data` holding the source `commit`, `dirty`, and each artifact's `path` and `sha256` — a record of what is on disk, which a stopped service must not lose its `down` to.
 
 The full `EventType` union — including events like `memory.pressure` and `tailscale.serve_failed` — is `shared/types.ts` itself; don't hand-copy it here, it will drift. Note that `memory.pressure` is in the derivation switch and maps to `down`, so it does affect a service's derived health; `tailscale.serve_failed` is not, and falls through to `unknown`.
 

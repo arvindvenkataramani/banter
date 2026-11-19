@@ -22,7 +22,7 @@ Install `jq` with `apt install jq` or `brew install jq`.
 
 ## Per-machine deploy settings
 
-`scripts/deploy-env.sh` resolves where each node deploys to, and every deploy, install, run and dev script sources it. An optional `scripts/deploy.conf` overrides its defaults for one machine; copy `scripts/deploy.conf.example` and uncomment what you need. The file is bash assignments, sourced; a missing file is not an error. It stays in the checkout's `scripts/` because it names the deployment folder, and a deploy copies it into the deployed `scripts/`, so a deploy, systemd and launchd all read the same values.
+`ops/deploy-env.sh` resolves where each node deploys to, and every deploy, install, run and dev script sources it. An optional `ops/deploy.conf` overrides its defaults for one machine; copy `ops/deploy.conf.example` and uncomment what you need. The file is bash assignments, sourced; a missing file is not an error. It stays in the checkout's `ops/` because it names the deployment folder, and a deploy copies it into the deployed `ops/`, so a deploy, systemd and launchd all read the same values.
 
 Precedence is the environment, then `deploy.conf`, then the default. The variables it may set are `BANTER_PROD`, `BANTER_UNIT`, `BANTER_LIVE_DIR`, `BANTER_REGISTRY_PATH`, `BANTER_CONFIG_PATH`, `BANTER_EVENTS_PATH`, `BANTER_STAGE_DIR`, `BANTER_SHARD_PROD`, `BANTER_SHARD_LIVE_DIR`, `BANTER_SHARD_REGISTRY_PATH` and `BANTER_SHARD_EVENTS_PATH`. Derived defaults follow the resolved values: setting only `BANTER_LIVE_DIR` moves the registry and config paths with it.
 
@@ -38,7 +38,7 @@ The systemd unit is rendered at install time with the deployment path and unit n
 
 ```bash
 bun run control-deploy
-# or: bash scripts/control-deploy.sh
+# or: bash ops/control-deploy.sh
 ```
 
 Sequence:
@@ -72,9 +72,9 @@ On startup, kills any process holding the dev ports. Stop with Ctrl+C.
 ### Start and stop
 
 ```bash
-bash scripts/control-start.sh      # systemctl start
-bash scripts/control-stop.sh       # stop and tear down any Tailscale Serve binding
-bash scripts/control-uninstall.sh  # disable, remove the unit, delete the deployment folder
+bash ops/control-start.sh      # systemctl start
+bash ops/control-stop.sh       # stop and tear down any Tailscale Serve binding
+bash ops/control-uninstall.sh  # disable, remove the unit, delete the deployment folder
 ```
 
 `control-uninstall.sh` deletes `$BANTER_PROD`, including the live `config.json`, `registry.json` and `state/`. Copy them out first to keep them.
@@ -98,7 +98,7 @@ One systemd unit, `banter.service` (named by `BANTER_UNIT`), runs `control-runne
 
 ```bash
 bun run shard-deploy
-# or: bash scripts/shard-deploy.sh
+# or: bash ops/shard-deploy.sh
 ```
 
 Sequence:
@@ -121,7 +121,7 @@ The shard is API-only: no dashboard is built or deployed. A deploy from `main` d
 Building and installing are separate. Each package has its own build script; `shard-install-services.sh` installs whatever the registry declares under a service's `ops.install.artifacts`, each a `from` path in the source tree and a `to` path in the service's working directory. For the fluid servers:
 
 ```bash
-scripts/fluid-build.sh && scripts/shard-install-services.sh
+scripts/fluid-build.sh && ops/shard-install-services.sh
 ```
 
 A service whose artifacts match what is installed is left alone, and one whose artifact has not been built is reported and skipped. A changed service is stopped through the control API if it is running, its files swapped in by rename, and restarted. Each install writes `SOURCE-COMMIT.txt` in the working directory and appends a `service.installed` event to the shard's event log, carrying the commit and each artifact's sha256. Install runs only as a script on the machine, never through the control API. Design: [design/service-install.md](../reference/design/service-install.md).
@@ -154,9 +154,9 @@ If the terminal is killed uncleanly, the trap does not run and Tailscale Serve m
 ### Start and stop
 
 ```bash
-bash scripts/shard-start.sh      # bootstrap the agent if not loaded
-bash scripts/shard-stop.sh       # launchctl disable and bootout, then Serve off on the shard's port
-bash scripts/shard-uninstall.sh  # remove the agent and delete the deployment folder
+bash ops/shard-start.sh      # bootstrap the agent if not loaded
+bash ops/shard-stop.sh       # launchctl disable and bootout, then Serve off on the shard's port
+bash ops/shard-uninstall.sh  # remove the agent and delete the deployment folder
 ```
 
 `shard-uninstall.sh` deletes `$BANTER_SHARD_PROD`, including the live `registry.json` and `state/`. Copy them out first to keep them.
@@ -233,7 +233,7 @@ The control plane binds to `localhost` by default, so another machine needs eith
 tailscale serve status
 
 # If missing or wrong, restart the service (the runner re-establishes Serve)
-bash scripts/control-start.sh
+bash ops/control-start.sh
 ```
 
 Voice on a phone also needs a secure page (https, or localhost); a plain `http://<lan-ip>` page can chat by text but cannot use the microphone. See [setup/remote-access.md](remote-access.md#why-https).
@@ -251,7 +251,7 @@ If `systemctl --user stop banter` hangs, the wrapper may not be forwarding SIGTE
 systemctl --user kill -s SIGKILL banter
 
 # Then restart
-bash scripts/control-start.sh
+bash ops/control-start.sh
 ```
 
 ---

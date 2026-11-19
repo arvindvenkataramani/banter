@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-source "$REPO/scripts/deploy-env.sh"
+source "$REPO/ops/deploy-env.sh"
 # The live registry, where the shard reads it (the repo has only an example).
 REGISTRY="$BANTER_SHARD_REGISTRY_PATH"
 [[ -f "$REGISTRY" ]] || { echo "[shard-dev] error: no shard registry at $REGISTRY — the next shard-deploy.sh creates it; see docs/guide/shard.md" >&2; exit 1; }
@@ -41,7 +41,7 @@ cleanup() {
   # Re-enable production if the plist is deployed — check actual state, not a flag
   if [[ -f "$AGENTS_DIR/${SHARD_LABEL}.plist" ]]; then
     echo "[shard-dev] Plist is installed — restoring production agent..."
-    "$REPO/scripts/shard-start.sh"
+    "$REPO/ops/shard-start.sh"
   else
     echo "[shard-dev] Plist not installed — skipping production restore."
   fi
@@ -53,7 +53,7 @@ trap cleanup EXIT INT TERM
 
 # Stop production — always, regardless of whether it appears to be running.
 # Covers both launchd agents and any stale tailscale serve bindings.
-"$REPO/scripts/shard-stop.sh"
+"$REPO/ops/shard-stop.sh"
 
 echo "[shard-dev] Starting control shard..."
 

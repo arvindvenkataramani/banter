@@ -166,4 +166,4 @@ Each server also logs to unified logging with its bundle identifier as the subsy
 
 ## Installing
 
-`scripts/install-artifacts.sh`, called by both install scripts, copies each bundle into the working directory its registry entry declares. It writes `SOURCE-COMMIT.txt` recording what it was built from, and logs a `service.installed` event. A running service is stopped through the control API for the swap and started again afterwards; one whose bundle hasn't changed isn't touched.
+`ops/install-artifacts.sh`, called by both install scripts, copies each bundle into the working directory its registry entry declares. It writes `SOURCE-COMMIT.txt` recording what it was built from, and logs a `service.installed` event. A running service is stopped through the control API for the swap and started again afterwards; one whose bundle hasn't changed isn't touched.

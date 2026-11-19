@@ -169,7 +169,7 @@ For a server Banter didn't build, the roster is Banter's claim about what that s
 ## Applying an edit
 
 1. `POST /api/config/reload` on the control plane (this also re-reads the registry and, on a multi-node setup, reloads and re-polls every shard in one call).
-2. If the response's `warnings` names a `provider-changed` warning for a service, restart that service: `POST /api/services/<id>/restart`, or `scripts/service-control.sh restart <service>` as a backup path. A server that reads its roster section once, at startup (the fluid servers do), only sees a changed provider (a new model, a changed `presetVoices` list, and so on) after the restart.
+2. If the response's `warnings` names a `provider-changed` warning for a service, restart that service: `POST /api/services/<id>/restart`, or `ops/service-control.sh restart <service>` as a backup path. A server that reads its roster section once, at startup (the fluid servers do), only sees a changed provider (a new model, a changed `presetVoices` list, and so on) after the restart.
 
 A `voices[]`-only change never triggers that warning and needs no restart — the assembled voice list is rebuilt on every reload.
 

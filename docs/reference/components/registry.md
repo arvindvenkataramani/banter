@@ -170,7 +170,7 @@ Health-monitored but not managed. Start/stop API calls return 400.
 "install": { "artifacts": [ { "from": "services/fluid/.build/release/fluid-stt.app", "to": "fluid-stt.app" } ] }
 ```
 
-What the install scripts copy into place: a file, or a whole directory such as a resource bundle a binary loads from beside itself. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `scripts/install-artifacts.sh` — never by the running control plane or shard.
+What the install scripts copy into place: a file, or a whole directory such as a resource bundle a binary loads from beside itself. `from` is relative to the source tree, `to` relative to `ops.env.workingDirectory`, which is then required; both must be relative and free of `..`. Read only by `ops/install-artifacts.sh` — never by the running control plane or shard.
 
 #### `lifecycle`
 
@@ -192,7 +192,7 @@ What the install scripts copy into place: a file, or a whole directory such as a
 
 ## Storage and access
 
-Each node's registry is a JSON file local to that node, `registry.json` at the top of its deployment folder (`$BANTER_PROD` for the control plane, `$BANTER_SHARD_PROD` for a shard, both `~/services/banter` by default). The repo tracks examples, not live files: `control/control-plane/data/registry.example.json` and `control/control-shard/data/registry.example.json` are templates that `scripts/install.sh` seeds the live file from and that every deploy three-way merges into it; see [`design/live-config.md`](../design/live-config.md). To create the live file by hand:
+Each node's registry is a JSON file local to that node, `registry.json` at the top of its deployment folder (`$BANTER_PROD` for the control plane, `$BANTER_SHARD_PROD` for a shard, both `~/services/banter` by default). The repo tracks examples, not live files: `control/control-plane/data/registry.example.json` and `control/control-shard/data/registry.example.json` are templates that `ops/install.sh` seeds the live file from and that every deploy three-way merges into it; see [`design/live-config.md`](../design/live-config.md). To create the live file by hand:
 
 ```bash
 mkdir -p ~/services/banter

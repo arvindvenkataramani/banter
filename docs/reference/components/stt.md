@@ -26,8 +26,8 @@ Voice mode's STT service and model are `voice.stt.serviceId` and `voice.stt.mode
 
 `fluid-stt` is not upstream: FluidAudio contains no server. It lives in
 [`../../services/fluid/`](../../../services/fluid/) beside `fluid-tts`;
-`scripts/fluid-build.sh` builds both, and `scripts/shard-install-services.sh` or
-`scripts/control-install-services.sh` copies the built binaries to the path each
+`scripts/fluid-build.sh` builds both, and `ops/shard-install-services.sh` or
+`ops/control-install-services.sh` copies the built binaries to the path each
 service's `ops.install` names. The models a `fluid-stt` entry offers are its
 provider's `sttModels` in the `roster` section of the registry that registers
 it, which it reads at startup through `--registry {registry}` in `runner.main`.

@@ -13,7 +13,7 @@ What you did, what you expected, what happened instead.
 **Where**
 - Node: control plane / shard / both
 - OS: [e.g. Debian 12, macOS 15]
-- Install method: `scripts/install.sh` / `control-deploy.sh` / manual `control-runner.sh` / dev (`control-dev.sh`)
+- Install method: `ops/install.sh` / `control-deploy.sh` / manual `control-runner.sh` / dev (`control-dev.sh`)
 - Banter version or commit (`dev: <short hash>` in the dashboard footer, or `git rev-parse --short HEAD`)
 
 **Logs**

@@ -127,7 +127,7 @@ The shard extends the shared API with shard-specific endpoints (`/status`, `/pin
 
 TypeScript, Bun. Consistent with the control plane.
 
-**Deployment:** the shard is supervised by the compiled `shard-runner` Swift binary, managed by launchd. The installer, `scripts/shard-deploy.sh`, therefore runs on macOS only; [`setup/shard.md`](../../guide/shard.md) covers what a Linux shard needs. Nothing in the shard's own TypeScript depends on launchd, and a shard on another OS needs an equivalent supervisor, such as a systemd unit, to get the same crash-restart and Serve teardown behavior.
+**Deployment:** the shard is supervised by the compiled `shard-runner` Swift binary, managed by launchd. The installer, `ops/shard-deploy.sh`, therefore runs on macOS only; [`setup/shard.md`](../../guide/shard.md) covers what a Linux shard needs. Nothing in the shard's own TypeScript depends on launchd, and a shard on another OS needs an equivalent supervisor, such as a systemd unit, to get the same crash-restart and Serve teardown behavior.
 
 The `shard-runner` binary:
 - Tears down stale Tailscale Serve on the shard's port, read from the registry
@@ -136,7 +136,7 @@ The `shard-runner` binary:
 - Restarts the shard process if it exits
 - On SIGTERM: kills children, tears down Tailscale Serve, exits
 
-**Debugging tool:** `scripts/service-control.sh` provides manual lifecycle control for registry-managed services: `start`, `stop`, `restart`, `status`, `enable`, `disable`. The shard itself does not call this script; it manages services natively. The script is for use in coding sessions and debugging.
+**Debugging tool:** `ops/service-control.sh` provides manual lifecycle control for registry-managed services: `start`, `stop`, `restart`, `status`, `enable`, `disable`. The shard itself does not call this script; it manages services natively. The script is for use in coding sessions and debugging.
 
 **Startup sequence:**
 1. shard-runner handles Tailscale Serve and process supervision

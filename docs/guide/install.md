@@ -29,10 +29,10 @@ cd banter
 
 ## Install script
 
-`scripts/install.sh` takes a fresh clone to a running, reachable control plane in one step: dependencies, model assets, config, and installing it as a service on Linux or macOS.
+`ops/install.sh` takes a fresh clone to a running, reachable control plane in one step: dependencies, model assets, config, and installing it as a service on Linux or macOS.
 
 ```bash
-scripts/install.sh
+ops/install.sh
 ```
 
 Run it from the repo root. It:
@@ -43,7 +43,7 @@ Run it from the repo root. It:
 4. creates `registry.json` and `config.json` at the top of the deployment folder from the shipped examples, unless either file already exists, in which case both are left as they are;
 5. in the registry it seeds, expands a leading `~/` in each service's `ops.env.workingDirectory` to your home directory, and fills every `*_CORS_ORIGINS` variable it finds with `http://localhost` and `http://127.0.0.1` on the control plane's port and on Vite's `5173` (see [speech-servers.md](speech-servers.md#cors));
 6. when it has just created `config.json`, prompts for your OpenClaw gateway URL and token and writes them to it, or reads them from `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` for a non-interactive run;
-7. deploys: on Linux it enables linger and runs `scripts/control-deploy.sh`; on macOS it runs `control-deploy.sh`, whose systemd step is expected to fail, then starts `control-runner.sh` in the background with its output in `$BANTER_PROD/install-run.log` (that process does not survive a reboot or logout; see [macOS, or Linux without systemd](#macos-or-linux-without-systemd));
+7. deploys: on Linux it enables linger and runs `ops/control-deploy.sh`; on macOS it runs `control-deploy.sh`, whose systemd step is expected to fail, then starts `control-runner.sh` in the background with its output in `$BANTER_PROD/install-run.log` (that process does not survive a reboot or logout; see [macOS, or Linux without systemd](#macos-or-linux-without-systemd));
 8. waits for `/api/health` on the control plane's port, then prints the dashboard address and the gateway origin to allow.
 
 The script installs no speech servers and no Python packages. Each speech server's own README says how to install it; see [speech-servers.md](speech-servers.md).
@@ -66,7 +66,7 @@ The browser's VAD and turn-detection model assets are committed to the repo, so 
 
 ### Configure it
 
-`scripts/install.sh` creates the two live config files at the top of the deployment folder (`~/services/banter` by default). To create them by hand:
+`ops/install.sh` creates the two live config files at the top of the deployment folder (`~/services/banter` by default). To create them by hand:
 
 ```bash
 mkdir -p ~/services/banter
@@ -78,7 +78,7 @@ Edit `~/services/banter/config.json` to point at your OpenClaw gateway (`integra
 
 The token may be written as `"${OPENCLAW_GATEWAY_TOKEN}"` rather than pasted in, in which case it is read from the environment at the point of use. The deployed service loads no environment file, so a placeholder there resolves to nothing and the gateway goes unauthenticated. Paste the value for a deployed run. Only `control-dev` reads an environment file, `$BANTER_PROD/.env.secrets`, which lives outside the repo.
 
-Hand-copying skips the two things the install script does to a fresh registry: expanding `~/` in working directories (nothing downstream expands it) and filling the `*_CORS_ORIGINS` variables. Do both by hand, or run the script's `jq` step from `scripts/install.sh`.
+Hand-copying skips the two things the install script does to a fresh registry: expanding `~/` in working directories (nothing downstream expands it) and filling the `*_CORS_ORIGINS` variables. Do both by hand, or run the script's `jq` step from `ops/install.sh`.
 
 ## Install as a service
 
@@ -89,10 +89,10 @@ This is the only step that differs by OS.
 ```bash
 loginctl enable-linger $USER   # once per machine: keeps the service running
                                # when you are not logged in
-scripts/control-deploy.sh
+ops/control-deploy.sh
 ```
 
-`control-deploy.sh` builds the dashboard, installs a systemd **user** unit, and starts it. Afterwards `scripts/control-start.sh` and `control-stop.sh` control it, and re-running `control-deploy.sh` picks up code changes.
+`control-deploy.sh` builds the dashboard, installs a systemd **user** unit, and starts it. Afterwards `ops/control-start.sh` and `control-stop.sh` control it, and re-running `control-deploy.sh` picks up code changes.
 
 ### macOS, or Linux without systemd
 
@@ -101,13 +101,15 @@ This path is untested. The deployed tree is a plain directory that starts from o
 `control-deploy.sh` builds, copies, and installs dependencies portably, then calls `systemctl --user` to register and start the unit. Without systemd it fails there, at its own `daemon-reload`, `enable` and `restart` calls, after `control-install-services.sh` has finished. That script skips its own systemd calls when `systemctl` is absent, so the deployed tree and any installed service artifacts are in place. So let the deploy run, then supervise the result yourself:
 
 ```bash
-scripts/control-deploy.sh || true   # expected to fail at the systemd step
-~/services/banter/scripts/control-runner.sh   # foreground, to check it serves
+ops/control-deploy.sh || true   # expected to fail at the systemd step
+~/services/banter/ops/control-runner.sh   # foreground, to check it serves
 ```
 
-`scripts/install.sh` does the same on macOS and then starts `control-runner.sh` in the background with `nohup`.
+`ops/install.sh` does the same on macOS and then starts `control-runner.sh` in the background with `nohup`.
 
 `control-runner.sh` reads the port from the registry, registers with Tailscale Serve if Tailscale is present (skipped silently otherwise), and execs bun. Ctrl+C stops it. To keep it running across logouts and reboots, point a supervisor at that script: a launchd agent on macOS, or whatever you use elsewhere. It reads the `deploy.conf` that a deploy copies beside it, so a custom `BANTER_PROD` needs nothing set in its environment.
+
+An install made before this layout points at `scripts/control-runner.sh`; redeploying, or editing a hand-made supervisor entry, picks up `ops/control-runner.sh`.
 
 `ops/systemd/banter.service.template` is the systemd unit before rendering; `__PROD__` and `__UNIT__` are substituted at install time. It is a reference for what a launchd plist needs to do.
 
@@ -124,10 +126,10 @@ The deploy tree defaults to `~/services/banter` and is a **copy**: the repo is t
 To install somewhere else, set it once in a config file:
 
 ```bash
-cp scripts/deploy.conf.example scripts/deploy.conf
+cp ops/deploy.conf.example ops/deploy.conf
 ```
 
-Uncomment `BANTER_PROD` and `BANTER_UNIT` there and every script picks them up: deploy, start, stop, uninstall. `deploy.conf` is untracked, so the setting is yours. It stays in the checkout's `scripts/` because it names the folder, and each deploy copies it into the deployed `scripts/`. Set both together: a second install on one machine needs its own directory *and* its own unit name, or `systemctl --user restart banter` acts on whichever one holds the name. A custom directory with the default unit name `banter` is refused rather than half-applied; a custom unit name with the default directory is allowed.
+Uncomment `BANTER_PROD` and `BANTER_UNIT` there and every script picks them up: deploy, start, stop, uninstall. `deploy.conf` is untracked, so the setting is yours. It stays in the checkout's `ops/` because it names the folder, and each deploy copies it into the deployed `ops/`. Set both together: a second install on one machine needs its own directory *and* its own unit name, or `systemctl --user restart banter` acts on whichever one holds the name. A custom directory with the default unit name `banter` is refused rather than half-applied; a custom unit name with the default directory is allowed.
 
 ### Which files to edit
 
@@ -138,17 +140,17 @@ Registry and config edits go in the two files in the *deployed* folder, not in t
 ~/services/banter/config.json
 ```
 
-That folder is what runs; the repo is only its source. Editing the repo's `*.example.json` files changes nothing until you deploy, and a deploy merges them into the deployed files rather than overwriting them. If you set `BANTER_PROD` in `scripts/deploy.conf`, use that path instead. A server that runs on a shard machine has its entry in that shard's own `registry.json`, at the top of the shard's deployment folder; see [shard.md](shard.md).
+That folder is what runs; the repo is only its source. Editing the repo's `*.example.json` files changes nothing until you deploy, and a deploy merges them into the deployed files rather than overwriting them. If you set `BANTER_PROD` in `ops/deploy.conf`, use that path instead. A server that runs on a shard machine has its entry in that shard's own `registry.json`, at the top of the shard's deployment folder; see [shard.md](shard.md).
 
-[scripts/README.md](../../scripts/README.md) indexes the rest of the scripts, including `service-control.sh` for driving services by hand when the control API is not available.
+[ops/README.md](../../ops/README.md) indexes the rest of the install and run scripts, including `service-control.sh` for driving services by hand when the control API is not available.
 
 ## Uninstalling
 
 ```bash
-scripts/control-uninstall.sh
+ops/control-uninstall.sh
 ```
 
-This reverses what `control-deploy.sh` installed: it tears down the Tailscale Serve binding, stops and removes the systemd unit (without systemd, it stops the running `control-runner.sh` process directly, since there is no unit to remove), and deletes the deployment folder `$BANTER_PROD`, including `config.json`, `registry.json` and `state/`. Copy them out first to keep them. `scripts/shard-uninstall.sh` does the same for a shard's folder. Run `control-deploy.sh` again afterward to reinstall.
+This reverses what `control-deploy.sh` installed: it tears down the Tailscale Serve binding, stops and removes the systemd unit (without systemd, it stops the running `control-runner.sh` process directly, since there is no unit to remove), and deletes the deployment folder `$BANTER_PROD`, including `config.json`, `registry.json` and `state/`. Copy them out first to keep them. `ops/shard-uninstall.sh` does the same for a shard's folder. Run `control-deploy.sh` again afterward to reinstall.
 
 ## Next
 

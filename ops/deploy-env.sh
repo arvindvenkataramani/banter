@@ -6,8 +6,8 @@
 # one. To install somewhere else, copy deploy.conf.example to deploy.conf and
 # edit it — that file is per-machine and untracked, so the setting survives
 # every deploy and never has to be retyped or exported. It stays in the
-# checkout's scripts/ because it names the deployment folder; a deploy copies
-# it into the deployed scripts/, so the scripts systemd runs read it too.
+# checkout's ops/ because it names the deployment folder; a deploy copies
+# it into the deployed ops/, so the scripts systemd runs read it too.
 #
 # Precedence: environment > deploy.conf > defaults. The environment wins so a
 # one-off (a staging deploy, a test) does not require editing the file, and so

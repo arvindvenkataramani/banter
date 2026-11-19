@@ -5,7 +5,7 @@
 # tts-kokoro, and each folder under services/ has a README for installing it.
 # Fluid (Apple Silicon) is optional and built by scripts/fluid-build.sh.
 #
-# Usage: scripts/install.sh
+# Usage: ops/install.sh
 #
 # Run from the repo root, after cloning. Prompts for the OpenClaw gateway URL
 # and token; everything else follows the defaults in docs/guide/install.md.
@@ -14,8 +14,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 # BANTER_PROD and the live config and registry paths inside it, honouring
-# scripts/deploy.conf.
-source "$REPO/scripts/deploy-env.sh"
+# ops/deploy.conf.
+source "$REPO/ops/deploy-env.sh"
 
 log() { echo "[install] $*"; }
 die() { echo "[install] error: $*" >&2; exit 1; }
@@ -131,7 +131,7 @@ case "$OS" in
     loginctl enable-linger "$USER" 2>/dev/null || log "warning: loginctl enable-linger failed — the service may stop when you log out. Continuing."
 
     log "Deploying..."
-    scripts/control-deploy.sh
+    ops/control-deploy.sh
 
     log "Waiting for the control plane to respond on :$BANTER_PORT..."
     for _ in $(seq 1 30); do
@@ -144,13 +144,13 @@ case "$OS" in
 
   Darwin)
     log "Deploying (the systemd step is expected to fail here)..."
-    scripts/control-deploy.sh || true
+    ops/control-deploy.sh || true
 
     PROD="$BANTER_PROD"
-    [[ -f "$PROD/scripts/control-runner.sh" ]] || die "deploy did not produce $PROD — check the output above for a real failure, not just the expected systemd one."
+    [[ -f "$PROD/ops/control-runner.sh" ]] || die "deploy did not produce $PROD — check the output above for a real failure, not just the expected systemd one."
 
     log "Starting the control plane in the background..."
-    nohup "$PROD/scripts/control-runner.sh" > "$PROD/install-run.log" 2>&1 &
+    nohup "$PROD/ops/control-runner.sh" > "$PROD/install-run.log" 2>&1 &
     RUNNER_PID=$!
     log "Started control-runner.sh (pid $RUNNER_PID). This does not survive a reboot or logout —"
     log "see \"macOS, or Linux without systemd\" in docs/guide/install.md for supervising it yourself"

@@ -1,11 +1,11 @@
 # Per-machine deploy settings. Copy to deploy.conf and edit; deploy.conf is
 # untracked, so your paths stay out of the repository.
 #
-#   cp scripts/deploy.conf.example scripts/deploy.conf
+#   cp ops/deploy.conf.example ops/deploy.conf
 #
-# It stays in the checkout's scripts/ because it names the deployment folder,
+# It stays in the checkout's ops/ because it names the deployment folder,
 # which the deployed scripts cannot find without it. A deploy copies it into
-# $BANTER_PROD/scripts/, so the scripts systemd runs read the same settings.
+# $BANTER_PROD/ops/, so the scripts systemd runs read the same settings.
 #
 # Everything here is optional — the commented values are the defaults, and an
 # ordinary install needs no file at all. A variable already set in the

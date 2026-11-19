@@ -20,6 +20,7 @@ PROD="$BANTER_SHARD_PROD"
 LAUNCHD_AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
 SCRIPTS_DIR="$REPO/scripts"
+OPS_DIR="$REPO/ops"
 
 # Temporary directories to remove on exit, under one trap: bash keeps only one
 # EXIT trap, so each directory registers here rather than installing its own and
@@ -178,7 +179,7 @@ echo "[shard-deploy] Installing services..."
 INSTALL_FAILED=false
 INSTALL_ARGS=("$SRC")
 [[ "$SRC" != "$REPO" ]] && INSTALL_ARGS=(--no-artifacts "$SRC")
-bash "$SRC/scripts/shard-install-services.sh" "${INSTALL_ARGS[@]}" || INSTALL_FAILED=true
+bash "$SRC/ops/shard-install-services.sh" "${INSTALL_ARGS[@]}" || INSTALL_FAILED=true
 
 echo "[shard-deploy] Installing dependencies..."
 cd "$PROD"
@@ -188,8 +189,8 @@ echo "[shard-deploy] Rendering and installing launchd plist..."
 mkdir -p "$LAUNCHD_AGENTS_DIR"
 # The tracked file is a template — launchd will not expand ~ or $HOME, so the
 # installed copy is rendered with this machine's home directory.
-bash "$SCRIPTS_DIR/render-plist.sh" \
-  "$PROD/control/control-shard/ops/com.banter.control-shard.plist.template" \
+bash "$OPS_DIR/render-plist.sh" \
+  "$SRC/ops/launchd/com.banter.control-shard.plist.template" \
   "$LAUNCHD_AGENTS_DIR/${SHARD_LABEL}.plist"
 
 echo "[shard-deploy] Starting control shard..."

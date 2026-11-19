@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Template. `__HOME__` is substituted with the deploying user's home
-     directory by scripts/render-plist.sh; shard-deploy.sh renders and installs
+     directory by ops/render-plist.sh; shard-deploy.sh renders and installs
      the result. launchd has no equivalent of systemd's %h and will not expand ~
      or $HOME, so the installed file must carry absolute paths — but the tracked
      one does not have to. Do not install this file directly. -->

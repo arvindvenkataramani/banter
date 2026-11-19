@@ -80,10 +80,10 @@ If a speech service is served over Tailscale, the dashboard calls it from the br
 
 ## Keeping it working
 
-Tailscale Serve entries can drop — a `tailscaled` restart, an OS update, however it happens. `scripts/serve-watchdog.sh` checks every service marked `tailscaleServe: true` against `tailscale serve status` and re-registers anything missing. It's meant for cron, once a minute:
+Tailscale Serve entries can drop — a `tailscaled` restart, an OS update, however it happens. `ops/serve-watchdog.sh` checks every service marked `tailscaleServe: true` against `tailscale serve status` and re-registers anything missing. It's meant for cron, once a minute:
 
 ```
-* * * * * /path/to/banter/scripts/serve-watchdog.sh
+* * * * * /path/to/banter/ops/serve-watchdog.sh
 ```
 
 Only useful if you're actually running a tailnet — skip it otherwise.

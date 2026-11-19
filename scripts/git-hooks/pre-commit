@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tracked hooks, shared by every clone: scripts/install.sh points
+# Tracked hooks, shared by every clone: ops/install.sh points
 # core.hooksPath here. In a clone that did not run it:
 #   git config core.hooksPath scripts/git-hooks
 
