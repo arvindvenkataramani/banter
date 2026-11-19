@@ -29,6 +29,8 @@ __pycache__/
 *.png
 # ...except the app's icons, which are served from public/favicon/.
 !dashboard/public/favicon/*.png
+# ...and documentation images.
+!docs/**/images/*.png
 
 # Files an older install wrote into the checkout; they can hold hosts and tokens.
 control/control-plane/data/registry.json
