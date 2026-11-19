@@ -1,6 +1,6 @@
 # Set up the dsh voice plugin
 
-Build the plugin, install it into a dsh profile, and start dsh. The plugin targets dsh `0.2.2-rc.1`.
+Build the plugin, install it into a dsh profile, and start dsh. Tested with dsh 0.2.2-rc.5. The plugin declares `>=0.2.2-rc.5`, so newer dsh versions load it; if a later dsh changes something the plugin relies on, it may stop working.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Build the plugin, install it into a dsh profile, and start dsh. The plugin targe
 dsh runs from the command line, not as the desktop app:
 
 ```bash
-npx @deepseek-ai/dsh@0.2.2-rc.1 web
+npx @deepseek-ai/dsh web
 ```
 
 ## Build and install
@@ -47,7 +47,7 @@ dsh keeps profiles under `~/.dsh`. To use another location, set `DSH_HOME` when 
 ## Start dsh
 
 ```bash
-npx @deepseek-ai/dsh@0.2.2-rc.1 web
+npx @deepseek-ai/dsh web
 ```
 
 Open the address it prints. In dsh's **Plugins** page, make sure **@banter/dsh-voice** is on. When you turn it on, a short "Set up voice" dialog offers to ask for microphone access and checks the speech services; **Open settings** goes to the plugin's [settings](settings.md). Then open a conversation: the voice button is in the composer ([README](README.md#turn-voice-on)).

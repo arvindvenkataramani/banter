@@ -2,9 +2,9 @@
 
 The contract for building Banter's voice mode as a DeepSeek Harness (dsh) plugin. Design: [`dev/design/dsh-voice-plugin.md`](../design/dsh-voice-plugin.md). This spec is complete for the build; where it is silent, the decision tiers apply (decide from precedent and log, or write a brief and stop that step).
 
-**Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh@0.2.2-rc.1 web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
+**Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
 
-**Target:** dsh `dsh-v0.2.2-rc.1`, pinned in every command (`npx @deepseek-ai/dsh@0.2.2-rc.1`), source at `~/Code/contrib/deepseek-harness`, Node `>=24.9.0`. Line references below are at that tag.
+**Target:** dsh `dsh-v0.2.2-rc.5`, which the plugin was verified against and declares as its lower bound (`engines.dsh` is `>=0.2.2-rc.5`; dsh refuses to load a plugin outside that range), source at `~/Code/contrib/deepseek-harness`, Node `>=24.9.0`. Line references below are at that tag.
 
 ---
 
@@ -122,7 +122,7 @@ The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is 
 - **Assets.** Serves, at the paths the client build references: `/models/silero_vad_legacy.onnx`, `/models/smart-turn-v3.2-cpu.onnx`, `/models/whisper-tiny/preprocessor_config.json`, `/tones/voice/*.mp3`, and the ONNX Runtime module, wasm and mic worklet the Vite build emits. Sources are the files the dashboard serves from `dashboard/public/`, copied into the built package. Correct content types (`application/wasm` for wasm).
 - **Speech relay.** Under a plugin-owned path prefix, relays HTTP requests and WebSocket upgrades to the configured STT and TTS endpoints only. The upstream is chosen by service id from the plugin's settings; a request naming anything else is refused. No `Origin` header is forwarded upstream. Bodies stream in both directions as they arrive and are never buffered whole: TTS audio is played as it streams, and a buffering relay passes every check while adding the whole synthesis time to each reply.
 - **Control-plane relay.** Relays exactly the calls the dashboard's voice code makes: `GET /api/services/:id`, `POST /api/services/:id/start`, `POST /api/services/:id/ping`, for the configured STT and TTS service ids only, to the configured control-plane URL.
-- **Gating.** Every plugin route, the upgrade included, refuses any request that dsh's `connection.requestRejection(req)` rejects (precedent: `packages/experimental/inspector/src/host/plugin.ts:93-110`).
+- **Gating.** Every plugin route, the upgrade included, refuses any request that dsh's `connection.requestRejection(req)` rejects (precedent: `packages/experimental/inspector/src/host/plugin.ts:130-147`).
 - **Voice guidance.** Registers a `ctx.systemPrompt.section` whose text is Banter's voice guidance (`plugins/openclaw/voice-mode/voice-guidance.md`) for sessions with voice live, and empty otherwise. The client tells the host which sessions have voice live.
 
 ## 8. Settings and install
