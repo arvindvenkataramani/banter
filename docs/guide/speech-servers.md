@@ -30,7 +30,7 @@ Which models and voices a server offers is declared in the registry's `roster` s
 
 ## CORS
 
-The browser calls speech servers directly, so each server needs the dashboard's origin in its CORS allowlist. A missing origin is the usual reason a healthy-looking server fails: it answers `curl`, and the browser refuses it.
+The browser calls speech servers directly, so each server needs Banter's origin in its CORS allowlist. A missing origin is the usual reason a healthy-looking server fails: it answers `curl`, and the browser refuses it.
 
 Every Python adapter in this repo reads a comma-separated allowlist from an environment variable, set under the service's `ops.env.variables`, and sends no CORS headers when it is unset:
 
@@ -52,11 +52,11 @@ curl -si -X OPTIONS http://YOUR-SERVER/v1/audio/speech \
   -H 'Access-Control-Request-Method: POST' | grep -i allow-origin
 ```
 
-An `access-control-allow-origin` line back means the origin is allowed. Nothing back means the browser will refuse the server even though `curl` reaches it. Use the route the server answers: `/v1/audio/transcriptions` for an STT server, and use the dashboard's real origin.
+An `access-control-allow-origin` line back means the origin is allowed. Nothing back means the browser will refuse the server even though `curl` reaches it. Use the route the server answers: `/v1/audio/transcriptions` for an STT server, and use Banter's real origin.
 
-When it seeds a fresh registry, `ops/install.sh` sets every `*_CORS_ORIGINS` variable it finds to `http://localhost` and `http://127.0.0.1` on the control plane's port and on `5173`, four origins. Anything added to the registry afterwards, including entries from an example file, keeps the origins written in that file until you edit them. Opening the dashboard from another address, such as a LAN IP or an `https` hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder `https` tailnet origins; replace them with the origins you use.
+When it seeds a fresh registry, `ops/install.sh` sets every `*_CORS_ORIGINS` variable it finds to `http://localhost` and `http://127.0.0.1` on the control plane's port and on `5173`, four origins. Anything added to the registry afterwards, including entries from an example file, keeps the origins written in that file until you edit them. Opening Banter from another address, such as a LAN IP or an `https` hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder `https` tailnet origins; replace them with the origins you use.
 
-The OpenClaw gateway checks browser origins too, separately from any speech server. Add every origin you open the dashboard from to `gateway.controlUi.allowedOrigins`. See [configuration.md](../reference/configuration.md#cors) for both.
+The OpenClaw gateway checks browser origins too, separately from any speech server. Add every origin you open Banter from to `gateway.controlUi.allowedOrigins`. See [configuration.md](../reference/configuration.md#cors) for both.
 
 ## Adding another server
 
@@ -83,7 +83,7 @@ A service whose `lifecycle` sets `loadStrategy: "demand"` shows as available rat
 - its `roster.providers`, to `roster.providers`;
 - its `fluid-` voices, to `roster.voices`.
 
-Set each appended service's `hostId` to a host in your registry, and expand the leading `~/` in each `ops.env.workingDirectory` to your home directory (nothing downstream expands it; the merge command in the fluid README does both). Its model ids and `fluid-` voice ids do not collide with the example registry's. Set `FLUID_CORS_ORIGINS` on both entries to your dashboard's origins.
+Set each appended service's `hostId` to a host in your registry, and expand the leading `~/` in each `ops.env.workingDirectory` to your home directory (nothing downstream expands it; the merge command in the fluid README does both). Its model ids and `fluid-` voice ids do not collide with the example registry's. Set `FLUID_CORS_ORIGINS` on both entries to the origins you open Banter at.
 
 Then build and install:
 
@@ -102,7 +102,7 @@ This repo ships two adapters that run on Linux as they do on macOS: `stt/faster-
 
 ### The contract
 
-Any server Banter talks to has to answer the routes in [speech-server-api.md](../reference/speech-server-api.md): batch transcription or synthesis, `POST /v1/models?model_name=<id>` for TTS, a health path, and CORS. The streaming socket and the STT load calls are optional; leave `voice.stt.model` unset and the dashboard transcribes in batch without them.
+Any server Banter talks to has to answer the routes in [speech-server-api.md](../reference/speech-server-api.md): batch transcription or synthesis, `POST /v1/models?model_name=<id>` for TTS, a health path, and CORS. The streaming socket and the STT load calls are optional; leave `voice.stt.model` unset and Banter transcribes in batch without them.
 
 ### The roster entry that makes it visible
 
@@ -124,7 +124,7 @@ A registered service with none of this still won't show up as a selectable voice
 
 #### sherpa-onnx (STT and TTS) — Parakeet, Nemotron and Kokoro on CPU, needs an HTTP layer
 
-[k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) is a speech inference toolkit built on ONNX Runtime, not an OpenAI-compatible HTTP server by itself — it ships WebSocket servers and bindings for a dozen languages, none in the shape Banter's dashboard calls. It runs on Linux, macOS and Windows (x64 and ARM, down to a Raspberry Pi), on CPU by default. It's the one to look at if you want a single lightweight runtime for both directions on a Linux or CPU-only machine, with no PyTorch dependency. Models are prebuilt packages on its [`asr-models`](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) and [`tts-models`](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models) release pages.
+[k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) is a speech inference toolkit built on ONNX Runtime, not an OpenAI-compatible HTTP server by itself — it ships WebSocket servers and bindings for a dozen languages, none in the shape Banter calls. It runs on Linux, macOS and Windows (x64 and ARM, down to a Raspberry Pi), on CPU by default. It's the one to look at if you want a single lightweight runtime for both directions on a Linux or CPU-only machine, with no PyTorch dependency. Models are prebuilt packages on its [`asr-models`](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) and [`tts-models`](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models) release pages.
 
 On the STT side, the models worth knowing about here:
 

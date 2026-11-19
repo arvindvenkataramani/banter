@@ -1,6 +1,6 @@
 # ControlShard
 
-*The control plane's pattern running on a remote host. Inherits the registry, health checker, event log and API core of the three-plane architecture. It serves no dashboard, and adds the concerns of a host whose services are demand-loaded: idle eviction and Tailscale Serve management.*
+*The control plane's pattern running on a remote host. Inherits the registry, health checker, event log and API core of the three-plane architecture. It serves no web app, and adds the concerns of a host whose services are demand-loaded: idle eviction and Tailscale Serve management.*
 
 ---
 
@@ -14,7 +14,7 @@ It is not a lightweight proxy or a thin agent. It is a full instance that:
 - Manages service lifecycle natively in TypeScript, spawning processes with `Bun.spawn`, polling health and retrying on failure
 - Appends events to its own local event log
 - Exposes the same REST API shape as the control plane
-- Serves no dashboard: it is API-only, and every non-API path 404s
+- Serves no web app: it is API-only, and every non-API path 404s
 - Reports state upward to the primary control plane via pull-based polling
 
 For the inherited behavior, see the component docs:
@@ -131,7 +131,7 @@ TypeScript, Bun. Consistent with the control plane.
 
 The `shard-runner` binary:
 - Tears down stale Tailscale Serve on the shard's port, read from the registry
-- Spawns the shard Bun process (API only, no dashboard)
+- Spawns the shard Bun process (API only, no web app)
 - Sets up Tailscale Serve for that same port
 - Restarts the shard process if it exits
 - On SIGTERM: kills children, tears down Tailscale Serve, exits

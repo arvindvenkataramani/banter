@@ -1,6 +1,6 @@
 # Config reload
 
-The dashboard's Reload config item reloads everything on every node that can change without a restart, and reports what could not. A reload is how a hand edit to `config.json` or to a node's `registry.json` takes effect, including an edit to its roster section ([model-roster.md](model-roster.md)).
+Banter's Reload config item reloads everything on every node that can change without a restart, and reports what could not. A reload is how a hand edit to `config.json` or to a node's `registry.json` takes effect, including an edit to its roster section ([model-roster.md](model-roster.md)).
 
 ---
 

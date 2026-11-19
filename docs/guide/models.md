@@ -8,7 +8,7 @@ Neither the model nor the framework matters to Banter. Any server is usable if i
 
 1. serves the OpenAI-shaped endpoint for its kind — `/v1/audio/transcriptions` for STT, `/v1/audio/speech` for TTS;
 2. answers a health path with a 2xx when ready; and
-3. permits the dashboard's origin in its CORS configuration.
+3. permits Banter's origin in its CORS configuration.
 
 Anything satisfying that can be registered, health-checked, and demand-started the same as the servers in `services/`.
 
@@ -22,7 +22,7 @@ Pick one server for each direction and install it from its README:
 
 [stt.md](stt.md) and [tts.md](tts.md) have a registry entry and config snippet for each. See [Text-to-speech](#text-to-speech-models) and [Speech-to-text](#speech-to-text-models) below for what else is available, and [voices-and-models.md](voices-and-models.md) to add or change a voice or model.
 
-A `loadStrategy: "demand"` entry with `idleUnload` means Banter starts the service on first use and unloads it after the `idleTimeout` (thirty minutes in the examples) idle; `"autoStart": true` has it come up with the control plane instead. Start a server once by hand before relying on demand-loading, so the first-run model download happens where you can see it.
+A `loadStrategy: "demand"` entry with `idleUnload` means the Banter server starts the service on first use and unloads it after the `idleTimeout` (thirty minutes in the examples) idle; `"autoStart": true` has it come up with the control plane instead. Start a server once by hand before relying on demand-loading, so the first-run model download happens where you can see it.
 
 ### Parakeet (STT), Apple Silicon (MLX)
 
@@ -33,7 +33,7 @@ mkdir -p ~/services/stt/parakeet && cd ~/services/stt/parakeet
 python -m venv .venv && .venv/bin/pip install parakeet-mlx-fastapi
 ```
 
-Add this entry to `registry.json`'s `services`. Replace the CORS origin below with wherever you reach the dashboard — that is the setting people most often get wrong, and the symptom is a transcription failure that looks like the service being down.
+Add this entry to `registry.json`'s `services`. Replace the CORS origin below with wherever you reach Banter — that is the setting people most often get wrong, and the symptom is a transcription failure that looks like the service being down.
 
 ```json
 {
@@ -149,7 +149,7 @@ Other servers can serve the same model, none of them this repo's code:
 - Projects that wrap faster-whisper in an OpenAI-compatible server: [speaches-ai/speaches](https://github.com/speaches-ai/speaches) (also known as `fedirz/faster-whisper-server`), [hwdsl2/docker-whisper](https://github.com/hwdsl2/docker-whisper) (Docker, CUDA, multi-arch), [hwdsl2/whisper-install](https://github.com/hwdsl2/whisper-install) (installer for Debian/Ubuntu/RHEL family).
 - **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)**, a dependency-free C/C++ port — Mac, Linux, Windows, mobile, and more, with Metal/CUDA/ROCm/Vulkan acceleration depending on platform. Ships its own [`whisper-server` example](https://github.com/ggml-org/whisper.cpp/tree/master/examples/server) with an OpenAI-like transcription API.
 
-**Anything OpenAI-compatible.** The STT contract is `POST /audio/transcriptions` and a health endpoint — see [speech-server-api.md](../reference/speech-server-api.md). The browser calls this server directly, so its CORS allowlist must include wherever you reach the dashboard (e.g. `http://localhost:4200`) — `stt/faster-whisper`, `stt/whisper`, `fluid-stt`, and `parakeet-mlx-fastapi` each take this as an env var: `FASTER_WHISPER_CORS_ORIGINS`, `WHISPER_CORS_ORIGINS`, `FLUID_CORS_ORIGINS`, `PARAKEET_CORS_ORIGINS`.
+**Anything OpenAI-compatible.** The STT contract is `POST /audio/transcriptions` and a health endpoint — see [speech-server-api.md](../reference/speech-server-api.md). The browser calls this server directly, so its CORS allowlist must include wherever you reach Banter (e.g. `http://localhost:4200`) — `stt/faster-whisper`, `stt/whisper`, `fluid-stt`, and `parakeet-mlx-fastapi` each take this as an env var: `FASTER_WHISPER_CORS_ORIGINS`, `WHISPER_CORS_ORIGINS`, `FLUID_CORS_ORIGINS`, `PARAKEET_CORS_ORIGINS`.
 
 ---
 

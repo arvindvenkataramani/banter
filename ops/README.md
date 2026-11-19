@@ -31,7 +31,7 @@ Run these on the always-on machine.
 
 | Script | What it does |
 |---|---|
-| `control-deploy.sh` | Builds the dashboard, merges the repo's example config and registry into the live files at the top of `$BANTER_PROD` (stopping on a conflict, before anything is stopped), copies the code to `$BANTER_PROD`, installs the systemd unit, and starts it. Runs `deploy-preflight.sh` first. Takes `main` or `dev` to pick the source. |
+| `control-deploy.sh` | Builds the web app, merges the repo's example config and registry into the live files at the top of `$BANTER_PROD` (stopping on a conflict, before anything is stopped), copies the code to `$BANTER_PROD`, installs the systemd unit, and starts it. Runs `deploy-preflight.sh` first. Takes `main` or `dev` to pick the source. |
 | `control-start.sh` | Starts the installed systemd unit. Requires a prior deploy. |
 | `control-stop.sh` | Stops the unit and tears down its Tailscale Serve binding. |
 | `control-uninstall.sh` | Reverses the deploy: stops and disables the unit, removes it, and deletes the deployment folder `$BANTER_PROD`, including `config.json`, `registry.json` and `state/`. Without systemd, stops the `control-runner.sh` process by its registry port instead — there is no unit to remove there. |
@@ -50,7 +50,7 @@ Run these on the worker. See [../docs/guide/shard.md](../docs/guide/shard.md).
 
 | Script | What it does |
 |---|---|
-| `shard-deploy.sh` | Builds the dashboard, compiles and code-signs the `shard-runner` Swift supervisor, copies everything into place, and installs the launchd agent. |
+| `shard-deploy.sh` | Builds the web app, compiles and code-signs the `shard-runner` Swift supervisor, copies everything into place, and installs the launchd agent. |
 | `shard-start.sh` | Bootstraps the launchd agent. Tailscale Serve is the supervisor's job, not this script's. |
 | `shard-stop.sh` | Stops and disables the agent. |
 | `shard-uninstall.sh` | Removes the agent and the deployment folder `$BANTER_SHARD_PROD`, including the live `registry.json` and `state/`. |
@@ -60,7 +60,7 @@ Run these on the worker. See [../docs/guide/shard.md](../docs/guide/shard.md).
 
 | Script | What it does |
 |---|---|
-| `service-control.sh` | Start, stop, restart, enable, disable, or check any registered service by name, with fuzzy matching — a fragment such as `whisper` finds `stt-whisper`. Reads the deployed registry and derives the right command from each service's runner type. Works on either node. This is the backup path when the control API is unavailable; prefer the dashboard otherwise. Run it with no arguments for usage, or `service-control.sh list`. |
+| `service-control.sh` | Start, stop, restart, enable, disable, or check any registered service by name, with fuzzy matching — a fragment such as `whisper` finds `stt-whisper`. Reads the deployed registry and derives the right command from each service's runner type. Works on either node. This is the backup path when the control API is unavailable; prefer the services page in Banter otherwise. Run it with no arguments for usage, or `service-control.sh list`. |
 | `deploy-preflight.sh` | Refuses a deploy when the destination is non-empty and was not created by a previous banter deploy, or when the systemd unit name belongs to something running elsewhere. Called first by `control-deploy.sh`. Never reads stdin; override with `BANTER_DEPLOY_FORCE=1`. |
 | `serve-watchdog.sh` | Re-registers Tailscale Serve entries that have dropped for services marked `tailscaleServe: true`. Intended for cron, once a minute. Only useful with Tailscale Serve. |
 

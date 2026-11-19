@@ -47,7 +47,7 @@ Settings come from `ops.env.variables`:
 | `FASTER_WHISPER_COMPUTE_TYPE` | `int8` on `cpu`, otherwise `auto` | `int8`, `float16`, `int8_float16`, and the other CTranslate2 types |
 | `FASTER_WHISPER_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call |
 
-The server is batch only: it has no streaming socket and no `/v1/models` routes, and the model is fixed when it starts (a `model` field in a request is ignored). Leave `voice.stt.model` unset and the dashboard transcribes in batch:
+The server is batch only: it has no streaming socket and no `/v1/models` routes, and the model is fixed when it starts (a `model` field in a request is ignored). Leave `voice.stt.model` unset and Banter transcribes in batch:
 
 ```json
 "voice": {
@@ -57,7 +57,7 @@ The server is batch only: it has no streaming socket and no `/v1/models` routes,
 
 The first start downloads the model from the Hugging Face Hub into `~/.cache/huggingface`. For `turbo` that is well over a gigabyte, and the server answers its health check only once the model has loaded, so the first start can outlast `startupTime` (180000 ms). Warm the cache once by hand, as the adapter's README shows. faster-whisper has no Metal backend, so on a Mac it runs on the CPU.
 
-Replace the CORS origins with wherever the dashboard is actually reached if it is not `localhost`.
+Replace the CORS origins with wherever Banter is actually reached if it is not `localhost`.
 
 ---
 
@@ -151,7 +151,7 @@ Its entry is in `services/fluid/registry.fluid.example.json`, which merges into 
 }
 ```
 
-Replace the CORS origins with wherever the dashboard is actually reached if it isn't `localhost`.
+Replace the CORS origins with wherever Banter is actually reached if it isn't `localhost`.
 
 ---
 
@@ -171,13 +171,13 @@ Once one is running, the registry entry has the same shape as the ones above: `r
 }
 ```
 
-Confirm its CORS configuration allows the dashboard's origin before assuming it works. The browser calls the STT server directly, so a server that answers `curl` can still fail from the page.
+Confirm its CORS configuration allows Banter's origin before assuming it works. The browser calls the STT server directly, so a server that answers `curl` can still fail from the page.
 
 ---
 
 ## Anything else OpenAI-compatible
 
-Any server exposing `POST /v1/audio/transcriptions`, a health endpoint, and the dashboard's origin in CORS can be registered directly. Add an entry like this to `registry.json`'s `services`:
+Any server exposing `POST /v1/audio/transcriptions`, a health endpoint, and Banter's origin in CORS can be registered directly. Add an entry like this to `registry.json`'s `services`:
 
 ```json
 {

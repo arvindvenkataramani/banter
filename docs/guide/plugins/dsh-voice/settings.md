@@ -42,7 +42,7 @@ Each slider shows its default until you change it, and has a Reset. For what the
 
 | Setting | What it does |
 |---|---|
-| Banter server URL | The address of your Banter install, the one you open its dashboard at. The plugin reaches the speech services through it. |
+| Banter server URL | The address of your Banter install, the one you open it at. The plugin reaches the speech services through it. |
 | Always take over | Shown when a speech server serves one session at a time. When another session holds it, take it over without asking. |
 | Keep voice on outside a conversation | Voice keeps running when you move to another dsh page, instead of turning off. |
 

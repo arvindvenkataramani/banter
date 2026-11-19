@@ -117,7 +117,7 @@ The service's port is written once, in `network.port`. A `process` runner's `run
 
 `loadStrategy: "demand"` starts the service on first use instead of at boot, and `idleUnload` with an `idleTimeout` in milliseconds evicts it after inactivity. This is why the control plane exists: a speech model that takes seconds to load need not sit resident all day.
 
-`loadStrategy: "startup"` starts it with Banter. `protected: true` prevents the dashboard from stopping it.
+`loadStrategy: "startup"` starts it with Banter. `protected: true` prevents Banter from stopping it.
 
 ### Endpoints and schemes
 
@@ -133,7 +133,7 @@ If most of your services are https, set it once for the whole registry:
 
 ### CORS
 
-The dashboard talks to model servers **from the browser**, so those servers must allow the dashboard's origin.
+Banter talks to model servers **from the browser**, so those servers must allow Banter's origin.
 
 Each speech server takes its allowlist from an environment variable, set under the service's `ops.env.variables`. Every Python adapter in this repo reads a comma-separated `*_CORS_ORIGINS` variable (`FASTER_WHISPER_CORS_ORIGINS`, `KOKORO_CORS_ORIGINS`, `NEUTTS_CORS_ORIGINS`, `WHISPER_CORS_ORIGINS`), and the [fluid servers](../../services/fluid/README.md) read `FLUID_CORS_ORIGINS`. Unset, they add no CORS headers at all: not "allow everything," but no allowlist means every cross-origin request from the browser is refused. `ops/install.sh` fills in every `*_CORS_ORIGINS` variable it finds in a fresh registry from the registry's own `control` service port, covering `http://localhost` and `http://127.0.0.1` on that port and on Vite's `5173`:
 
@@ -147,11 +147,11 @@ Each speech server takes its allowlist from an environment variable, set under t
 
 Third-party servers vary: some take a variable or flag (for example `PARAKEET_CORS_ORIGINS` for `parakeet-mlx-fastapi`, `--allowed-origins` for `mlx-audio`), others are permissive or have no setting. Check a server's own docs for the name. [speech-servers.md](../guide/speech-servers.md#cors) has a check you can run against any server.
 
-The origins `install.sh` writes cover only the machine itself. Opening the dashboard from another address, such as a LAN IP (`http://192.168.1.20:4200`) or an https hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder https tailnet origins; replace them with the origins you use.
+The origins `install.sh` writes cover only the machine itself. Opening Banter from another address, such as a LAN IP (`http://192.168.1.20:4200`) or an https hostname, means adding that origin to every speech server's allowlist. A shard's example registry carries placeholder https tailnet origins; replace them with the origins you use.
 
-A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the dashboard's port means updating these. Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
+A missing origin here is the most common cause of "voice transcription failed" on a healthy service: it answers `curl` fine, the browser is refused, and the browser cannot say why. Changing the port Banter runs on means updating these. Tailscale Serve does not add these headers — a service reached over the tailnet still needs its own origin list.
 
-**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the dashboard included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `ops/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open the dashboard from, such as a LAN address, too. A dashboard origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/reference/protocols/openclaw/gateway-session-lifecycle.md](protocols/openclaw/gateway-session-lifecycle.md#browser-origin-check).
+**The gateway has its own allowlist, separate from any speech server's.** Browser-origin WebSocket clients — the web app included — are checked against `gateway.controlUi.allowedOrigins` in the OpenClaw gateway's own config, not Banter's. `ops/install.sh` tells you to add `http://localhost:PORT` there; add every other origin you open Banter from, such as a LAN address, too. An origin missing there fails to connect to the gateway even when every speech server's CORS is correct. See [docs/reference/protocols/openclaw/gateway-session-lifecycle.md](protocols/openclaw/gateway-session-lifecycle.md#browser-origin-check).
 
 ---
 
@@ -198,7 +198,7 @@ Under `voice` in `config.json`. The pieces that matter (the service ids and mode
 
 `serviceId` values must match registry entries. A batch-only STT server leaves `voice.stt.model` unset; a server with streaming or loadable models names one there, as in [stt.md](../guide/stt.md#fluid-stt). `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [voices-and-models.md](../guide/voices-and-models.md) for what a roster model and voice are, and how to add or change them.
 
-The dashboard's settings dialog writes back to `selection` — the STT picker only appears when the registry holds more than one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for the dashboard to read, but nothing writes it back.
+Banter's settings dialog writes back to `selection` — the STT picker only appears when the registry holds more than one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for Banter to read, but nothing writes it back.
 
 ### Settings scope
 
@@ -335,20 +335,20 @@ A unit file cannot expand a shell variable, so `ops/systemd/banter.service.templ
 A deploy replaces only the code folders it names (`control/`, `dashboard/`, `shared/`, `ops/`), so it never touches `config.json`, `registry.json`, `shipped/` or `state/`. What it does with them is a three-way merge of the last-shipped copy (`shipped/`), the live file and the repo's example, field by field, before anything is stopped:
 
 - changed only in the repo, the repo's value is taken;
-- changed only on the node (by hand, or through the dashboard), the node's value stays;
+- changed only on the node (by hand, or through Banter's settings), the node's value stays;
 - changed on both to different values, the deploy stops, names the fields and writes nothing. Resolve it by editing the live file or the example, then deploy again.
 
 A field in the live file that the code does not know is kept, with a warning in the log. There is no prompt: to start over from an example, delete the live file and deploy.
 
 The first deploy has no `shipped/` copy, so it takes the example as the base and keeps every value in the live file. Where the live file is missing, a first deploy seeds it from `$BANTER_PROD/control/control-plane/data/{config,registry}.json` (for a shard, `~/services/shard/registry.json`) when that file exists, and otherwise from the example.
 
-Every load of `config.json` and `registry.json` also brings the file into line with its schema: missing fields get defaults, values are kept, and a value of the wrong type stops startup with a message naming the field. The control plane exits on an unreadable or invalid `config.json`. A dashboard setting is saved by changing that one field in the file on disk, so a hand edit made since startup survives. The last agent used and the last session per agent are not in `config.json`; they live in `state/state.json` and are never merged.
+Every load of `config.json` and `registry.json` also brings the file into line with its schema: missing fields get defaults, values are kept, and a value of the wrong type stops startup with a message naming the field. The control plane exits on an unreadable or invalid `config.json`. A setting saved from Banter is saved by changing that one field in the file on disk, so a hand edit made since startup survives. The last agent used and the last session per agent are not in `config.json`; they live in `state/state.json` and are never merged.
 
 ---
 
 ## Reloading
 
-The dashboard's settings menu has a **Reload config** action, which hits `POST /api/config/reload`: it re-reads both `config.json` and `registry.json` without restarting the control plane.
+Banter's settings menu has a **Reload config** action, which hits `POST /api/config/reload`: it re-reads both `config.json` and `registry.json` without restarting the control plane.
 
 The registry's `services`, `hosts`, `capabilities` and `defaults` all reload the same way — the in-memory copy is replaced from the file. A service already running keeps running as it was until you restart it; a service removed from the registry while still running is only reported, not stopped. The `shards` list is the one part reload never applies: a changed entry is reported but the running list is left as it was, so adding or removing a shard needs a restart of the control plane itself.
 

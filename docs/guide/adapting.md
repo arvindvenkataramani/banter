@@ -1,6 +1,6 @@
 # Adapting Banter to another harness
 
-Banter's dashboard talks to one backend today: an OpenClaw gateway, over a WebSocket the browser dials directly. This page names the seams involved in putting Banter's voice in front of a different agent harness, or reusing its voice pipeline (turn-taking, chunking, playback, barge-in) in a different project.
+Banter talks to one backend today: an OpenClaw gateway, over a WebSocket the browser dials directly. This page names the seams involved in putting Banter's voice in front of a different agent harness, or reusing its voice pipeline (turn-taking, chunking, playback, barge-in) in a different project.
 
 This is not a build guide. For the fuller feasibility analysis — what a second backend actually costs, what's reusable, and what's genuinely new work — read [`dev/design/agent-backend-abstraction.md`](../../dev/design/agent-backend-abstraction.md). It's written against a specific candidate (ACP, the Agent Client Protocol) but the seams it identifies are the general ones.
 
@@ -50,7 +50,7 @@ OpenClaw's frames arrive straight into the browser, so `run-state.ts`'s adapter 
 
 ## No tool approvals
 
-Banter deliberately ships no tool-use or action-approval UX. `gateway-connection.ts` requests the `operator.approvals` scope from OpenClaw as part of its handshake, but nothing in this repo — dashboard or control plane — ever renders an approval request or answers one. Whether a tool call actually runs unconfirmed is between your agent and its own configuration; per [`dev/design/agent-backend-abstraction.md`](../../dev/design/agent-backend-abstraction.md), OpenClaw has its own approval RPC surface (observed present but off by default on the build that document was written against). Banter itself neither shows you the request nor gets in its way.
+Banter deliberately ships no tool-use or action-approval UX. `gateway-connection.ts` requests the `operator.approvals` scope from OpenClaw as part of its handshake, but nothing in this repo, web app or Banter server, ever renders an approval request or answers one. Whether a tool call actually runs unconfirmed is between your agent and its own configuration; per [`dev/design/agent-backend-abstraction.md`](../../dev/design/agent-backend-abstraction.md), OpenClaw has its own approval RPC surface (observed present but off by default on the build that document was written against). Banter itself neither shows you the request nor gets in its way.
 
 This is a deliberate omission, not an oversight. Tool-permission approval design is still evolving, and a hastily built gate in a voice interface — where the "confirm" step has to work by ear, under time pressure, against a spoken command that may be ambiguous — would be insecure and could let real damage through while giving a false sense of safety. Building one properly is a real design problem this repository does not attempt to solve.
 

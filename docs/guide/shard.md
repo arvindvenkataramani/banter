@@ -2,7 +2,7 @@
 
 Optional. Skip this entirely for a single-machine install.
 
-A shard is a **full second instance of the control plane** running on another machine — its own registry, health checker, event log, and API. It exists because a control plane cannot start processes on a host it is not running on. The primary polls each shard and merges their services into one view, so the dashboard shows every machine as one system.
+A shard is a **full second instance of the control plane** running on another machine — its own registry, health checker, event log, and API. It exists because a control plane cannot start processes on a host it is not running on. The primary polls each shard and merges their services into one view, so Banter shows every machine as one system.
 
 If one machine is doing everything adequately, you do not need a shard.
 
@@ -94,9 +94,9 @@ The three numeric settings must be positive integers. An unusable value stops st
 
 ## Networking
 
-The primary reaches the shard by hostname, and the **browser** reaches the worker's model servers directly — so both must be routable from where you use the dashboard. A LAN works over plain http; Tailscale is one way to get https, which voice on a phone needs (see [remote-access.md](remote-access.md)).
+The primary reaches the shard by hostname, and the **browser** reaches the worker's model servers directly — so both must be routable from where you use Banter. A LAN works over plain http; Tailscale is one way to get https, which voice on a phone needs (see [remote-access.md](remote-access.md)).
 
-The worker's model servers need the dashboard's origin in their CORS allowlists, or voice fails with an error the browser refuses to explain. The shard's example registry carries placeholder https tailnet origins in those lists; replace them with the origins you open the dashboard from, and add any other origin, such as `http://<lan-ip>:4200` for a LAN address. See [./configuration.md](../reference/configuration.md#cors).
+The worker's model servers need Banter's origin in their CORS allowlists, or voice fails with an error the browser refuses to explain. The shard's example registry carries placeholder https tailnet origins in those lists; replace them with the origins you open Banter from, and add any other origin, such as `http://<lan-ip>:4200` for a LAN address. See [./configuration.md](../reference/configuration.md#cors).
 
 ---
 

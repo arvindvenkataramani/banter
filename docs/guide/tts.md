@@ -38,7 +38,7 @@ Install it by following the adapter's README: copy `server.py` and `requirements
 
 `KOKORO_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. `startupTime` covers importing PyTorch, which happens before the server listens.
 
-The server always answers `audio/wav`, so the roster provider sets `"responseFormat": "wav"`. Left absent it defaults to `mp3`, and the dashboard would try to decode wav bytes as mp3. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. A `roster.providers` entry, as in the example registry, trimmed:
+The server always answers `audio/wav`, so the roster provider sets `"responseFormat": "wav"`. Left absent it defaults to `mp3`, and Banter would try to decode wav bytes as mp3. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. A `roster.providers` entry, as in the example registry, trimmed:
 
 ```json
 "roster": {
@@ -120,7 +120,7 @@ Then add a `roster.providers` entry for it in `registry.json`:
 }
 ```
 
-The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. The dashboard sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
+The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. Banter sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
 
 Point `voice.tts.selection` at it in `config.json`:
 
@@ -202,9 +202,9 @@ Point `voice.tts.selection` at whichever preset you want by default:
 }
 ```
 
-`mlx-audio` has no dedicated health endpoint; `GET /v1/models` doubles as one, returning 2xx once it's actually ready to serve. `--allowed-origins` is `mlx-audio`'s own CORS flag — pass the dashboard's origin the same as any other service. Any other model `mlx-audio` supports can be added as another entry in the same provider's `ttsModels` array; no second registry entry or process needed.
+`mlx-audio` has no dedicated health endpoint; `GET /v1/models` doubles as one, returning 2xx once it's actually ready to serve. `--allowed-origins` is `mlx-audio`'s own CORS flag — pass Banter's origin the same as any other service. Any other model `mlx-audio` supports can be added as another entry in the same provider's `ttsModels` array; no second registry entry or process needed.
 
-`responseFormat` in the roster entry above is left unset, defaulting to `mp3` — the dashboard sends that as the request's `response_format` and decodes the response as that format, so this only works if `mlx-audio` honors the field. Set `responseFormat` explicitly to `"wav"` if you'd rather it request wav.
+`responseFormat` in the roster entry above is left unset, defaulting to `mp3` — Banter sends that as the request's `response_format` and decodes the response as that format, so this only works if `mlx-audio` honors the field. Set `responseFormat` explicitly to `"wav"` if you'd rather it request wav.
 
 ---
 
@@ -241,7 +241,7 @@ Any server exposing `POST /v1/audio/speech` and a health endpoint can be registe
 }
 ```
 
-Fill in `port` with whatever the server listens on, and confirm its CORS configuration allows the dashboard's origin — the browser calls this server directly. Then add a `roster.providers` entry for it in `registry.json`:
+Fill in `port` with whatever the server listens on, and confirm its CORS configuration allows Banter's origin — the browser calls this server directly. Then add a `roster.providers` entry for it in `registry.json`:
 
 ```json
 "roster": {
@@ -272,4 +272,4 @@ And point `voice.tts.selection` at it in `config.json`:
 
 A wrong model id or voice key fails at the request, not at load — the roster is Banter's claim about what a third-party server will accept, not something checked against it. See [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) for the full shape, including voices built from reference audio.
 
-Set the provider's `responseFormat` to `mp3`, `aac`, or `wav` — the dashboard sends this as the request's `response_format` and decodes the response as that format, so it needs to match what the server actually returns for that value. Absent means `mp3`.
+Set the provider's `responseFormat` to `mp3`, `aac`, or `wav` — Banter sends this as the request's `response_format` and decodes the response as that format, so it needs to match what the server actually returns for that value. Absent means `mp3`.

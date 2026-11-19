@@ -1,12 +1,12 @@
 # Install
 
-How to get the control plane and dashboard running and kept running: the install script, the same steps by hand, installing as a service on each OS, where everything lands, and uninstalling. Speech servers are a separate step; see [speech-servers.md](speech-servers.md).
+How to get the the Banter server running and kept running: the install script, the same steps by hand, installing as a service on each OS, where everything lands, and uninstalling. Speech servers are a separate step; see [speech-servers.md](speech-servers.md).
 
 An LLM or agent can follow this page for you: point it here and ask it to run the steps.
 
 The control plane needs no speech server to start. Until one is registered, voice does nothing and typing still works.
 
-> **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running Banter, `http://localhost:PORT` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Plan to serve the dashboard over https if you'll talk to it from anywhere but that machine; [remote-access.md](remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
+> **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running the Banter server, `http://localhost:PORT` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Plan to serve Banter over https if you'll talk to it from anywhere but that machine; [remote-access.md](remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
 
 ## Prerequisites
 
@@ -16,9 +16,9 @@ The control plane needs no speech server to start. Until one is registered, voic
 - **An [OpenClaw](https://github.com/openclaw/openclaw) gateway** to talk to.
 - **systemd**, for the Linux path below. macOS and Linux without systemd use the fallback described under [Install as a service](#install-as-a-service).
 
-Banter defaults to plain `http`, which suits one machine or a trusted home network. On your own network a LAN address is enough for text. Voice from any device other than the one running Banter needs a secure page (`https`; `localhost` only works on that machine), so serve the dashboard over `https` for that; [Tailscale](https://tailscale.com) is one way to get it, covered in [remote-access.md](remote-access.md).
+Banter defaults to plain `http`, which suits one machine or a trusted home network. On your own network a LAN address is enough for text. Voice from any device other than the one running the Banter server needs a secure page (`https`; `localhost` only works on that machine), so serve Banter over `https` for that; [Tailscale](https://tailscale.com) is one way to get it, covered in [remote-access.md](remote-access.md).
 
-Speech servers bring their own prerequisites. Banter needs none of them to run itself.
+Speech servers bring their own prerequisites. The Banter server needs none of them to run itself.
 
 ## Clone it
 
@@ -44,11 +44,11 @@ Run it from the repo root. It:
 5. in the registry it seeds, expands a leading `~/` in each service's `ops.env.workingDirectory` to your home directory, and fills every `*_CORS_ORIGINS` variable it finds with `http://localhost` and `http://127.0.0.1` on the control plane's port and on Vite's `5173` (see [speech-servers.md](speech-servers.md#cors));
 6. when it has just created `config.json`, prompts for your OpenClaw gateway URL and token and writes them to it, or reads them from `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` for a non-interactive run;
 7. deploys: on Linux it enables linger and runs `ops/control-deploy.sh`; on macOS it runs `control-deploy.sh`, whose systemd step is expected to fail, then starts `control-runner.sh` in the background with its output in `$BANTER_PROD/install-run.log` (that process does not survive a reboot or logout; see [macOS, or Linux without systemd](#macos-or-linux-without-systemd));
-8. waits for `/api/health` on the control plane's port, then prints the dashboard address and the gateway origin to allow.
+8. waits for `/api/health` on the control plane's port, then prints the address to open Banter at and the gateway origin to allow.
 
 The script installs no speech servers and no Python packages. Each speech server's own README says how to install it; see [speech-servers.md](speech-servers.md).
 
-Your OpenClaw gateway refuses browser origins it does not list. Add `http://localhost:PORT` to `gateway.controlUi.allowedOrigins` in the gateway's config, plus every other origin you open the dashboard from (an `https://…ts.net` name, a LAN address), then restart the gateway. See [configuration.md](../reference/configuration.md#cors).
+Your OpenClaw gateway refuses browser origins it does not list. Add `http://localhost:PORT` to `gateway.controlUi.allowedOrigins` in the gateway's config, plus every other origin you open Banter from (an `https://…ts.net` name, a LAN address), then restart the gateway. See [configuration.md](../reference/configuration.md#cors).
 
 The rest of this page is the same steps by hand, for anything the script does not cover for your setup or when something goes wrong and you want to see where.
 
@@ -92,7 +92,7 @@ loginctl enable-linger $USER   # once per machine: keeps the service running
 ops/control-deploy.sh
 ```
 
-`control-deploy.sh` builds the dashboard, installs a systemd **user** unit, and starts it. Afterwards `ops/control-start.sh` and `control-stop.sh` control it, and re-running `control-deploy.sh` picks up code changes.
+`control-deploy.sh` builds the web app, installs a systemd **user** unit, and starts it. Afterwards `ops/control-start.sh` and `control-stop.sh` control it, and re-running `control-deploy.sh` picks up code changes.
 
 ### macOS, or Linux without systemd
 
@@ -115,11 +115,11 @@ ops/control-deploy.sh || true   # expected to fail at the systemd step
 
 Every script here is bash calling `systemctl`, `loginctl` and `lsof`, so native Windows needs all of that replaced. WSL2 with systemd enabled (`systemd=true` in `/etc/wsl.conf`) is Linux with systemd, so the Linux path applies there.
 
-The dashboard is served over HTTP to a browser, so the client can be any OS no matter where the control plane runs.
+Banter is served over HTTP to a browser, so the client can be any OS no matter where the control plane runs.
 
 ## Where it installs
 
-The deploy tree defaults to `~/services/banter` and is a **copy**: the repo is the source, and that tree is what runs. `config.json`, `registry.json`, `shipped/` and `state/` sit at the top of the folder, and a deploy never replaces them: it merges the repo's `*.example.json` into the live files field by field, keeping what you or the dashboard changed and stopping, with the fields named, if both sides changed the same one. See [configuration.md](../reference/configuration.md#deployment).
+The deploy tree defaults to `~/services/banter` and is a **copy**: the repo is the source, and that tree is what runs. `config.json`, `registry.json`, `shipped/` and `state/` sit at the top of the folder, and a deploy never replaces them: it merges the repo's `*.example.json` into the live files field by field, keeping what you or Banter changed and stopping, with the fields named, if both sides changed the same one. See [configuration.md](../reference/configuration.md#deployment).
 
 To install somewhere else, set it once in a config file:
 

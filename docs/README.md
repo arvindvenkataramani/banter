@@ -23,7 +23,7 @@ Setting up and using Banter, in the order most installs need it.
 | [models.md](guide/models.md) | Which speech models exist, what each needs, and which servers run them |
 | [voices-and-models.md](guide/voices-and-models.md) | The roster: providers, models and voices, and how to change the default voice or add a voice, a model or a server |
 | [shard.md](guide/shard.md) | Adding a worker machine that runs its own control plane |
-| [remote-access.md](guide/remote-access.md) | Reaching the dashboard from outside your network, and why `https`; Tailscale as one way |
+| [remote-access.md](guide/remote-access.md) | Reaching Banter from outside your network, and why `https`; Tailscale as one way |
 | [ios.md](guide/ios.md) | Voice on iPhone and iPad |
 | [operations.md](guide/operations.md) | Running a deployment: where things live, logs, restarts, backups |
 | [adapting.md](guide/adapting.md) | Putting Banter's voice in front of another agent harness, or reusing the voice pipeline elsewhere |

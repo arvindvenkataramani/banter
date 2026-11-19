@@ -120,13 +120,12 @@ is exposed:
   terminator. `listenAddress` overrides the address only, not the scheme.
 
 The control plane reaches a shard by hostname and the browser reaches model
-servers directly, so both need to be routable from wherever you use the
-dashboard. A LAN handles that over `http`; a tailnet handles it with `https`
+servers directly, so both need to be routable from wherever you use Banter. A LAN handles that over `http`; a tailnet handles it with `https`
 and encrypted transport, which on a LAN you would otherwise own yourself.
 Nothing here belongs on the public internet.
 
-Model servers keep CORS allowlists naming the dashboard's origin. Change the
-port the dashboard runs on and voice breaks with an error the browser refuses to
+Model servers keep CORS allowlists naming the origin Banter is opened at. Change the
+port Banter runs on and voice breaks with an error the browser refuses to
 explain.
 
 ---

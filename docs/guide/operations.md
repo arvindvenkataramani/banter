@@ -4,7 +4,7 @@ Deployment and development workflows for the control plane (systemd, Linux) and 
 
 ## Operational philosophy
 
-**The control plane is the hub.** Every other service, the shard and the dashboard exist to support the control plane and the agents that consume it. Running peripheral services without the control plane running is not a meaningful state.
+**The control plane is the hub.** Every other service, the shard and the web app exist to support the control plane and the agents that consume it. Running peripheral services without the control plane running is not a meaningful state.
 
 **Consequence for operations:** starting and stopping is typically an all-or-nothing action per host. You start the control plane and its dependent services together; you stop them together. Individual service start and stop through the API exists for runtime management (demand-loading, recovery), not for infrastructure bring-up or tear-down.
 
@@ -42,7 +42,7 @@ bun run control-deploy
 ```
 
 Sequence:
-1. Builds the dashboard (`bun run build`)
+1. Builds the web app (`bun run build`)
 2. Merges the repo's example config and registry into the live directory (below); a conflict stops the deploy here, before anything is stopped
 3. Stops the systemd service
 4. Copies repo files to `$BANTER_PROD` (default `~/services/banter`)
@@ -86,7 +86,7 @@ One systemd unit, `banter.service` (named by `BANTER_UNIT`), runs `control-runne
 1. Reads the control port from the live registry
 2. Tears down any stale Tailscale Serve binding on that port, if Tailscale is present
 3. Sets up Tailscale Serve for the port, if Tailscale is present
-4. Execs the control plane (`bun run src/index.ts`), which serves both the API and the dashboard's static files
+4. Execs the control plane (`bun run src/index.ts`), which serves both the API and the web app's static files
 
 `ExecStopPost` runs `control-serve-off.sh`, which removes the binding.
 
@@ -112,7 +112,7 @@ Sequence:
 8. Bootstraps the agent (which starts `shard-runner`)
 9. Calls `shard-start.sh` to ensure the agent is running
 
-The shard is API-only: no dashboard is built or deployed. A deploy from `main` deploys the shard only, and its git archive holds no builds, so step 5 skips built artifacts.
+The shard is API-only: no web app is built or deployed. A deploy from `main` deploys the shard only, and its git archive holds no builds, so step 5 skips built artifacts.
 
 **Live directory.** The shard's live files are in `$BANTER_SHARD_LIVE_DIR` (default `$BANTER_SHARD_PROD`): `registry.json` and `shipped/registry.json` (the merge base). `BANTER_SHARD_REGISTRY_PATH` defaults to the registry inside it. The deploy merges the example registry into it exactly as on the control plane, and a process runner's `{registry}` is filled with that path. The shard's live directory is read only by the shard's machine and written only by a deploy run on it.
 
@@ -197,7 +197,7 @@ Where Tailscale Serve is used, exactly one owner manages each binding.
 
 | Port | Purpose |
 |------|---------|
-| 4200 | Control plane (serves API and dashboard) or control shard (API only); the control plane's port comes from the registry's `control` entry, and `BANTER_CONTROL_PORT` overrides it; the shard's port is `BANTER_SHARD_PORT` (default 4200), and the registry's `control-shard` port must match it |
+| 4200 | Control plane (serves API and Banter) or control shard (API only); the control plane's port comes from the registry's `control` entry, and `BANTER_CONTROL_PORT` overrides it; the shard's port is `BANTER_SHARD_PORT` (default 4200), and the registry's `control-shard` port must match it |
 | 4201 | Control plane dev |
 | 5173 | Vite dev server (HMR) |
 
@@ -224,9 +224,9 @@ journalctl _SYSTEMD_USER_UNIT=banter.service -f
 
 `journalctl --user -u banter.service` may return empty; use the `_SYSTEMD_USER_UNIT=` filter instead. The user service keeps running after logout only when lingering is on (`loginctl enable-linger $USER`).
 
-### The dashboard is unreachable from another machine
+### Banter is unreachable from another machine
 
-The control plane binds to `localhost` by default, so another machine needs either a proxy such as Tailscale Serve in front or `BANTER_CONTROL_HOST` set to listen on another interface. If the dashboard loads locally but not from elsewhere:
+The control plane binds to `localhost` by default, so another machine needs either a proxy such as Tailscale Serve in front or `BANTER_CONTROL_HOST` set to listen on another interface. If Banter loads locally but not from elsewhere:
 
 ```bash
 # With Tailscale: is Serve pointing at the right port?
@@ -240,7 +240,7 @@ Voice on a phone also needs a secure page (https, or localhost); a plain `http:/
 
 ### Voice fails on a healthy service
 
-Almost always CORS: the browser calls speech servers directly, so each needs the dashboard's origin in its allowlist, and the gateway needs it in `gateway.controlUi.allowedOrigins`. See [setup/configuration.md](../reference/configuration.md#cors).
+Almost always CORS: the browser calls speech servers directly, so each needs Banter's origin in its allowlist, and the gateway needs it in `gateway.controlUi.allowedOrigins`. See [setup/configuration.md](../reference/configuration.md#cors).
 
 ### Service won't stop, or a deploy is stuck at "Stopping"
 

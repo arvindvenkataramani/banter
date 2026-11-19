@@ -73,7 +73,7 @@ Concrete processes. Each service belongs to one host and implements one capabili
 | Field | Description |
 |-------|-------------|
 | `id` | Unique identifier |
-| `name` | Human-readable name (shown in dashboard); falls back to `id` if omitted |
+| `name` | Human-readable name (shown in Banter); falls back to `id` if omitted |
 | `capabilityId` | Which capability this implements |
 | `hostId` | Which host it runs on |
 

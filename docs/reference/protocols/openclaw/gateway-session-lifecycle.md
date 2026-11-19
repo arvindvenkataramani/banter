@@ -82,7 +82,7 @@ The connection is now live.
 
 Browser-origin WS clients trigger an origin check against `gateway.controlUi.allowedOrigins` in `openclaw.json`. This mainly applies to browser/control-ui scenarios — pure Bun/Node WS clients don't send an `Origin` header and are unaffected.
 
-Add the dashboard's origin(s) to the allowlist:
+Add Banter's origin(s) to the allowlist:
 ```json
 "gateway": {
   "controlUi": {

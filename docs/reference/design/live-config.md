@@ -1,6 +1,6 @@
 # Live config: synced to a schema, deployed by merge
 
-Each node keeps its live configuration at the top of its deployment folder, `~/services/banter/` by default, beside the deployed code. A deploy ships the repo's example configuration into it by a three-way merge, the running system writes dashboard settings into it, and every load brings each file into line with the schema the running code declares. Nothing a running process writes is tracked by the repo.
+Each node keeps its live configuration at the top of its deployment folder, `~/services/banter/` by default, beside the deployed code. A deploy ships the repo's example configuration into it by a three-way merge, the running system writes Banter's settings into it, and every load brings each file into line with the schema the running code declares. Nothing a running process writes is tracked by the repo.
 
 A machine runs one node, a control plane or a shard, never both, so there is one live folder per machine.
 
@@ -10,7 +10,7 @@ The live files sit at the top of the deployment folder (`$BANTER_PROD`, and `$BA
 
 | Node | File | Holds |
 |---|---|---|
-| Control plane | `config.json` | configuration, including every dashboard setting |
+| Control plane | `config.json` | configuration, including every setting made in Banter |
 | | `registry.json` | the node's services |
 | | `shipped/config.json`, `shipped/registry.json` | what the last deploy shipped: the merge base |
 | | `state/state.json` | last agent used, last session per agent |
@@ -21,7 +21,7 @@ The repo tracks `control/control-plane/data/config.example.json`, `control/contr
 
 `ops/deploy.conf` is the one configuration file outside the folder. It names the folder, so the deployed scripts cannot find it without help; it stays in the checkout's `ops/` and a deploy copies it into `$BANTER_PROD/ops/`.
 
-**Configuration and registry** hold everything a deploy ships and everything set through the dashboard: service definitions, placement, tuning, voice and model selections, chunking, turn-taking and speech-detection settings, a service's enabled flag, and the fields the service editor changes. A field may be changed in the repo, on the node, or both; the deploy merge decides between them.
+**Configuration and registry** hold everything a deploy ships and everything set through Banter: service definitions, placement, tuning, voice and model selections, chunking, turn-taking and speech-detection settings, a service's enabled flag, and the fields the service editor changes. A field may be changed in the repo, on the node, or both; the deploy merge decides between them.
 
 **`state/`** holds what the system records as it is used, which a deploy never touches and the merge never sees. It is kept apart because it changes on ordinary navigation, and mixing it into the configuration would turn every deploy into a merge of noise. The last agent used is named `lastAgent`, and is set by `PATCH /api/gateway/lastAgent`.
 
@@ -50,7 +50,7 @@ The repo's own example files are synced by `bun run config:sync` in `control/`, 
 
 ## Writing settings
 
-A settings save (a dashboard change, a service edit, an enable or disable) reads the file from disk, changes the one field it names, and writes the file back atomically. It never writes out the process's in-memory copy, so a hand edit or a field the writing code does not know survives the save.
+A settings save (a change in Banter's settings, a service edit, an enable or disable) reads the file from disk, changes the one field it names, and writes the file back atomically. It never writes out the process's in-memory copy, so a hand edit or a field the writing code does not know survives the save.
 
 ## Placeholders in commands
 

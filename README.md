@@ -24,11 +24,11 @@ Built against [OpenClaw](https://docs.openclaw.ai/), and adaptable to other agen
 
 **Services can live anywhere.** A service is a registry entry with an address and a health path; the registry has no notion of what the service does. It can run on the same box, on another machine, or under something you manage yourself. Runners cover spawning a process, driving systemd or launchd, delegating to a service's own CLI, and health-checking something already running. Speech models are what this was built for, and anything answering HTTP can be registered alongside them.
 
-**Nothing to install on client devices.** The dashboard ships a web manifest, so it can be saved to a phone's home screen and run standalone. An unattended mode enables a screen lock for hands-free use on phones.
+**Nothing to install on client devices.** Banter ships a web manifest, so it can be saved to a phone's home screen and run standalone. An unattended mode enables a screen lock for hands-free use on phones.
 
 ## Requirements and constraints
 
-- Speech servers must be OpenAI-compatible and allow CORS from the dashboard's origin; see [docs/guide/speech-servers.md](docs/guide/speech-servers.md).
+- Speech servers must be OpenAI-compatible and allow CORS from Banter's origin; see [docs/guide/speech-servers.md](docs/guide/speech-servers.md).
 - The install scripts target Linux with systemd. On macOS or Linux without systemd, run the control plane under a supervisor you provide; native Windows is not supported. See [docs/guide/install.md](docs/guide/install.md#install-as-a-service).
 - There is no tool-use or action-approval UX, deliberately: a hastily built gate in a voice interface would be insecure. If your harness needs approvals, see [docs/guide/adapting.md](docs/guide/adapting.md#no-tool-approvals).
 
@@ -42,7 +42,7 @@ cd banter
 ops/install.sh
 ```
 
-The script installs one thing: the Banter server (the control plane), which also serves the dashboard. It prompts for your gateway URL and token, runs the server as a service, and prints its address when it finishes. Open that address (`http://localhost:4200` unless you changed the port) for the dashboard. Typing works at once.
+The script installs one thing: the Banter server (the control plane), which also serves Banter, the web app. It prompts for your gateway URL and token, runs the server as a service, and prints its address when it finishes. Open that address (`http://localhost:4200` unless you changed the port) for Banter. Typing works at once.
 
 Two steps are separate, and optional:
 
@@ -51,7 +51,7 @@ Two steps are separate, and optional:
 
 An LLM or agent can follow [docs/guide/install.md](docs/guide/install.md) for you.
 
-> **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running Banter, `http://localhost:4200` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Serve the dashboard over https for that: [docs/guide/remote-access.md](docs/guide/remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
+> **Voice needs https, or localhost.** Browsers only give the microphone to a secure page. On the machine running the Banter server, `http://localhost:4200` works. From any other device, a phone or another computer, a plain `http://<lan-address>` page can chat by text, but voice can't start. Serve Banter over https for that: [docs/guide/remote-access.md](docs/guide/remote-access.md) shows how with Tailscale. The settings dialog warns when the page can't use the microphone.
 
 ## Documentation
 
@@ -81,7 +81,7 @@ The machines only need to reach each other; for voice from another device, see [
 This ships with defaults for one machine or a trusted network. A few things worth knowing before exposing it beyond your own machine:
 
 - **Unauthenticated gateway on a bare deploy.** If `integrations.openclaw.gateway.token` is left as `"${OPENCLAW_GATEWAY_TOKEN}"` and the deployed service has no env file loading that variable, the placeholder resolves to nothing and the gateway connection goes unauthenticated (see [Configure it](docs/guide/install.md#configure-it)). Paste the real token for any deployed run, or confirm your env file is actually loaded.
-- **CORS on STT/TTS services.** The browser calls your speech servers cross-origin from the dashboard's own origin, so each one needs its CORS origins set to match — see the "CORS" section in [docs/reference/configuration.md](docs/reference/configuration.md#cors) and [docs/guide/speech-servers.md](docs/guide/speech-servers.md#cors). Leaving these wide open lets any page in a user's browser call your speech servers.
+- **CORS on STT/TTS services.** The browser calls your speech servers cross-origin from Banter's own origin, so each one needs its CORS origins set to match — see the "CORS" section in [docs/reference/configuration.md](docs/reference/configuration.md#cors) and [docs/guide/speech-servers.md](docs/guide/speech-servers.md#cors). Leaving these wide open lets any page in a user's browser call your speech servers.
 - **Plain http.** Banter defaults to `http`, which suits one machine or a trusted home network. Beyond that, use `https`: see [Why https](docs/guide/remote-access.md#why-https).
 - **Remote dev access.** The dev server (`dashboard/vite.config.ts`) only accepts `localhost` by default — reaching it from another device (e.g. over Tailscale, for testing on a phone) needs a hostname added to Vite's `allowedHosts`. Add it locally, e.g.:
   ```ts
@@ -103,7 +103,7 @@ This is published as-is and only occasionally maintained; expect updates to come
 bun run control-dev
 ```
 
-Control plane with Vite and HMR against the dashboard source. It reads the *deployed* config and registry, so it needs a completed install first — it iterates on an installation rather than replacing one. Re-run `ops/control-deploy.sh` to promote your changes.
+Control plane with Vite and HMR against the web app source. It reads the *deployed* config and registry, so it needs a completed install first — it iterates on an installation rather than replacing one. Re-run `ops/control-deploy.sh` to promote your changes.
 
 ```bash
 cd dashboard && bun run test      # vitest

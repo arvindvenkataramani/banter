@@ -56,11 +56,11 @@ The example registry (`control/control-plane/data/registry.example.json`) declar
 }
 ```
 
-The provider catalogue lives in the registry's roster, not in `config.json`. `GET /api/voice` returns the assembled roster under `tts.providers` for the dashboard to read; nothing writes that back into config.json.
+The provider catalogue lives in the registry's roster, not in `config.json`. `GET /api/voice` returns the assembled roster under `tts.providers` for Banter to read; nothing writes that back into config.json.
 
-One wrinkle worth knowing: a roster voice that claims a preset key suppresses that preset from appearing under its own id. `heart` claims `af_heart`, so `"voice": "heart"` is what works — `"voice": "af_heart"` is only selectable if no roster voice claims it. The dashboard's settings dialog handles this for you; if you're editing `config.json` by hand, use the roster voice id.
+One wrinkle worth knowing: a roster voice that claims a preset key suppresses that preset from appearing under its own id. `heart` claims `af_heart`, so `"voice": "heart"` is what works — `"voice": "af_heart"` is only selectable if no roster voice claims it. Banter's settings dialog handles this for you; if you're editing `config.json` by hand, use the roster voice id.
 
-Note also that a hand edit to `config.json` isn't checked against the roster the way the dashboard's own writes are — the control plane just parses the file at load and on reload. If you type a `voice` id that doesn't exist, you won't find out until the app tries to use it.
+Note also that a hand edit to `config.json` isn't checked against the roster the way Banter's own writes are — the control plane just parses the file at load and on reload. If you type a `voice` id that doesn't exist, you won't find out until the app tries to use it.
 
 ---
 
@@ -160,7 +160,7 @@ A voice can mix a preset link on one model and a `clone` link on another — the
 }
 ```
 
-A provider naming no registered service fails at load — the service entry has to exist first. A model needs at least one `presetVoices` entry (or a roster voice claiming it via `clone`) or nothing can select it. `responseFormat` is the audio format `/v1/audio/speech` returns; absent means `mp3`, so set it explicitly if the server returns something else, or the dashboard decodes the wrong format. Give it its own roster voices in `roster.voices` too, the same way as any other provider.
+A provider naming no registered service fails at load — the service entry has to exist first. A model needs at least one `presetVoices` entry (or a roster voice claiming it via `clone`) or nothing can select it. `responseFormat` is the audio format `/v1/audio/speech` returns; absent means `mp3`, so set it explicitly if the server returns something else, or Banter decodes the wrong format. Give it its own roster voices in `roster.voices` too, the same way as any other provider.
 
 For a server Banter didn't build, the roster is Banter's claim about what that server will accept — nothing here is checked against the server itself. A wrong model id or preset key fails at the request, not at load.
 

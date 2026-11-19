@@ -171,7 +171,7 @@ function GeneralPanel({ draft, edit }: PanelProps) {
             onChange={event => { edit(d => setControlPlaneUrl(d, event.target.value)) }}
           />
           <p className="dv-help">
-            The address of your Banter install: the same address you open Banter's dashboard at. The install script prints it when
+            The address of your Banter install: the address you open Banter at. The install script prints it when
             it finishes. The plugin reaches the speech services through it. The provider, model and voice lists were copied from this server
             when the plugin was installed; re-running the install step picks up changes, and also resets these settings to the server's.{' '}
             <a className="dv-link" href={doc('docs/guide/install.md')} target="_blank" rel="noreferrer">Install Banter</a>

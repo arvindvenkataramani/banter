@@ -29,7 +29,7 @@ bun run install-profile web http://localhost:4200
 
 ### The Banter server URL
 
-It is the address Banter's dashboard opens at: the control plane serves the dashboard and the speech relay from the same address. [The install script](../../install.md#install-script) prints it when it finishes (`http://localhost:4200` unless you changed the port), and it is the address you type into your browser to open Banter. Use the same address in the install command above.
+It is the address you open Banter at: the Banter server serves the web app and the speech relay from the same address. [The install script](../../install.md#install-script) prints it when it finishes (`http://localhost:4200` unless you changed the port), and it is the address you type into your browser to open Banter. Use the same address in the install command above.
 
 ### What install seeds
 
