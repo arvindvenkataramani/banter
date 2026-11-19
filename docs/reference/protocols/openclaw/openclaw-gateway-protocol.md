@@ -720,64 +720,33 @@ Note the monorepo's own web UI does **not** use the client package — it has an
 
 ## Changes at 2026.8.1
 
-Verified against the `v2026.8.1` tag (`ea80657`) and the shipped package on
-2026-08-31. Only these were re-checked; everything else in this document still
-carries its 2026.7.1 validation.
+Verified against the `v2026.8.1` tag (`ea80657`) and the shipped package on 2026-08-31. Only these were re-checked; everything else in this document still carries its 2026.7.1 validation.
 
-The entries marked **on the wire** were measured from a probe capture of one
-complete run (`control/probe/captures/2026-09-01T01-22-46.jsonl`, scenario
-`text-slow-tool-text`), not read from source. That capture is the evidence for
-the run-signalling changes below.
+The entries marked **on the wire** were measured from a probe capture of one complete run (`control/probe/captures/2026-09-01T01-22-46.jsonl`, scenario `text-slow-tool-text`), not read from source. That capture is the evidence for the run-signalling changes below.
 
-**Unchanged.** The `content` string-or-blocks union, `__openclaw` metadata on
-transcript messages, `hasMore`/`nextOffset` paging, and the 200-message default
-page cap (`chat-history-handler.ts`).
+**Unchanged.** The `content` string-or-blocks union, `__openclaw` metadata on transcript messages, `hasMore`/`nextOffset` paging, and the 200-message default page cap (`chat-history-handler.ts`).
 
-**`GATEWAY_CLIENT_CAPS` gained a second entry.** It now holds `tool-events` and
-`exec-approvals`. The capability-gating rule is unchanged — an undeclared cap
-still degrades silently.
+**`GATEWAY_CLIENT_CAPS` gained a second entry.** It now holds `tool-events` and `exec-approvals`. The capability-gating rule is unchanged — an undeclared cap still degrades silently.
 
-**`sessions.steer` is no longer its own handler.** Steering is now a
-`queueMode: "steer"` on the `chat.send` path
-(`chat-send-admission.ts`, `chat-send-agent-dispatch.ts`). Whether the
-abort-and-replace semantics recorded above survived the move was not verified.
+**`sessions.steer` is no longer its own handler.** Steering is now a `queueMode: "steer"` on the `chat.send` path (`chat-send-admission.ts`, `chat-send-agent-dispatch.ts`). Whether the abort-and-replace semantics recorded above survived the move was not verified.
 
-**New `chat.send` rejection.** Transcripts can be rewound and forked, so a send
-against a session whose branch moved returns `INVALID_REQUEST` with
-`"active branch changed; review and retry"` (`chat-send-pre-admission.ts`). A
-client that sends into a session the user has rewound must handle it.
+**New `chat.send` rejection.** Transcripts can be rewound and forked, so a send against a session whose branch moved returns `INVALID_REQUEST` with `"active branch changed; review and retry"` (`chat-send-pre-admission.ts`). A client that sends into a session the user has rewound must handle it.
 
-**New `chat.history` substitution.** Oversized messages are replaced with
-`"[chat.history omitted: message too large]"` (`chat-history-budget.ts`), a
-budget path separate from the existing base64-image omission. Anything parsing
-history text should expect it.
+**New `chat.history` substitution.** Oversized messages are replaced with `"[chat.history omitted: message too large]"` (`chat-history-budget.ts`), a budget path separate from the existing base64-image omission. Anything parsing history text should expect it.
 
-**New `agent` stream `run_status`, on the wire.** A run now announces its
-preparation before generating anything. Three events arrive in order, each
-`{"phase": ...}` and nothing else:
+**New `agent` stream `run_status`, on the wire.** A run now announces its preparation before generating anything. Three events arrive in order, each `{"phase": ...}` and nothing else:
 
 ```
 preparing_workspace → preparing_context → starting_model
 ```
 
-They carry `runId`, `sessionKey`, `agentId`, and `seq` in the usual places —
-the envelope is unchanged, the stream name is new. A client that switches on
-`stream` and has no `run_status` case sees them as unknown events and shows no
-activity for the entire preparation window, which on a cold local model is the
-longest silent stretch of a run.
+They carry `runId`, `sessionKey`, `agentId`, and `seq` in the usual places — the envelope is unchanged, the stream name is new. A client that switches on `stream` and has no `run_status` case sees them as unknown events and shows no activity for the entire preparation window, which on a cold local model is the longest silent stretch of a run.
 
-**New `chat` state `status`, on the wire.** Described in §ChatEvent above.
-Three arrived in the captured run, all with an empty `message`, all before the
-first `delta`. These are the `chat`-family counterpart to `run_status`.
+**New `chat` state `status`, on the wire.** Described in §ChatEvent above. Three arrived in the captured run, all with an empty `message`, all before the first `delta`. These are the `chat`-family counterpart to `run_status`.
 
-Together these two are how 2026.8.1 fills the pre-generation silence. Both are
-additive — no existing event changed shape — so a client that ignores them
-still works, but shows nothing while a run prepares.
+Together these two are how 2026.8.1 fills the pre-generation silence. Both are additive — no existing event changed shape — so a client that ignores them still works, but shows nothing while a run prepares.
 
-**`lifecycle:end` gained `terminalReply` and `terminalReceipt`, on the wire.**
-The final lifecycle event now carries the complete assembled reply
-(`terminalReply.text`, with a `disposition`) and a receipt naming the model
-actually used:
+**`lifecycle:end` gained `terminalReply` and `terminalReceipt`, on the wire.** The final lifecycle event now carries the complete assembled reply (`terminalReply.text`, with a `disposition`) and a receipt naming the model actually used:
 
 ```json
 "terminalReceipt": {
@@ -790,23 +759,11 @@ actually used:
 }
 ```
 
-`rerouted: true` with a differing `effective.responseModel` is a fallback
-having fired — the only place the wire says which model actually answered.
+`rerouted: true` with a differing `effective.responseModel` is a fallback having fired — the only place the wire says which model actually answered.
 
-**`chat.history` splits one stored event into two rows sharing one
-`__openclaw.id`, on the wire.** When an assistant turn contains commentary text
-before a tool call, history serves the text as its own row carrying
-`openclawStreamFallback: {replacementText, source, itemId}` and the remaining
-`thinking`/`toolCall` blocks as a second row. Both rows carry the *same*
-`__openclaw.id` and `seq`, so `seq` is not strictly ascending on the wire even
-though it is in storage.
+**`chat.history` splits one stored event into two rows sharing one `__openclaw.id`, on the wire.** When an assistant turn contains commentary text before a tool call, history serves the text as its own row carrying `openclawStreamFallback: {replacementText, source, itemId}` and the remaining `thinking`/`toolCall` blocks as a second row. Both rows carry the *same* `__openclaw.id` and `seq`, so `seq` is not strictly ascending on the wire even though it is in storage.
 
-Measured: 116 rows in one session held 9 `openclawStreamFallback` rows and
-exactly 9 duplicated ids, 1:1. SQLite holds a single event for each
-(`thinking,text,toolCall`); the split happens at serve time.
+Measured: 116 rows in one session held 9 `openclawStreamFallback` rows and exactly 9 duplicated ids, 1:1. SQLite holds a single event for each (`thinking,text,toolCall`); the split happens at serve time.
 
-**Anchoring on `__openclaw.id` alone is therefore no longer sufficient** — the
-guidance in §Client requirements needs `itemId` as a tiebreak for rows carrying
-`openclawStreamFallback`. Deduping on the id alone silently drops one of the
-two rows.
+**Anchoring on `__openclaw.id` alone is therefore no longer sufficient** — the guidance in §Client requirements needs `itemId` as a tiebreak for rows carrying `openclawStreamFallback`. Deduping on the id alone silently drops one of the two rows.
 

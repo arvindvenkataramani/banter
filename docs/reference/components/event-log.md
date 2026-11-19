@@ -32,13 +32,9 @@ Fields:
 
 ## Event types and health state mapping
 
-Health state is derived from the most recent event per service, via a fixed
-event-type → health-state switch (`shared/src/events.ts`). Any event type
-not in the switch, or no event at all, maps to `unknown`.
+Health state is derived from the most recent event per service, via a fixed event-type → health-state switch (`shared/src/events.ts`). Any event type not in the switch, or no event at all, maps to `unknown`.
 
-Notably: `service.up` → `healthy`, `service.degraded` → `degraded`
-(Tailscale endpoint unreachable but localhost responded — process up, Serve
-broken), `service.down` / `service.stopped` / `service.unloaded` → `down`.
+Notably: `service.up` → `healthy`, `service.degraded` → `degraded` (Tailscale endpoint unreachable but localhost responded — process up, Serve broken), `service.down` / `service.stopped` / `service.unloaded` → `down`.
 
 The API reports one more state, `off`: a service whose run intent (see [Reading](#reading)) is not to run, or a demand-loaded one never started, and whose last health event is not a running one. `down` therefore means meant to run and not answering. A check that finds the service answering still wins, so one started outside Banter shows what it is.
 

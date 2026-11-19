@@ -21,8 +21,7 @@
 Liveness probe
 
 **Responses:**
-- **200** — Service is alive
-  → [HealthResponse](#healthresponse)
+- **200** — Service is alive → [HealthResponse](#healthresponse)
 
 ---
 
@@ -36,10 +35,8 @@ On-demand health check (bypasses consecutive failure threshold)
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Service with updated health state
-  → [ServiceWithHealth](#servicewithhealth)
-- **404** — Service not found
-  → [Error](#error)
+- **200** — Service with updated health state → [ServiceWithHealth](#servicewithhealth)
+- **404** — Service not found → [Error](#error)
 
 ---
 
@@ -51,12 +48,9 @@ Get a single service by ID
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Service with health state, read live from the owning node
-  → [ServiceWithHealth](#servicewithhealth)
-- **404** — Service not found
-  → [Error](#error)
-- **503** — The shard owning this service could not be reached. The route answers only from a live read, so a caller wanting last-known state reads GET /api/services instead.
-  → [Error](#error)
+- **200** — Service with health state, read live from the owning node → [ServiceWithHealth](#servicewithhealth)
+- **404** — Service not found → [Error](#error)
+- **503** — The shard owning this service could not be reached. The route answers only from a live read, so a caller wanting last-known state reads GET /api/services instead. → [Error](#error)
 
 ---
 
@@ -68,12 +62,9 @@ Update service fields (endpoint, healthPath, etc.)
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Updated service with health state
-  → [ServiceWithHealth](#servicewithhealth)
-- **400** — Invalid patch
-  → [Error](#error)
-- **404** — Service not found
-  → [Error](#error)
+- **200** — Updated service with health state → [ServiceWithHealth](#servicewithhealth)
+- **400** — Invalid patch → [Error](#error)
+- **404** — Service not found → [Error](#error)
 
 ---
 
@@ -86,10 +77,8 @@ Proxy to a service's /info endpoint
 
 **Responses:**
 - **200** — Service-specific info (shape varies by capability)
-- **404** — Service not found
-  → [Error](#error)
-- **502** — Failed to reach service
-  → [Error](#error)
+- **404** — Service not found → [Error](#error)
+- **502** — Failed to reach service → [Error](#error)
 
 ---
 
@@ -101,8 +90,7 @@ List all services with health state
 - `capability` (query) — Filter by capability ID
 
 **Responses:**
-- **200** — All services enriched with health state
-  Array of → [ServiceWithHealth](#servicewithhealth)
+- **200** — All services enriched with health state Array of → [ServiceWithHealth](#servicewithhealth)
 
 ---
 
@@ -114,14 +102,10 @@ Restart a service
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Service restarted
-  → [Success](#success)
-- **400** — Service does not support restart
-  → [Error](#error)
-- **404** — Service not found
-  → [Error](#error)
-- **500** — Restart failed
-  → [Error](#error)
+- **200** — Service restarted → [Success](#success)
+- **400** — Service does not support restart → [Error](#error)
+- **404** — Service not found → [Error](#error)
+- **500** — Restart failed → [Error](#error)
 
 ---
 
@@ -133,14 +117,10 @@ Start a service
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Service started
-  → [Success](#success)
-- **400** — Service disabled or does not support start
-  → [Error](#error)
-- **404** — Service not found
-  → [Error](#error)
-- **500** — Start failed
-  → [Error](#error)
+- **200** — Service started → [Success](#success)
+- **400** — Service disabled or does not support start → [Error](#error)
+- **404** — Service not found → [Error](#error)
+- **500** — Start failed → [Error](#error)
 
 ---
 
@@ -152,16 +132,11 @@ Stop a service
 - `id` (path) *(required)* — Service ID
 
 **Responses:**
-- **200** — Service stopped
-  → [Success](#success)
-- **400** — Service does not support stop
-  → [Error](#error)
-- **403** — Cannot stop a protected service
-  → [Error](#error)
-- **404** — Service not found
-  → [Error](#error)
-- **500** — Stop failed
-  → [Error](#error)
+- **200** — Service stopped → [Success](#success)
+- **400** — Service does not support stop → [Error](#error)
+- **403** — Cannot stop a protected service → [Error](#error)
+- **404** — Service not found → [Error](#error)
+- **500** — Stop failed → [Error](#error)
 
 ---
 
@@ -177,12 +152,9 @@ Enable or disable a service
 
 **Responses:**
 - **200** — Updated service
-- **403** — Cannot disable a protected service
-  → [Error](#error)
-- **404** — Service not found
-  → [Error](#error)
-- **500** — Enable/disable action failed
-  → [Error](#error)
+- **403** — Cannot disable a protected service → [Error](#error)
+- **404** — Service not found → [Error](#error)
+- **500** — Enable/disable action failed → [Error](#error)
 
 ---
 
@@ -197,8 +169,7 @@ List recent events
 - `subjectId` (query) — Filter by subject ID
 
 **Responses:**
-- **200** — Events sorted newest-first
-  Array of → [Event](#event)
+- **200** — Events sorted newest-first Array of → [Event](#event)
 
 ---
 
@@ -209,8 +180,7 @@ List recent events
 List all hosts
 
 **Responses:**
-- **200** — All registered hosts
-  Array of → [Host](#host)
+- **200** — All registered hosts Array of → [Host](#host)
 
 ---
 
@@ -221,8 +191,7 @@ List all hosts
 List all capabilities
 
 **Responses:**
-- **200** — All registered capabilities
-  Array of → [Capability](#capability)
+- **200** — All registered capabilities Array of → [Capability](#capability)
 
 ---
 
@@ -233,8 +202,7 @@ List all capabilities
 List shard connection statuses
 
 **Responses:**
-- **200** — All shards with online/offline status
-  Array of → [ShardStatus](#shardstatus)
+- **200** — All shards with online/offline status Array of → [ShardStatus](#shardstatus)
 
 ---
 
@@ -250,10 +218,8 @@ Trigger an immediate shard poll
   - `hostId`: string
   - `online`: boolean
   - `lastPoll`: number
-- **404** — Shard not found
-  → [Error](#error)
-- **500** — No poller available
-  → [Error](#error)
+- **404** — Shard not found → [Error](#error)
+- **500** — No poller available → [Error](#error)
 
 ---
 
@@ -264,10 +230,8 @@ Trigger an immediate shard poll
 OpenClaw gateway URL and token
 
 **Responses:**
-- **200** — Gateway connection info
-  → [GatewayConfig](#gatewayconfig)
-- **503** — Gateway not configured
-  → [Error](#error)
+- **200** — Gateway connection info → [GatewayConfig](#gatewayconfig)
+- **503** — Gateway not configured → [Error](#error)
 
 ---
 
@@ -277,8 +241,7 @@ Voice configuration (TTS providers, models, voices, options)
 
 **Responses:**
 - **200** — Voice configuration object
-- **503** — Voice not configured
-  → [Error](#error)
+- **503** — Voice not configured → [Error](#error)
 
 ---
 
@@ -292,10 +255,8 @@ Record the last-used OpenClaw agent
 **Responses:**
 - **200** — Last agent recorded
   - `lastAgent`: string
-- **400** — Missing agentId, invalid JSON body, or an agentId that fails validation
-  → [Error](#error)
-- **500** — Config path not set
-  → [Error](#error)
+- **400** — Missing agentId, invalid JSON body, or an agentId that fails validation → [Error](#error)
+- **500** — Config path not set → [Error](#error)
 
 ---
 
@@ -310,10 +271,8 @@ Record the last-used session name for an agent
 **Responses:**
 - **200** — Last session recorded
   - `lastSessionByAgent`: object
-- **400** — Missing agentId or sessionName, invalid JSON body, or a value that fails validation
-  → [Error](#error)
-- **500** — Config path not set
-  → [Error](#error)
+- **400** — Missing agentId or sessionName, invalid JSON body, or a value that fails validation → [Error](#error)
+- **500** — Config path not set → [Error](#error)
 
 ---
 
@@ -321,17 +280,13 @@ Record the last-used session name for an agent
 
 Update the voice selection and tuning
 
-**Request body:**
-→ [VoiceSelectionPatch](#voiceselectionpatch)
+**Request body:** → [VoiceSelectionPatch](#voiceselectionpatch)
 
 **Responses:**
 - **200** — Updated voice configuration object
-- **400** — Invalid JSON body, or the patch failed validation
-  → [Error](#error)
-- **500** — Config path not set
-  → [Error](#error)
-- **503** — Voice not configured, or a named serviceId cannot be checked because a shard has never been polled
-  → [Error](#error)
+- **400** — Invalid JSON body, or the patch failed validation → [Error](#error)
+- **500** — Config path not set → [Error](#error)
+- **503** — Voice not configured, or a named serviceId cannot be checked because a shard has never been polled → [Error](#error)
 
 ---
 
@@ -340,10 +295,8 @@ Update the voice selection and tuning
 Reload config.json, the registry and every shard's registry from disk without restarting
 
 **Responses:**
-- **200** — Every part reloaded
-  → [ControlPlaneReloadResponse](#controlplanereloadresponse)
-- **500** — At least one part failed; its entry carries the error
-  → [ControlPlaneReloadResponse](#controlplanereloadresponse)
+- **200** — Every part reloaded → [ControlPlaneReloadResponse](#controlplanereloadresponse)
+- **500** — At least one part failed; its entry carries the error → [ControlPlaneReloadResponse](#controlplanereloadresponse)
 
 ---
 
@@ -355,10 +308,8 @@ Save a raw mic sample for debugging (only registered when DEBUG is set)
 - **200** — Sample saved
   - `filename`: string
   - `dir`: string
-- **400** — Empty body
-  → [Error](#error)
-- **403** — Mic sample saving disabled in config
-  → [Error](#error)
+- **400** — Empty body → [Error](#error)
+- **403** — Mic sample saving disabled in config → [Error](#error)
 
 ---
 
@@ -369,8 +320,7 @@ Save a raw mic sample for debugging (only registered when DEBUG is set)
 The shard's declared roster, as loaded from its registry
 
 **Responses:**
-- **200** — The roster section as loaded — empty when the registry has none
-  → [RosterResponse](#rosterresponse)
+- **200** — The roster section as loaded — empty when the registry has none → [RosterResponse](#rosterresponse)
 
 ---
 
@@ -379,8 +329,7 @@ The shard's declared roster, as loaded from its registry
 Shard memory and per-service health/ping status
 
 **Responses:**
-- **200** — Shard status with memory info and per-service health
-  → [ShardStatusResponse](#shardstatusresponse)
+- **200** — Shard status with memory info and per-service health → [ShardStatusResponse](#shardstatusresponse)
 
 ---
 
@@ -394,8 +343,7 @@ Record a ping for idle eviction tracking
 **Responses:**
 - **200** — Ping recorded
   - `ok`: boolean
-- **404** — Service not found
-  → [Error](#error)
+- **404** — Service not found → [Error](#error)
 
 ---
 

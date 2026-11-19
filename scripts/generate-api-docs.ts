@@ -90,9 +90,12 @@ function renderResponses(responses: Record<string, any>): string {
   for (const [status, resp] of Object.entries(responses)) {
     const desc = resp.description ?? "";
     const content = resp.content?.["application/json"]?.schema;
-    lines.push(`- **${status}** — ${desc}`);
-    if (content) {
-      lines.push(renderSchema(content, 1));
+    const rendered = content ? renderSchema(content, 1) : "";
+    // A schema that is a list nests under the status; any other renders as text on the status line.
+    if (rendered.trimStart().startsWith("- ")) {
+      lines.push(`- **${status}** — ${desc}`, rendered);
+    } else {
+      lines.push(`- **${status}** — ${desc}` + (rendered ? ` ${rendered.trimStart()}` : ""));
     }
   }
   return lines.join("\n");
@@ -112,7 +115,8 @@ function renderRequestBody(body: any): string {
   if (!body) return "";
   const schema = body.content?.["application/json"]?.schema;
   if (!schema) return "";
-  return "**Request body:**\n" + renderSchema(schema, 0);
+  const rendered = renderSchema(schema, 0);
+  return "**Request body:**" + (rendered.startsWith("- ") ? "\n" : " ") + rendered;
 }
 
 // Group paths by tag

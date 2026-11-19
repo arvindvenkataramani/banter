@@ -4,8 +4,7 @@ One record per actor in the voice loop. Every actor reports into the turn manage
 
 ## Human turn — `voice-engine/src/turn-manager.ts`, `voice-engine/src/store/turn-manager-store.ts`
 
-**Owns:** the human turn's phase, outcome, `held`/`sendPending`, and delivering it once sent.
-**Reports:** nothing. **Reads:** `human`, `annotation`.
+**Owns:** the human turn's phase, outcome, `held`/`sendPending`, and delivering it once sent. **Reports:** nothing. **Reads:** `human`, `annotation`.
 
 | State | Means |
 |---|---|
@@ -42,8 +41,7 @@ One record per actor in the voice loop. Every actor reports into the turn manage
 
 ## Agent turn and floor — `voice-engine/src/turn-manager.ts`, `voice-engine/src/store/turn-manager-store.ts`
 
-**Owns:** the agent turn's phase/outcome, the floor, and aborting a run the human interrupted.
-**Reports:** nothing. **Reads:** `agent`, `activity`.
+**Owns:** the agent turn's phase/outcome, the floor, and aborting a run the human interrupted. **Reports:** nothing. **Reads:** `agent`, `activity`.
 
 | State | Means |
 |---|---|
@@ -86,8 +84,7 @@ One record per actor in the voice loop. Every actor reports into the turn manage
 
 ## MicLoop — `voice-engine/src/human/mic-loop.ts`
 
-**Owns:** whether raw mic audio is an utterance, and that utterance's audio buffer.
-**Reports:** nothing (calls `MicLoopCallbacks` only; `HumanVoice` turns those into `report({ actor: 'human', utterance })`). **Reads:** nothing (no snapshot access; mute is driven by direct `muteMic()`/`unmuteMic()` calls).
+**Owns:** whether raw mic audio is an utterance, and that utterance's audio buffer. **Reports:** nothing (calls `MicLoopCallbacks` only; `HumanVoice` turns those into `report({ actor: 'human', utterance })`). **Reads:** nothing (no snapshot access; mute is driven by direct `muteMic()`/`unmuteMic()` calls).
 
 | State | Means |
 |---|---|
@@ -108,21 +105,13 @@ One record per actor in the voice loop. Every actor reports into the turn manage
 | `paused` | `hearing` | `unmuteMic()` | `state === 'paused'` |
 | any | `idle` | `stop()` | — |
 
-**Invariants:**
-`onSpeechConfirmed` always mints a fresh id — never fires for a resume.
-Every span `onSpeechBegan` opens closes through exactly one of `onSpeechConfirmed` or `onUnconfirmed`.
-`onUtteranceEnded` releases `currentUtteranceId` synchronously, before the call returns.
-VAD verdicts drive state and the silence counter; capture is driven by the frame source, independent of verdict.
-`onFrame` fires unconditionally per chunk, even while muted or before an utterance opens.
+**Invariants:** `onSpeechConfirmed` always mints a fresh id — never fires for a resume. Every span `onSpeechBegan` opens closes through exactly one of `onSpeechConfirmed` or `onUnconfirmed`. `onUtteranceEnded` releases `currentUtteranceId` synchronously, before the call returns. VAD verdicts drive state and the silence counter; capture is driven by the frame source, independent of verdict. `onFrame` fires unconditionally per chunk, even while muted or before an utterance opens.
 
-**Why:**
-No state for "handed off, waiting to see if it resumes" — a hand-off is terminal, so speech after one is always a new utterance through the confidence gate.
-Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic keeps writing while muted and must not grow unbounded or leak muted-room audio into the transcript.
+**Why:** No state for "handed off, waiting to see if it resumes" — a hand-off is terminal, so speech after one is always a new utterance through the confidence gate. Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic keeps writing while muted and must not grow unbounded or leak muted-room audio into the transcript.
 
 ## HumanVoice — `voice-engine/src/human/human-voice.ts`
 
-**Owns:** the mic loop and STT transport; transcribes utterances and writes the transcript.
-**Reports:** `{ actor: 'human', utterance: Utterance<'human'> }`. **Reads:** `controls.micMuted`, `composer.focused`.
+**Owns:** the mic loop and STT transport; transcribes utterances and writes the transcript. **Reports:** `{ actor: 'human', utterance: Utterance<'human'> }`. **Reads:** `controls.micMuted`, `composer.focused`.
 
 | State | Means |
 |---|---|
@@ -161,8 +150,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 
 ## Transcript store — `voice-engine/src/store/transcript-store.ts`
 
-**Owns:** the message being composed — settled text plus each unsettled utterance's words, in spoken order.
-**Reports:** nothing. **Reads:** nothing.
+**Owns:** the message being composed — settled text plus each unsettled utterance's words, in spoken order. **Reports:** nothing. **Reads:** nothing.
 
 | State | Means |
 |---|---|
@@ -196,8 +184,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 
 ## VoiceSystem — `voice-engine/src/system/voice-system.ts`
 
-**Owns:** one voice session: its phase, its session id, the services and heartbeat, the human and agent sides, the transcription connection and its reconnects, the player, and the last ending. One instance per page, built in `system/index.ts`.
-**Reports:** `{ actor: 'mode', mode }` on every phase change and every mic mute while live; nothing else reports the mode. **Reads:** the mute store and the session store, not the snapshot.
+**Owns:** one voice session: its phase, its session id, the services and heartbeat, the human and agent sides, the transcription connection and its reconnects, the player, and the last ending. One instance per page, built in `system/index.ts`. **Reports:** `{ actor: 'mode', mode }` on every phase change and every mic mute while live; nothing else reports the mode. **Reads:** the mute store and the session store, not the snapshot.
 
 | Phase | Mode reported |
 |---|---|
@@ -217,8 +204,7 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 
 ## PlaybackEngine — `voice-engine/src/system/playback-engine.ts`
 
-**Owns:** what audio is mounted on the element for which run, and how it ended; the tone it is playing.
-**Reports:** `{actor:'agent', utterance, supply}` via `publish()`. **Reads:** `snapshot.agent.outcome`, `snapshot.previous.agent`, `snapshot.newAudio`, `snapshot.mayBeAudible`. While it holds a tone it leaves the element alone whatever `mayBeAudible` says.
+**Owns:** what audio is mounted on the element for which run, and how it ended; the tone it is playing. **Reports:** `{actor:'agent', utterance, supply}` via `publish()`. **Reads:** `snapshot.agent.outcome`, `snapshot.previous.agent`, `snapshot.newAudio`, `snapshot.mayBeAudible`. While it holds a tone it leaves the element alone whatever `mayBeAudible` says.
 
 | State | Means |
 |---|---|
@@ -255,20 +241,13 @@ Pause snapshots audio into `pausedAudio` and clears the buffer, because the mic 
 | `mayBeAudible===true` | plays if paused and something mounted |
 | `mayBeAudible===false` | pauses if `elementBusy` |
 
-**Invariants:** 
-Never plays a tone and speech at once — a run beginning always cancels any tone first.
-`mountedOutcome` only changes on a fresh run's first mounted chunk or on cancel/settle, never reverts once set.
-`reconcile()` is idempotent — a repeat call against an unchanged snapshot closes no further gap.
-`publish()` reads only synchronous engine state — no await between observation and report.
-Concurrency-limited speaks are granted in enqueue order, never released back to a general pool.
+**Invariants:** Never plays a tone and speech at once — a run beginning always cancels any tone first. `mountedOutcome` only changes on a fresh run's first mounted chunk or on cancel/settle, never reverts once set. `reconcile()` is idempotent — a repeat call against an unchanged snapshot closes no further gap. `publish()` reads only synchronous engine state — no await between observation and report. Concurrency-limited speaks are granted in enqueue order, never released back to a general pool.
 
-**Why:** Reconciliation reads `speechMounted`, not `appendedToSource`, so blob's mounted audio is cancelled too — a guard naming only the MSE field would leave blob's audio uncancelled while the report said it was there.
-`elementBusy` excludes a tone's own slot on both backends, or a tone in flight would read as agent speech.
+**Why:** Reconciliation reads `speechMounted`, not `appendedToSource`, so blob's mounted audio is cancelled too — a guard naming only the MSE field would leave blob's audio uncancelled while the report said it was there. `elementBusy` excludes a tone's own slot on both backends, or a tone in flight would read as agent speech.
 
 ## AgentVoice — `voice-engine/src/agent/agent-voice.ts`
 
-**Owns:** the conversation relay to the floor, and the `ttsSelection`/`ttsEndpoint` a chunk reads at speak time.
-**Reports:** `{ actor: 'conversation', conversation: ConversationReport }`. **Reads:** nothing.
+**Owns:** the conversation relay to the floor, and the `ttsSelection`/`ttsEndpoint` a chunk reads at speak time. **Reports:** `{ actor: 'conversation', conversation: ConversationReport }`. **Reads:** nothing.
 
 | State | Means |
 |---|---|
@@ -293,8 +272,7 @@ Concurrency-limited speaks are granted in enqueue order, never released back to 
 
 ## SpeechChunker — `voice-engine/src/agent/speech-chunker.ts`
 
-**Owns:** the mapping from the agent's streamed text to speakable chunks handed to the player.
-**Reports:** nothing (calls `cb.enqueueChat`/`beginRun`/`endRun` directly). **Reads:** nothing (`session.conversation` events/snapshot, not the turn manager's).
+**Owns:** the mapping from the agent's streamed text to speakable chunks handed to the player. **Reports:** nothing (calls `cb.enqueueChat`/`beginRun`/`endRun` directly). **Reads:** nothing (`session.conversation` events/snapshot, not the turn manager's).
 
 | State | Means |
 |---|---|
@@ -327,8 +305,7 @@ Concurrency-limited speaks are granted in enqueue order, never released back to 
 
 ## Composer — `dashboard/src/features/chat/use-chat-textarea.ts`, `dashboard/src/features/chat/voice-controls-mobile.tsx`
 
-**Owns:** whether the field has focus, and the count of turn-manager-routed sends (`composerSends` in `turn-manager-store.ts`).
-**Reports:** `{ actor: 'composer', sends, focused }`. **Reads:** `snapshot.human.phase`, imperatively at submit only.
+**Owns:** whether the field has focus, and the count of turn-manager-routed sends (`composerSends` in `turn-manager-store.ts`). **Reports:** `{ actor: 'composer', sends, focused }`. **Reads:** `snapshot.human.phase`, imperatively at submit only.
 
 | State | Means |
 |---|---|
@@ -349,12 +326,6 @@ Concurrency-limited speaks are granted in enqueue order, never released back to 
 | `human.phase === 'speaking'` | `reportComposerSend()`, no direct send |
 | `human` is `null` or not `speaking` | `takeTranscript().trim()` → `onSend(text)` directly |
 
-**Invariants:**
-`reportComposerSend()` fires only on the speaking-turn path; the direct-send path never increments `composerSends`.
-Blur/dismiss reports `focused:false` but releases no hold itself — only a fresh candidate or `sendPending` closing the turn does.
-Desktop submit does not blur the field; mobile `submitField` calls `reportComposerFocus(false)` before `reportComposerSend()`.
-Mobile has no `onFocus`/`onBlur` on the textarea — `focused` tracks `fieldOpen`, not DOM focus.
+**Invariants:** `reportComposerSend()` fires only on the speaking-turn path; the direct-send path never increments `composerSends`. Blur/dismiss reports `focused:false` but releases no hold itself — only a fresh candidate or `sendPending` closing the turn does. Desktop submit does not blur the field; mobile `submitField` calls `reportComposerFocus(false)` before `reportComposerSend()`. Mobile has no `onFocus`/`onBlur` on the textarea — `focused` tracks `fieldOpen`, not DOM focus.
 
-**Why:**
-The button never calls `onSend` during a speaking turn because the turn may still hold a live utterance; delivery sends the whole turn once it settles.
-Submit leaves auto-mute in force while the field keeps focus, because nothing but `handleBlur` should unmute under a still-focused field.
+**Why:** The button never calls `onSend` during a speaking turn because the turn may still hold a live utterance; delivery sends the whole turn once it settles. Submit leaves auto-mute in force while the field keeps focus, because nothing but `handleBlur` should unmute under a still-focused field.

@@ -6,23 +6,13 @@
 
 ## Scope
 
-This doc covers how the dashboard's Chat feature is built — state ownership,
-component wiring, session lifecycle. It does **not** re-explain the gateway
-wire protocol; that's covered in depth, and kept current, by:
+This doc covers how the dashboard's Chat feature is built — state ownership, component wiring, session lifecycle. It does **not** re-explain the gateway wire protocol; that's covered in depth, and kept current, by:
 
-- `../gateway/openclaw/gateway-session-lifecycle.md` — connect handshake, `chat.send`
-  / `chat.history` / `sessions.reset` / `sessions.patch`, event ordering.
-- `../gateway/openclaw/gateway-tool-and-message-events.md` — the `session.message`
-  event family, tool-call dedup, `chat` vs `session.message` vs `agent`
-  streams.
-- `../gateway/openclaw/openclaw-gateway-protocol.md` — full RPC catalog, the
-  `content` string-or-blocks union, `caps`, `__openclaw.id` anchoring,
-  reconnect-as-new-projection.
+- `../gateway/openclaw/gateway-session-lifecycle.md` — connect handshake, `chat.send` / `chat.history` / `sessions.reset` / `sessions.patch`, event ordering.
+- `../gateway/openclaw/gateway-tool-and-message-events.md` — the `session.message` event family, tool-call dedup, `chat` vs `session.message` vs `agent` streams.
+- `../gateway/openclaw/openclaw-gateway-protocol.md` — full RPC catalog, the `content` string-or-blocks union, `caps`, `__openclaw.id` anchoring, reconnect-as-new-projection.
 
-The voice pipeline (mic loop, playback engine, turn manager, and the
-`voiceSystem` that runs a voice session) is described in
-`voice-turn-taking.md`. This doc only covers how Chat *wires into* that
-pipeline, not its internals.
+The voice pipeline (mic loop, playback engine, turn manager, and the `voiceSystem` that runs a voice session) is described in `voice-turn-taking.md`. This doc only covers how Chat *wires into* that pipeline, not its internals.
 
 ---
 
@@ -44,77 +34,39 @@ useSessionManager()        bridges both classes into React via
    ChatPage
 ```
 
-`dashboard/src/lib/gateway-connection.ts`, `gateway-context.tsx`,
-`session-manager.ts`, `session.ts`, `use-session-manager.ts`.
+`dashboard/src/lib/gateway-connection.ts`, `gateway-context.tsx`, `session-manager.ts`, `session.ts`, `use-session-manager.ts`.
 
-There is exactly one `GatewayConnection` for the whole dashboard — Services
-and Chat share it via `GatewayProvider`. `SessionManager` is
-per-connection; `Session` is per-sessionKey, cached in a `SessionStore` map
-so switching back to a previously-visited session reuses its in-memory
-transcript rather than rebuilding it.
+There is exactly one `GatewayConnection` for the whole dashboard — Services and Chat share it via `GatewayProvider`. `SessionManager` is per-connection; `Session` is per-sessionKey, cached in a `SessionStore` map so switching back to a previously-visited session reuses its in-memory transcript rather than rebuilding it.
 
 ### Connection
 
-`GatewayConnection` owns the socket, the connect handshake (device-signed via
-a local Ed25519 keypair — see `device-identity.ts`), and reconnect
-(exponential backoff, capped, gives up after 8 attempts; a public
-`reconnect()` resets and retries immediately — what `DisconnectBanner`'s
-Retry button calls). `onReconnected` fires only on a *second or later*
-connect, distinguishing first-load from recovery, since only recovery needs
-history re-fetched.
+`GatewayConnection` owns the socket, the connect handshake (device-signed via a local Ed25519 keypair — see `device-identity.ts`), and reconnect (exponential backoff, capped, gives up after 8 attempts; a public `reconnect()` resets and retries immediately — what `DisconnectBanner`'s Retry button calls). `onReconnected` fires only on a *second or later* connect, distinguishing first-load from recovery, since only recovery needs history re-fetched.
 
-Event dispatch is a three-way split by event type, each routed to
-per-sessionKey listeners: `chat` (streaming deltas), `session.message`
-(tool calls / transcript updates), `agent` with `stream: 'compaction'`. Only
-`agent.compaction` is subscribed to — raw `agent.assistant`/`agent.item`
-streams are not consumed.
+Event dispatch is a three-way split by event type, each routed to per-sessionKey listeners: `chat` (streaming deltas), `session.message` (tool calls / transcript updates), `agent` with `stream: 'compaction'`. Only `agent.compaction` is subscribed to — raw `agent.assistant`/`agent.item` streams are not consumed.
 
 ### Session catalog — `SessionManager`
 
-Not a React hook — a plain class with `subscribe`/`getSnapshot`, read via
-`useSyncExternalStore`. `initialize()` runs once the connection is up:
-fetches agents and models in parallel, then switches to the resolved
-initial agent.
+Not a React hook — a plain class with `subscribe`/`getSnapshot`, read via `useSyncExternalStore`. `initialize()` runs once the connection is up: fetches agents and models in parallel, then switches to the resolved initial agent.
 
-`switchTo(agentId, sessionName?)` is the core routine: resolve the
-sessionKey (`agent:<agentId>:<name>`), get-or-create the `Session`,
-re-register the three per-sessionKey listeners, subscribe to
-`sessions.messages`, update catalog state, persist the agent choice
-server-side if it changed, and kick off `session.loadHistory()`
-(unawaited — history streams in after the switch is visually complete).
+`switchTo(agentId, sessionName?)` is the core routine: resolve the sessionKey (`agent:<agentId>:<name>`), get-or-create the `Session`, re-register the three per-sessionKey listeners, subscribe to `sessions.messages`, update catalog state, persist the agent choice server-side if it changed, and kick off `session.loadHistory()` (unawaited — history streams in after the switch is visually complete).
 
-The session list shown in the UI is filtered: only the agent's default
-session or names prefixed `dashboard:` are shown, so cron/channel-backed
-sessions stay out of the picker. Titles come from the gateway's
-`derivedTitle`, stripped of injected envelope markers.
+The session list shown in the UI is filtered: only the agent's default session or names prefixed `dashboard:` are shown, so cron/channel-backed sessions stay out of the picker. Titles come from the gateway's `derivedTitle`, stripped of injected envelope markers.
 
-`patchModel()` can't call `sessions.patch` directly (webchat clients can't),
-so it sends a `/model <id>` chat command and verifies the gateway resolved
-to the requested model afterward.
+`patchModel()` can't call `sessions.patch` directly (webchat clients can't), so it sends a `/model <id>` chat command and verifies the gateway resolved to the requested model afterward.
 
 ### Per-session state — `Session`
 
-One instance per sessionKey. Owns `_messages`, `_isStreaming`, `_isTyping`,
-`_errorMessage`, `_compactionPhase`.
+One instance per sessionKey. Owns `_messages`, `_isStreaming`, `_isTyping`, `_errorMessage`, `_compactionPhase`.
 
 **Send → receive mapping**, since the two are not directly correlated:
 
-1. `send(text)` appends an optimistic message under a *client-generated*
-   id (`msg-N`) immediately, before any network round trip.
-2. `chat.send` fires with a fresh idempotency key. Its RPC response is just
-   an ack — it never touches `_messages`.
-3. The assistant's reply streams in later as `chat` events keyed by the
-   gateway's `runId`. The first `delta` creates a new message under that
-   id; later frames update it in place.
-4. The outgoing optimistic id and the incoming `runId` are unrelated id
-   spaces — one is client-generated, one is the gateway's.
-5. A `final` event with no matching message, while idle, triggers a full
-   `loadHistory()` — the fallback for "a run from another device/tab just
-   completed."
+1. `send(text)` appends an optimistic message under a *client-generated* id (`msg-N`) immediately, before any network round trip.
+2. `chat.send` fires with a fresh idempotency key. Its RPC response is just an ack — it never touches `_messages`.
+3. The assistant's reply streams in later as `chat` events keyed by the gateway's `runId`. The first `delta` creates a new message under that id; later frames update it in place.
+4. The outgoing optimistic id and the incoming `runId` are unrelated id spaces — one is client-generated, one is the gateway's.
+5. A `final` event with no matching message, while idle, triggers a full `loadHistory()` — the fallback for "a run from another device/tab just completed."
 
-History rows are anchored on `__openclaw.id` (falling back to `seq`, then
-positional index) so identity survives pagination and reload, matching the
-protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `voice-engine/src/agent/speech-chunker.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
+History rows are anchored on `__openclaw.id` (falling back to `seq`, then positional index) so identity survives pagination and reload, matching the protocol doc's guidance. Tool activity reaches the transcript through the structured streams rather than through transcript scraping: `agent` events with `stream: "tool"` and their `session.tool` mirror are normalized by `run-state.ts` into `RunEvent`s carrying `phase` and `toolCallId`, and `voice-engine/src/agent/speech-chunker.ts` calls `recommendFlush()` on `phase === "start"` so speech flushes at the tool boundary. Historical tool cards are a separate path: `conversation.ts` parses `toolCall` / `tool_use` blocks out of `chat.history` when reloading a session.
 
 ### Run signalling — what opens a run, and what must not end one
 
@@ -153,69 +105,34 @@ The snapshot's `known` turns false when the connection drops, and the next event
 
 ### React bridge — `useSessionManager()`
 
-Double `useSyncExternalStore`: one subscription to the `SessionManager`
-(catalog), one to the currently-active `Session` (transcript), re-subscribed
-whenever the active session changes. Returns a flattened object — this is
-what `ChatPage` destructures directly.
+Double `useSyncExternalStore`: one subscription to the `SessionManager` (catalog), one to the currently-active `Session` (transcript), re-subscribed whenever the active session changes. Returns a flattened object — this is what `ChatPage` destructures directly.
 
 ---
 
 ## `ChatPage`
 
-Owns UI-local state only: scroll position and the voice chrome. Everything
-about the conversation itself — messages, streaming state,
-agent/model/session — comes from `useSessionManager()`. The voice session
-is not page state: it is the module-level `voiceSystem`
-(`voice-engine/src/system/`), and the page reads it through two stores.
+Owns UI-local state only: scroll position and the voice chrome. Everything about the conversation itself — messages, streaming state, agent/model/session — comes from `useSessionManager()`. The voice session is not page state: it is the module-level `voiceSystem` (`voice-engine/src/system/`), and the page reads it through two stores.
 
-- `useVoiceSystemStore` — `phase` (`off`, `starting`, `live`, `ending`),
-  `reconfiguring` (a saved provider change is readying a service under a
-  live session) and `lastEnd` (why the last session ended).
-- `useVoiceSessionStore` — what outlives a session: `voiceConfig`,
-  `voiceSelection`, the service endpoints, and the gateway session the page
-  publishes with `publishSession`.
+- `useVoiceSystemStore` — `phase` (`off`, `starting`, `live`, `ending`), `reconfiguring` (a saved provider change is readying a service under a live session) and `lastEnd` (why the last session ended).
+- `useVoiceSessionStore` — what outlives a session: `voiceConfig`, `voiceSelection`, the service endpoints, and the gateway session the page publishes with `publishSession`.
 
 ### Voice vs. text input
 
-A single derived flag: `voiceLoopEnabled = phase === 'live' && !reconfiguring`.
-While `phase === 'starting'`, or `live` and `reconfiguring`, the composer
-shows its waiting state and the voice-on chrome is held back.
+A single derived flag: `voiceLoopEnabled = phase === 'live' && !reconfiguring`. While `phase === 'starting'`, or `live` and `reconfiguring`, the composer shows its waiting state and the voice-on chrome is held back.
 
-`ChatComposer` always renders and carries both text entry and the voice
-on/off control, so there is no swap between a text input and a voice one.
-When `voiceLoopEnabled`, `VoiceControlsMobile` renders *in addition* as a
-fixed control block on mobile; the desktop controls live in the composer
-itself, chosen by CSS breakpoint rather than JS device detection.
+`ChatComposer` always renders and carries both text entry and the voice on/off control, so there is no swap between a text input and a voice one. When `voiceLoopEnabled`, `VoiceControlsMobile` renders *in addition* as a fixed control block on mobile; the desktop controls live in the composer itself, chosen by CSS breakpoint rather than JS device detection.
 
-The voice control calls `voiceOn()` from `lib/media-voice-mode.ts`, which
-calls `voiceSystem.voiceOn()`. The mic is acquired by `acquire()` in
-`voice-engine/src/devices.ts`, which `voiceSystem` calls synchronously from the
-tap, before any `await`: iOS Safari drops the user-activation context across
-an await, so `getUserMedia` has to run in the same tick as the tap.
+The voice control calls `voiceOn()` from `lib/media-voice-mode.ts`, which calls `voiceSystem.voiceOn()`. The mic is acquired by `acquire()` in `voice-engine/src/devices.ts`, which `voiceSystem` calls synchronously from the tap, before any `await`: iOS Safari drops the user-activation context across an await, so `getUserMedia` has to run in the same tick as the tap.
 
-The page publishes its active `Session` to `useVoiceSessionStore`; the
-voice system reads the gateway session from there. This is the whole
-connection between the gateway session and the voice pipeline. The composer
-and the mobile control block are pure presentation: they only render the
-props `ChatPage` passes down. When `lastEnd.reason` is `held` (another
-client holds the transcription slot), the page shows a dialog whose Take
-over action calls `voiceOn({ takeover: true })`.
+The page publishes its active `Session` to `useVoiceSessionStore`; the voice system reads the gateway session from there. This is the whole connection between the gateway session and the voice pipeline. The composer and the mobile control block are pure presentation: they only render the props `ChatPage` passes down. When `lastEnd.reason` is `held` (another client holds the transcription slot), the page shows a dialog whose Take over action calls `voiceOn({ takeover: true })`.
 
 ### Voice settings
 
-The settings dialog (`features/settings/*`) is a config *editor*, not a live
-control: `useVoiceSettings` stages provider/model/voice/speed/chunking
-choices locally, and only on Save does it PATCH the selection server-side.
-It then calls `applySavedVoiceSettings()` (`dashboard/src/lib/voice/apply-voice-settings.ts`),
-which merges the PATCH result into `useVoiceSessionStore` and calls
-`voiceSystem.reconfigure(...)` to ready the services it now names.
+The settings dialog (`features/settings/*`) is a config *editor*, not a live control: `useVoiceSettings` stages provider/model/voice/speed/chunking choices locally, and only on Save does it PATCH the selection server-side. It then calls `applySavedVoiceSettings()` (`dashboard/src/lib/voice/apply-voice-settings.ts`), which merges the PATCH result into `useVoiceSessionStore` and calls `voiceSystem.reconfigure(...)` to ready the services it now names.
 
 ---
 
 ## Known gaps in the protocol docs
 
-- `models.list` (used by `SessionManager.initialize()`) isn't documented in
-  `openclaw-gateway-protocol.md`.
-- `sessions.list`'s `includeDerivedTitles`/`includeLastMessage` params
-  aren't documented — the dashboard only requests them in one place to
-  avoid the transcript-read cost elsewhere.
+- `models.list` (used by `SessionManager.initialize()`) isn't documented in `openclaw-gateway-protocol.md`.
+- `sessions.list`'s `includeDerivedTitles`/`includeLastMessage` params aren't documented — the dashboard only requests them in one place to avoid the transcript-read cost elsewhere.
