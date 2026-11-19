@@ -55,37 +55,15 @@ An LLM or agent can follow [docs/guide/install.md](docs/guide/install.md) for yo
 
 ## Documentation
 
-The [documentation index](docs/README.md) lists every page. Setup, in [docs/guide/](docs/guide/install.md):
+Start with [install](docs/guide/install.md), then [speech servers](docs/guide/speech-servers.md)
+and [which models to run](docs/guide/models.md). Plugins:
+[OpenClaw](docs/guide/plugins/openclaw.md) · [DeepSeek Harness](docs/guide/plugins/dsh-voice/README.md).
 
-- [install.md](docs/guide/install.md): the install script, manual setup, installing as a service on each OS, where it installs, uninstalling
-- [speech-servers.md](docs/guide/speech-servers.md): connecting speech servers, checking CORS, adding another server, fluid as an Apple Silicon option
-- [configuration.md](docs/reference/configuration.md): the minimum config, adding services, adding a shard
-- [stt.md](docs/guide/stt.md) and [tts.md](docs/guide/tts.md): registry and config snippets per speech server
-- [models.md](docs/guide/models.md): which speech models to run, and what each needs
-- [voices-and-models.md](docs/guide/voices-and-models.md): the roster of providers, models and voices, and how to customise it
-- [Speech servers on Linux](docs/guide/speech-servers.md#linux): the contract a speech server must meet, and servers known to run on Linux
-- [shard.md](docs/guide/shard.md): adding shards on other machines
-- [remote-access.md](docs/guide/remote-access.md): reaching the dashboard from outside your network, and why `https`
-- [ios.md](docs/guide/ios.md): voice on iPhone and iPad
-- [plugins/openclaw.md](docs/guide/plugins/openclaw.md): the OpenClaw voice-mode plugin
+Running it: [operations](docs/guide/operations.md) · [remote access](docs/guide/remote-access.md).
+Reference: [configuration](docs/reference/configuration.md) · [architecture](docs/reference/architecture.md) ·
+[adapting to another harness](docs/guide/adapting.md).
 
-The dsh voice plugin, in [docs/guide/plugins/dsh-voice/](docs/guide/plugins/dsh-voice/README.md):
-
-- [README.md](docs/guide/plugins/dsh-voice/README.md): what it is, the controls and their colours, the mic shortcut
-- [setup.md](docs/guide/plugins/dsh-voice/setup.md): build, install into a dsh profile, start dsh
-- [settings.md](docs/guide/plugins/dsh-voice/settings.md): the Speech, Listening and General tabs
-
-Everything else:
-
-- [docs/guide/operations.md](docs/guide/operations.md): running a deployment: where things live, logs, restarts, backups
-- [docs/reference/architecture.md](docs/reference/architecture.md): how the system works
-- [docs/reference/protocols/](docs/reference/protocols/): agent backend protocols, one directory per vendor: [OpenClaw](docs/reference/protocols/openclaw/) is what Banter speaks, [OpenCode](docs/reference/protocols/opencode/) is a second server it could attach to. The starting point for adapting this to a different agent harness
-- [docs/guide/adapting.md](docs/guide/adapting.md): putting Banter's voice in front of another harness, or reusing the voice pipeline elsewhere
-- [docs/reference/speech-server-api.md](docs/reference/speech-server-api.md): what a speech server must answer
-- [docs/reference/api.md](docs/reference/api.md): generated HTTP API reference
-- [services/README.md](services/README.md): the adapter servers in this repo
-- [ops/README.md](ops/README.md): install, deploy and run scripts and templates
-- [scripts/README.md](scripts/README.md): development tools
+Everything else is in the [documentation index](docs/README.md).
 
 ## Architecture
 

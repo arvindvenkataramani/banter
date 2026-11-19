@@ -44,4 +44,4 @@ How it works, and what the knobs are.
 | [protocols/](reference/protocols/) | Agent backend protocols, one folder per vendor: `openclaw/`, `opencode/` and `dsh/` |
 | [design/](reference/design/) | Why each part is shaped as it is |
 
-The adapter servers in this repo are indexed in [services/README.md](../services/README.md), and the install and run scripts in [ops/README.md](../ops/README.md).
+The adapter servers in this repo are indexed in [services/README.md](../services/README.md), the install, deploy and run scripts in [ops/README.md](../ops/README.md), and the development tools in [scripts/README.md](../scripts/README.md).
