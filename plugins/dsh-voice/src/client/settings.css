@@ -1,0 +1,352 @@
+/* The settings page's Radix parts and layout, styled from dsh's --dsw-* tokens
+ * (declared on body, so they reach the Select menu Radix portals there). Every
+ * rule sits under .dsh-voice-settings, which the page and the menu both carry,
+ * so nothing here reaches dsh's own elements. */
+
+.dsh-voice-settings {
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.dsh-voice-settings.dv-page {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.dsh-voice-settings .dv-panel {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.dsh-voice-settings.dv-page[data-readonly] .dv-panel {
+  opacity: 0.6;
+}
+
+.dsh-voice-settings .dv-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dsh-voice-settings .dv-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-voice-settings .dv-heading code {
+  margin-left: 6px;
+  font-family: var(--ds-font-family-code, monospace);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.dsh-voice-settings .dv-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dsh-voice-settings .dv-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.dsh-voice-settings .dv-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dsh-voice-settings .dv-split-top {
+  align-items: flex-start;
+}
+
+.dsh-voice-settings .dv-label {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsh-voice-settings .dv-help {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-voice-settings .dv-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-voice-settings .dv-rule {
+  height: 0;
+  border: 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l3);
+  margin: 0;
+}
+
+.dsh-voice-settings .dv-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.dsh-voice-settings .dv-input {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dsh-voice-settings .dv-input input {
+  width: 100%;
+}
+
+.dsh-voice-settings .dv-indent {
+  padding-left: 28px;
+}
+
+.dsh-voice-settings .dv-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dsh-voice-settings .dv-tuning {
+  display: grid;
+  grid-template-columns: 7rem 1fr 4.5rem;
+  align-items: center;
+  gap: 12px;
+}
+
+.dsh-voice-settings .dv-tuning-value {
+  text-align: right;
+}
+
+.dsh-voice-settings .dv-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dsh-voice-settings .dv-problem {
+  margin-right: auto;
+  font-size: 13px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Select */
+
+.dsh-voice-settings .dv-trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dsh-voice-settings .dv-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-voice-settings .dv-trigger:focus-visible,
+.dsh-voice-settings .dv-trigger[data-state='open'] {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.dsh-voice-settings .dv-trigger[data-placeholder] {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.dsh-voice-settings .dv-trigger:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.dsh-voice-settings .dv-chevron {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The menu is portalled to body. dsh's own portalled overlays sit at 1100 (modal 1000, menu 100). */
+.dsh-voice-settings.dv-menu {
+  z-index: 1100;
+  box-sizing: border-box;
+  min-width: var(--radix-select-trigger-width);
+  max-width: min(420px, var(--radix-select-content-available-width));
+  max-height: min(320px, var(--radix-select-content-available-height));
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-prominent);
+}
+
+.dsh-voice-settings .dv-viewport {
+  padding: 4px;
+}
+
+.dsh-voice-settings .dv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--dsw-radius-sm);
+  outline: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dsh-voice-settings .dv-item[data-highlighted] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dsh-voice-settings .dv-item[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dsh-voice-settings .dv-item-mark {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* Slider */
+
+.dsh-voice-settings .dv-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 20px;
+  touch-action: none;
+  user-select: none;
+}
+
+.dsh-voice-settings .dv-slider-track {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--dsw-alias-border-l3);
+}
+
+.dsh-voice-settings .dv-slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dsw-alias-brand-primary);
+}
+
+.dsh-voice-settings .dv-slider-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--dsw-alias-brand-primary);
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+}
+
+.dsh-voice-settings .dv-slider-thumb:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.dsh-voice-settings .dv-slider[data-disabled] {
+  opacity: 0.5;
+}
+
+.dsh-voice-settings .dv-slider[data-disabled] .dv-slider-thumb {
+  cursor: default;
+}
+
+/* Radio */
+
+.dsh-voice-settings .dv-radios {
+  display: grid;
+  gap: 8px;
+}
+
+.dsh-voice-settings .dv-radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dsh-voice-settings .dv-radio {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dsh-voice-settings .dv-radio[data-state='checked'] {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.dsh-voice-settings .dv-radio:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.dsh-voice-settings .dv-radio:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.dsh-voice-settings .dv-radio-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-brand-primary);
+}
+
+.dsh-voice-settings .dv-radio-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}

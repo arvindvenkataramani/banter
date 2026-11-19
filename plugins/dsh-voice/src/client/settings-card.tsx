@@ -1,69 +1,397 @@
-// The plugin's section of dsh's bundle config card. Each field saves through
-// dsh's settings document when it is committed.
+// The plugin's page in dsh's plugin manager (the `plugins.bundle.config` slot):
+// Banter's settings dialog as tabs. Every edit is staged in a draft
+// (settings-model.ts) and one Save writes it through the config form's
+// `mutate`, fenced by the revision the draft was seeded at.
 
-import { useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Button, Input, SegmentedTabs, Switch, Tag, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { STREAMING_BACKEND, getDetectedBackend, saveStreamingBackend } from '@platform/voice-engine/system/streaming-backend'
+import type { StreamingBackend } from '@platform/voice-engine/system/streaming-backend'
+import { DEFAULT_CHUNK_STRATEGY } from '@platform/voice-engine/agent/chunking-setting'
+import type { ChunkStrategy } from '@platform/voice-engine/voice-config'
+import type { FieldOrigin, SettingsScope } from '@platform/voice-engine/model-settings'
+import { DEFAULT_SETTINGS, type PluginSettings } from '../host/settings.ts'
 import type { DshConfigForm } from './dsh-types.ts'
-import type { PluginSettings } from '../host/settings.ts'
+import { RadioChoices, SelectField, SliderField, type SelectOption } from './settings-controls.tsx'
+import { ReadOnly, SCOPE, ensureStyles } from './settings-style.ts'
+import {
+  TUNING_FIELDS, buildWrite, chunkingView, editChunking, resetChunking, roster, seedDraft, setControlPlaneUrl, setKeepVoiceOutside,
+  setModel, setProvider, setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
+} from './settings-model.ts'
 
-export type CardFields = Omit<PluginSettings, 'rest'>
+type TabId = 'voice' | 'speech' | 'listening' | 'debug'
 
-const TEXT_FIELDS: Array<[Exclude<keyof CardFields, 'ttsSpeed' | 'keepVoiceOutside'>, string]> = [
-  ['controlPlaneUrl', 'Control plane URL'],
-  ['sttServiceId', 'STT service'],
-  ['sttModel', 'STT model'],
-  ['ttsServiceId', 'TTS service'],
-  ['ttsModel', 'TTS model'],
-  ['ttsVoice', 'TTS voice'],
-]
+const tabId = (tab: TabId): string => `dsh-voice-tab-${tab}`
+const panelId = (tab: TabId): string => `dsh-voice-panel-${tab}`
+
+const tabItem = (value: TabId, label: string) => ({ value, label, id: tabId(value), panelId: panelId(value) })
+const TAB_ITEMS = [tabItem('voice', 'Voice'), tabItem('speech', 'Speech'), tabItem('listening', 'Listening'), tabItem('debug', 'Debug')] as const
+
+/** What a draft was seeded from: the stored settings and the revision they were read at. */
+interface Base {
+  settings: PluginSettings
+  revision: number | undefined
+}
 
 export function SettingsCard({ form }: { form: DshConfigForm<PluginSettings> }) {
+  ensureStyles()
   // dsh's forms are class instances whose methods read `this`, so they are called through the form.
   const state = useSyncExternalStore(listener => form.subscribe(listener), () => form.getSnapshot())
-  const value = state.value
-  if (state.status !== 'ready' || value === undefined) return <p data-dsh-voice="settings-status">{state.status}</p>
-  const disabled = !state.writable
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [base, setBase] = useState<Base | null>(null)
+  const [tab, setTab] = useState<TabId>('voice')
+  const [saving, setSaving] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  const stored = state.status === 'ready' ? state.value : undefined
+  const dirty = useMemo(() => draft !== null && base !== null && buildWrite(base.settings, draft).ops.length > 0, [draft, base])
+
+  // Seeds the draft once the settings arrive, and again when they change under a draft with nothing staged.
+  // React re-renders at once with the state set here, so the page never paints an unseeded or stale draft.
+  if (stored !== undefined && (draft === null || (!dirty && base?.revision !== state.revision))) {
+    const settings = { ...DEFAULT_SETTINGS, ...stored }
+    setBase({ settings, revision: state.revision })
+    setDraft(seedDraft(settings))
+  }
+
+  if (state.status !== 'ready') return <p data-dsh-voice="settings-status">{state.status}</p>
+  if (draft === null || base === null) return <p data-dsh-voice="settings-status">loading</p>
+
+  const edit = (change: (current: Draft) => Draft): void => {
+    setProblem(null)
+    setDraft(current => (current === null ? current : change(current)))
+  }
+
+  const cancel = (): void => {
+    setProblem(null)
+    setDraft(seedDraft(base.settings))
+  }
+
+  const save = async (): Promise<void> => {
+    const write = buildWrite(base.settings, draft)
+    if (write.ops.length === 0) return
+    setSaving(true)
+    setProblem(null)
+    try {
+      if (await form.mutate(write.ops, base.revision)) {
+        setBase({ settings: write.next, revision: form.getSnapshot().revision })
+        setDraft(seedDraft(write.next))
+      } else {
+        setProblem('Settings not saved: dsh did not accept them. Cancel to reload what is stored.')
+      }
+    } catch (error) {
+      setProblem(`Settings not saved: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const readOnly = !state.writable
   return (
-    <div data-dsh-voice="settings">
-      {TEXT_FIELDS.map(([field, label]) => (
-        <Field key={field} label={label}>
-          <Text value={value[field]} disabled={disabled} field={field} onCommit={next => form.set(field, next)} />
-        </Field>
-      ))}
-      <Field label="TTS speed">
-        <Text value={String(value.ttsSpeed)} disabled={disabled} field="ttsSpeed" onCommit={next => form.set('ttsSpeed', Number(next))} />
-      </Field>
-      <Field label="Keep voice on outside a conversation">
-        <input
-          type="checkbox"
-          data-dsh-field="keepVoiceOutside"
-          checked={value.keepVoiceOutside}
-          disabled={disabled}
-          onChange={event => { void form.set('keepVoiceOutside', event.target.checked) }}
+    <div className={`${SCOPE} dv-page`} data-dsh-voice="settings" data-readonly={readOnly ? '' : undefined}>
+      <ReadOnly.Provider value={readOnly}>
+        <SegmentedTabs
+          label="Voice settings"
+          items={TAB_ITEMS}
+          value={tab}
+          onChange={setTab}
         />
-      </Field>
+        <fieldset className="dv-panel" role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} disabled={readOnly}>
+          {tab === 'voice' && <VoicePanel draft={draft} edit={edit} />}
+          {tab === 'speech' && <SpeechPanel draft={draft} edit={edit} />}
+          {tab === 'listening' && <ListeningPanel draft={draft} edit={edit} />}
+          {tab === 'debug' && <DebugPanel draft={draft} edit={edit} />}
+        </fieldset>
+      </ReadOnly.Provider>
+      <div className="dv-footer">
+        {readOnly && <span className="dv-problem" role="status">Settings are read-only here.</span>}
+        {problem !== null && <span className="dv-problem" role="alert">{problem}</span>}
+        <Button variant="ghost" disabled={!dirty || saving} onClick={cancel}>Cancel</Button>
+        <Button variant="primary" disabled={!dirty || saving || readOnly} onClick={() => { void save() }}>{saving ? 'Saving…' : 'Save'}</Button>
+      </div>
     </div>
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <label style={{ display: 'block', margin: '8px 0' }}><span style={{ display: 'block' }}>{label}</span>{children}</label>
+interface PanelProps {
+  draft: Draft
+  edit: (change: (current: Draft) => Draft) => void
 }
 
-/** A text input that holds its draft locally and commits on blur or Enter. */
-function Text({ value, field, disabled, onCommit }: { value: string; field: string; disabled: boolean; onCommit(next: string): unknown }) {
-  const [draft, setDraft] = useState<string | null>(null)
-  const commit = (): void => {
-    if (draft !== null && draft !== value) void onCommit(draft)
-    setDraft(null)
-  }
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
-    <input
-      data-dsh-field={field}
-      value={draft ?? value}
-      disabled={disabled}
-      onChange={event => { setDraft(event.target.value) }}
-      onBlur={commit}
-      onKeyDown={event => { if (event.key === 'Enter') commit() }}
-    />
+    <section className="dv-section">
+      <h3 className="dv-heading">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  return (
+    <div className="dv-field">
+      <label htmlFor={id} className="dv-label">{label}</label>
+      {children}
+    </div>
+  )
+}
+
+/** A label and one-line description beside a switch. */
+function SwitchRow({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <div className="dv-split dv-split-top">
+      <div className="dv-field">
+        <span className="dv-label">{label}</span>
+        <p className="dv-help">{description}</p>
+      </div>
+      <Switch label={label} checked={checked} onChange={onChange} />
+    </div>
+  )
+}
+
+const optionsOf = (items: ReadonlyArray<{ id: string; name?: string }>): SelectOption[] => items.map(item => ({ value: item.id, label: item.name ?? item.id }))
+
+function VoicePanel({ draft, edit }: PanelProps) {
+  const view = roster(draft)
+  const [streaming, setStreaming] = useState<StreamingBackend | 'auto'>(readStreamingChoice)
+  const detected = getDetectedBackend()
+  const backendName = (backend: StreamingBackend): string => (backend === 'mms' ? 'MMS' : backend === 'mse' ? 'MSE' : 'Blob')
+  return (
+    <>
+      {view.sttOptions.length > 1 && (
+        <Section title="Transcription">
+          <Field id="dv-stt" label="Provider">
+            <SelectField
+              id="dv-stt"
+              value={draft.sttServiceId}
+              options={view.sttOptions.map(o => ({ value: o.serviceId, label: o.name }))}
+              onChange={value => { edit(d => setSttService(d, value)) }}
+            />
+          </Field>
+        </Section>
+      )}
+      <Section title="Voice">
+        {view.providers.length === 0 ? (
+          <p className="dv-help">The settings hold no voice roster, so there is nothing to choose from.</p>
+        ) : (
+          <>
+            <div className="dv-row">
+              {view.providers.length > 1 && (
+                <Field id="dv-provider" label="Provider">
+                  <SelectField
+                    id="dv-provider"
+                    value={draft.ttsServiceId}
+                    options={view.providers.map(p => ({ value: p.serviceId, label: p.name ?? p.serviceId }))}
+                    onChange={value => { edit(d => setProvider(d, value)) }}
+                  />
+                </Field>
+              )}
+              {view.models.length > 1 && (
+                <Field id="dv-model" label="Model">
+                  <SelectField id="dv-model" value={draft.ttsModel} options={optionsOf(view.models)} onChange={value => { edit(d => setModel(d, value)) }} />
+                </Field>
+              )}
+              <Field id="dv-voice" label="Voice">
+                <SelectField
+                  id="dv-voice"
+                  value={draft.ttsVoice}
+                  options={view.voices.map(v => ({ value: v.id, label: v.name }))}
+                  onChange={value => { edit(d => setVoice(d, value)) }}
+                />
+              </Field>
+            </div>
+            <div className="dv-field">
+              <div className="dv-split">
+                <span className="dv-label">Speed</span>
+                <span className="dv-value">{draft.ttsSpeed.toFixed(1)}x</span>
+              </div>
+              <SliderField label="Speed" min={0.5} max={2} step={0.1} value={draft.ttsSpeed} onChange={value => { edit(d => setSpeed(d, value)) }} />
+            </div>
+          </>
+        )}
+      </Section>
+      <Section title="Playback">
+        <Field id="dv-streaming" label="Streaming method">
+          <SelectField
+            id="dv-streaming"
+            value={streaming}
+            options={[
+              { value: 'auto', label: `Auto (${backendName(detected)})` },
+              { value: 'mms', label: 'MMS streaming', disabled: typeof ManagedMediaSource === 'undefined' },
+              { value: 'mse', label: 'MSE streaming', disabled: typeof MediaSource === 'undefined' },
+              { value: 'blob', label: 'Blob fallback' },
+            ]}
+            // Saved as soon as it changes, outside the draft: the engine reads it from the browser's storage when it loads.
+            onChange={value => {
+              const choice = value as StreamingBackend | 'auto'
+              setStreaming(choice)
+              saveStreamingBackend(choice)
+            }}
+          />
+        </Field>
+        <p className="dv-help">Active: {backendName(STREAMING_BACKEND)} — reload to apply</p>
+      </Section>
+      <Section title="Voice servers">
+        {view.declaresSessions && (
+          <SwitchRow
+            label="Always take over"
+            description="Our voice servers serve one session at a time. When another session is using one, take it over without asking."
+            checked={draft.takeover === 'always'}
+            onChange={checked => { edit(d => setTakeover(d, checked ? 'always' : 'ask')) }}
+          />
+        )}
+        <Field id="dv-control-plane" label="Control plane URL">
+          <Input
+            id="dv-control-plane"
+            className="dv-input"
+            value={draft.controlPlaneUrl}
+            onChange={event => { edit(d => setControlPlaneUrl(d, event.target.value)) }}
+          />
+        </Field>
+      </Section>
+      <Section title="Conversation">
+        <SwitchRow
+          label="Keep voice on outside a conversation"
+          description="Voice keeps running when you leave a conversation for another dsh page, instead of turning off."
+          checked={draft.keepVoiceOutside}
+          onChange={checked => { edit(d => setKeepVoiceOutside(d, checked)) }}
+        />
+      </Section>
+    </>
+  )
+}
+
+/** The stored streaming choice, or 'auto' when none is stored or storage is unavailable. */
+function readStreamingChoice(): StreamingBackend | 'auto' {
+  try {
+    const stored = localStorage.getItem('tts-streaming-backend')
+    return stored === 'mms' || stored === 'mse' || stored === 'blob' ? stored : 'auto'
+  } catch {
+    return 'auto'
+  }
+}
+
+const SCOPE_CHOICES = [
+  { value: 'global', label: 'Use the same settings for every model', description: 'Your settings apply everywhere.' },
+  { value: 'per-model', label: 'Use per-model settings', description: 'Each model may keep its own, falling back to what it ships, then to yours.' },
+] as const
+
+const MODE_CHOICES: ReadonlyArray<{ value: ChunkStrategy; label: string; description: string }> = [
+  { value: 'two-chunk', label: '2-chunk', description: 'First sentence boundary, then everything else' },
+  { value: 'paragraph', label: 'Paragraph', description: 'Emit on double newlines' },
+  { value: 'sentence', label: 'Sentence', description: 'Emit at each sentence boundary above min words' },
+  { value: 'greedy', label: 'Greedy', description: 'Pack as many sentences as fit within max words' },
+]
+
+function Provenance({ origin, modelName, diverges }: { origin: FieldOrigin; modelName: string; diverges: Array<{ label: string; value: string }> }) {
+  const text = origin === 'override' ? 'Yours' : origin === 'model' ? `From ${modelName}` : origin === 'global' ? 'Global' : 'Default'
+  return (
+    <div className="dv-provenance">
+      <Tag tone={origin === 'override' ? 'info' : origin === 'none' ? 'quiet' : 'neutral'}>{text}</Tag>
+      {diverges.length > 0 && <span className="dv-help">{diverges.map(d => `${d.label} ${d.value}`).join(' · ')}</span>}
+    </div>
+  )
+}
+
+function SpeechPanel({ draft, edit }: PanelProps) {
+  const view = chunkingView(draft)
+  const mode = view.fields.mode.value ?? DEFAULT_CHUNK_STRATEGY
+  const modelMode = view.draft.modelDefaults.mode
+  const words = (field: 'minWords' | 'maxWords', id: string, label: string, max: number) => (
+    <Field id={id} label={label}>
+      <Input
+        id={id}
+        className="dv-input"
+        type="number"
+        min={1}
+        max={max}
+        placeholder="—"
+        value={view.fields[field].value ?? ''}
+        onChange={event => { edit(d => editChunking(d, field, event.target.value ? parseInt(event.target.value, 10) : undefined)) }}
+      />
+      <Provenance origin={view.fields[field].from} modelName={view.modelName} diverges={view.divergences[field]} />
+    </Field>
+  )
+  return (
+    <>
+      <div className="dv-split">
+        <h3 className="dv-heading">Chunking</h3>
+        {draft.scope === 'per-model' && <span className="dv-help">Values for {view.modelName}</span>}
+      </div>
+      <RadioChoices<SettingsScope> name="dv-scope" label="Chunking scope" value={draft.scope} choices={SCOPE_CHOICES} onChange={value => { edit(d => setScope(d, value)) }} />
+      <hr className="dv-rule" />
+      <RadioChoices<ChunkStrategy>
+        name="dv-mode"
+        label="Chunking mode"
+        value={mode}
+        choices={MODE_CHOICES.map(choice => ({
+          ...choice,
+          description: choice.value === modelMode ? `${choice.description} · ${view.modelName} asks for this` : choice.description,
+          extra: <Provenance origin={view.fields.mode.from} modelName={view.modelName} diverges={view.divergences.mode} />,
+        }))}
+        onChange={value => { edit(d => editChunking(d, 'mode', value)) }}
+      />
+      <div className="dv-pair">
+        {words('minWords', 'dv-min-words', 'Min words', 200)}
+        {words('maxWords', 'dv-max-words', 'Max words', 500)}
+      </div>
+      {view.note !== null && <p className="dv-help">{view.note}</p>}
+      <div className="dv-footer">
+        <Button variant="outline" size="sm" disabled={draft.scope === 'global' || !view.overridePresent} onClick={() => { edit(resetChunking) }}>
+          Reset to model defaults
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function ListeningPanel({ draft, edit }: PanelProps) {
+  return (
+    <>
+      {([
+        { section: 'vad', title: 'Speech detection' },
+        { section: 'turnTaking', title: 'Turn taking' },
+      ] as const).map(group => (
+        <Section key={group.section} title={<>{group.title}<code>stt.{group.section}</code></>}>
+          {TUNING_FIELDS.filter(f => f.section === group.section).map(f => {
+            const value = draft.tuning[f.key]
+            return (
+              <div key={f.key} className="dv-field">
+                <div className="dv-tuning">
+                  <Tooltip label={`stt.${f.section}.${f.key}`} side="top" portal>
+                    <span className="dv-label">{f.label}</span>
+                  </Tooltip>
+                  <SliderField
+                    label={f.label}
+                    min={f.min}
+                    max={f.max}
+                    step={f.step}
+                    value={value ?? f.min}
+                    disabled={value === undefined}
+                    onChange={next => { edit(d => setTuning(d, f.key, next)) }}
+                  />
+                  <span className="dv-value dv-tuning-value">{value === undefined ? 'default' : f.unit === '' ? String(value) : `${value} ${f.unit}`}</span>
+                </div>
+                <p className="dv-help">{f.description}</p>
+              </div>
+            )
+          })}
+        </Section>
+      ))}
+    </>
+  )
+}
+
+function DebugPanel({ draft, edit }: PanelProps) {
+  return (
+    <>
+      <SwitchRow
+        label="Save mic samples to disk"
+        description="Keeps last 50 WAVs sent to STT for debugging."
+        checked={draft.saveMicSamples}
+        onChange={checked => { edit(d => setSaveMicSamples(d, checked)) }}
+      />
+      <p className="dv-help">The plugin does not send samples anywhere yet, so this choice is stored and has no effect.</p>
+    </>
   )
 }

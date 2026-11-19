@@ -1,10 +1,10 @@
-// The plugin's settings (what the bundle card edits, plus the rest of the
-// control plane's voice config kept as seeded) and their mapping to and from
-// the engine's VoiceConfig.
+// The plugin's settings (the typed fields the settings page edits, plus the
+// rest of the control plane's voice config as one JSON string) and their
+// mapping to and from the engine's VoiceConfig.
 
 import type { VoiceConfig } from '@platform/voice-engine/voice-config'
 
-/** The values dsh's bundle config card edits, and the rest of the voice config as one JSON string. */
+/** The typed values of the plugin's config entry, and the rest of the voice config as one JSON string. */
 export interface PluginSettings {
   controlPlaneUrl: string
   sttServiceId: string
@@ -14,7 +14,7 @@ export interface PluginSettings {
   ttsVoice: string
   ttsSpeed: number
   keepVoiceOutside: boolean
-  /** JSON of every VoiceConfig field the card does not edit: rosters, turn-taking, reveal, chunking. */
+  /** JSON of every VoiceConfig field with no typed field: rosters, chunking options and preferences, scope, take-over, vad and turn-taking tuning, reveal, debug. */
   rest: string
 }
 
@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   rest: '{}',
 }
 
-/** Splits a control-plane voice config into the card's fields and the stored remainder. */
+/** Splits a control-plane voice config into the typed fields and the stored remainder. */
 export function settingsFromVoiceConfig(cfg: VoiceConfig, controlPlaneUrl: string): PluginSettings {
   const selection = cfg.tts.selection
   const rest: VoiceConfig = {
@@ -52,7 +52,7 @@ export function settingsFromVoiceConfig(cfg: VoiceConfig, controlPlaneUrl: strin
 }
 
 /**
- * Rebuilds the engine's VoiceConfig from the stored remainder and the card's current fields.
+ * Rebuilds the engine's VoiceConfig from the stored remainder and the typed fields.
  * VoiceConfig has no endpoint field: the engine reaches a service through the endpoint `ensureServiceReady` returns.
  */
 export function voiceConfigFromSettings(settings: PluginSettings): VoiceConfig {

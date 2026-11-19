@@ -45,6 +45,10 @@ await build({
     rollupOptions: {
       input: join(root, 'src/client/index.tsx'),
       external: PLATFORM_MODULES,
+      // Radix's modules open with "use client", which a plain script has no use for.
+      onwarn(warning, warn) {
+        if (warning.code !== 'MODULE_LEVEL_DIRECTIVE') warn(warning)
+      },
       preserveEntrySignatures: 'exports-only',
       output: {
         format: 'cjs',

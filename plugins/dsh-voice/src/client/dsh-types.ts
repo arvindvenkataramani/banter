@@ -133,7 +133,20 @@ export interface DshClientContext {
   effect(callback: () => (() => unknown) | void, label?: string): unknown
 }
 
-/** The accepted values and write queue of one host entry's config (packages/client/ui-settings/src/client/config-form-types.ts:9-95). */
+/**
+ * One edit of a settings write: `set` writes the value at the path, `unset` removes it
+ * (packages/settings/src/types.ts, `SettingsPathOpView`; lib/types/types.d.ts:47 in rc.1).
+ */
+export type DshSettingsOp =
+  | { readonly op: 'set'; readonly path: string[]; readonly value: unknown }
+  | { readonly op: 'unset'; readonly path: string[] }
+
+/**
+ * The accepted values and write queue of one host entry's config (packages/client/ui-settings/src/client/config-form-types.ts:9-95).
+ * `mutate` is the atomic write (rc.1 lib/types/client/config-form-types.d.ts:52): every op shares one revision fence
+ * and Host validation. With `expectedRevision` the write is fenced by that revision, so one read earlier than the
+ * latest refuses it rather than overwriting. It resolves false when the Host refuses and rejects on a transport failure.
+ */
 export interface DshConfigForm<T> extends DshObservable<{ status: 'loading' | 'ready' | 'unavailable'; value: T | undefined; revision: number | undefined; writable: boolean }> {
-  set(field: string, value: unknown): Promise<boolean>
+  mutate(ops: readonly DshSettingsOp[], expectedRevision?: number): Promise<boolean>
 }

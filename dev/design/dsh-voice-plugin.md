@@ -46,7 +46,13 @@ Companions: [`dev/analysis/dsh-voice-plugin.md`](../analysis/dsh-voice-plugin.md
 
 ### Settings
 
-The plugin's settings live in dsh's bundle config card: control-plane URL, STT service and model, TTS service, model, voice and speed, and whether voice stays on outside a conversation. There is no input-device setting, as in Banter. The install step seeds them by reading the control plane's voice config once; after that the plugin reads its own settings. The engine receives them in its `VoiceConfig` shape, with endpoints pointing at the relay.
+The plugin's settings are its own page in dsh's plugin manager (the bundle config slot), laid out as Banter's settings dialog is: Voice, Speech, Listening and Debug tabs, with Banter's sections, labels, descriptions and ranges. Two settings are the plugin's alone: the control-plane URL and whether voice stays on outside a conversation. There is no input-device setting, as in Banter. The install step seeds the settings by reading the control plane's voice config once; after that the plugin reads its own settings. The engine receives them in its `VoiceConfig` shape, with endpoints pointing at the relay.
+
+**Storage.** The entry's typed fields hold the TTS selection and speed, the STT service and model, the control-plane URL and the keep-voice-outside flag. `rest` holds the remainder of the control plane's `VoiceConfig` as JSON: the rosters the dropdowns read, chunking options and per-model preferences, scope, take-over, the speech-detection and turn-taking tuning, and the debug flag. The STT model stays in the typed fields and is not shown, as Banter does not show it.
+
+**Staging.** The page keeps a draft (`settings-model.ts`, pure) seeded from the stored settings. Edits go through the engine's `model-settings` and `agent/chunking-setting` reducers, so chunking resolves as it does in Banter. Save turns the draft into path ops and writes them in one `mutate(ops, expectedRevision)` on dsh's config form, fenced by the revision the draft was seeded at. The ops cover the typed fields that changed and, when an edit landed in the remainder, `rest` re-serialised with Banter's patch semantics (the control plane's `applyVoicePatch`: global options replace by key, a model's entry replaces whole and an empty one is deleted, `vad` and `turnTaking` merge by key). An unchanged draft writes nothing, and `rest` is otherwise left as stored. Cancel reseeds from the stored settings. A refused or failed write keeps the draft.
+
+**Controls.** dsh's own primitives (`SegmentedTabs`, `Switch`, `Input`, `Button`, `Tag`, `Tooltip`) where they exist; Radix Select, Slider and RadioGroup for the rest, bundled into the plugin and sharing dsh's React through the module table. A stylesheet scoped under one plugin class styles the Radix parts from dsh's `--dsw-*` tokens, which dsh declares on `body`, so the Select menu, portalled to `body`, inherits them and carries the plugin class itself. The client bundle injects the stylesheet as one `<style>` element the first time the page renders.
 
 ### Package
 
@@ -66,7 +72,7 @@ A workspace in this repo at `plugins/dsh-voice/`, beside `plugins/voice-mode/`. 
 | Auto-mute trigger | Focusing the text field | A draft change the plugin did not make | Chosen in design review: the slot contract gives a plugin the draft and its revision (`slots.ts:385-392`), and a change the plugin did not make is what it can observe without reaching into dsh's editor |
 | Auto-mute end | Blur | Send through dsh, or manual unmute | Follows the trigger (impossible) |
 | Mute shortcut | Space | A registered dsh shortcut | Space types in dsh's editor (fragile) |
-| Settings saving | One staged Save | Each field saves | dsh's bundle card has no Save (impossible) |
+| Save mic samples | Posts samples to the control plane | Stored, nothing sent | The engine's sink is a root-relative path dsh's origin does not serve and the relay does not carry; sending microphone audio needs a relay route first (forbidden until decided) |
 | Error notice | Toast | Error colour on the voice button, reason in its tooltip | No plugin toast found in dsh's slot contracts (impossible, unconfirmed) |
 | Agent activity | Shown by voice UI | Not shown | dsh shows it |
 | Glow overlay, screen wake, forced theme, "type instead", scroll-to-bottom, media gate | Present | Absent | Page-wide chrome outside any plugin slot, or dsh's own |
