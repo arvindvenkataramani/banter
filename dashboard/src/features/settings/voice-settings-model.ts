@@ -1,10 +1,9 @@
-// The settings page's draft: seeded from the plugin's stored settings, edited
-// by pure functions, and diffed back into one write. Chunking goes through the
-// engine's own reducers (model-settings, agent/chunking-setting), so it
-// resolves as it does in Banter's settings dialog. No React and no dsh import,
-// so it runs in node.
+// The settings dialog's draft: seeded from the voice config, edited by pure
+// functions, and diffed into one PATCH /api/voice/selection body. Chunking
+// goes through the engine's own reducers (model-settings,
+// agent/chunking-setting). No React, so it runs in node.
 
-import type { TtsModel, TtsProvider, TtsVoice, SttOption, VoiceConfig } from '@platform/voice-engine/voice-config'
+import type { TtsModel, TtsProvider, TtsVoice, SttOption, VoiceConfig, VoiceSelection, VoiceSelectionPatch } from '@platform/voice-engine/voice-config'
 import {
   buildModelPrefEntry, declaredAt, deleteModelOverride, editField, emptyPref, hasModelDefaults, hasOverride, readPrefs, settingsScopeFrom,
 } from '@platform/voice-engine/model-settings'
@@ -13,10 +12,6 @@ import {
   CHUNKING, diffGlobalOptions, globalSetFromConfig, resolveChunkingFields,
 } from '@platform/voice-engine/agent/chunking-setting'
 import type { ChunkingDraft, ChunkingField, ChunkingSet, ChunkingValue, ResolvedChunkingFields } from '@platform/voice-engine/agent/chunking-setting'
-import { voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
-import type { DshSettingsOp } from './dsh-types.ts'
-
-export type SettingsOp = DshSettingsOp
 
 /**
  * The listening fields the Listening tab tunes. `section` names the object under `stt` that holds the field. `default` is the value the
@@ -58,38 +53,38 @@ export const TUNING_FIELDS = [
 export type TuningKey = typeof TUNING_FIELDS[number]['key']
 export type Tuning = Partial<Record<TuningKey, number>>
 
-/** Every value the page edits, staged. `config` is the roster and everything else the draft was seeded from; it never changes. */
+/** Every value the dialog edits, staged. `config` is what the draft was seeded from; it never changes. */
 export interface Draft {
   readonly config: VoiceConfig
-  readonly controlPlaneUrl: string
   readonly sttServiceId: string
   readonly ttsServiceId: string
   readonly ttsModel: string
   readonly ttsVoice: string
   readonly ttsSpeed: number
-  readonly keepVoiceOutside: boolean
   readonly takeover: 'ask' | 'always'
+  readonly saveMicSamples: boolean
+  /** `voice.stt.preferStreaming`; it decides only for a model that can do both. */
+  readonly preferStreaming: boolean
   readonly scope: SettingsScope
   readonly global: ChunkingSet
   /** Per-model chunking preferences, keyed by provider then model, so switching models never touches an edited entry. */
   readonly prefs: ModelPrefs
-  /** The `provider\0model` keys whose preference was edited; only these are written back. */
+  /** The `provider\0model` keys whose preference was edited; only these are sent. */
   readonly touched: readonly string[]
   readonly tuning: Tuning
 }
 
-export function seedDraft(settings: PluginSettings): Draft {
-  const config = voiceConfigFromSettings(settings)
+export function seedDraft(config: VoiceConfig, selection: VoiceSelection): Draft {
   return {
     config,
-    controlPlaneUrl: settings.controlPlaneUrl,
-    sttServiceId: settings.sttServiceId,
-    ttsServiceId: settings.ttsServiceId,
-    ttsModel: settings.ttsModel,
-    ttsVoice: settings.ttsVoice,
-    ttsSpeed: settings.ttsSpeed,
-    keepVoiceOutside: settings.keepVoiceOutside,
+    sttServiceId: config.stt?.serviceId ?? '',
+    ttsServiceId: selection.serviceId,
+    ttsModel: selection.model,
+    ttsVoice: selection.voice,
+    ttsSpeed: selection.speed,
     takeover: config.takeover ?? 'ask',
+    saveMicSamples: config.debug?.saveMicSamples ?? false,
+    preferStreaming: config.stt?.preferStreaming ?? false,
     scope: settingsScopeFrom(config),
     global: globalSetFromConfig(config),
     prefs: readPrefs(config.tts.modelPrefs),
@@ -156,9 +151,9 @@ export function setModel(draft: Draft, modelId: string): Draft {
 export const setVoice = (draft: Draft, voice: string): Draft => ({ ...draft, ttsVoice: voice })
 export const setSpeed = (draft: Draft, speed: number): Draft => ({ ...draft, ttsSpeed: speed })
 export const setSttService = (draft: Draft, serviceId: string): Draft => ({ ...draft, sttServiceId: serviceId })
-export const setControlPlaneUrl = (draft: Draft, url: string): Draft => ({ ...draft, controlPlaneUrl: url })
-export const setKeepVoiceOutside = (draft: Draft, keep: boolean): Draft => ({ ...draft, keepVoiceOutside: keep })
 export const setTakeover = (draft: Draft, takeover: 'ask' | 'always'): Draft => ({ ...draft, takeover })
+export const setSaveMicSamples = (draft: Draft, saveMicSamples: boolean): Draft => ({ ...draft, saveMicSamples })
+export const setPreferStreaming = (draft: Draft, preferStreaming: boolean): Draft => ({ ...draft, preferStreaming })
 export const setScope = (draft: Draft, scope: SettingsScope): Draft => ({ ...draft, scope })
 export const setTuning = (draft: Draft, key: TuningKey, value: number): Draft => ({ ...draft, tuning: { ...draft.tuning, [key]: value } })
 /** Clears a field back to unset, so the engine's own default applies again. */
@@ -263,86 +258,72 @@ export function chunkingView(draft: Draft): ChunkingView {
   }
 }
 
-// ── Writing ──────────────────────────────────────────────────────────────
+// ── Saving ───────────────────────────────────────────────────────────────
 
-const TYPED_FIELDS = [
-  'controlPlaneUrl', 'sttServiceId', 'ttsServiceId', 'ttsModel', 'ttsVoice', 'ttsSpeed', 'keepVoiceOutside',
-] as const satisfies ReadonlyArray<keyof PluginSettings>
-
-type Json = Record<string, unknown>
-
-/** The remainder the draft edits, patched the way the control plane merges a `PATCH /api/voice/selection`. */
-function patchRest(settings: PluginSettings, draft: Draft): string {
-  const stored = parseObject(settings.rest)
+/** The body of one PATCH /api/voice/selection for what the draft changed, or null when it changed nothing. */
+export function buildPatch(draft: Draft): VoiceSelectionPatch | null {
   const config = draft.config
-  const rest: Json = { ...stored }
-  const tts: Json = { ...(stored.tts as Json | undefined) }
-  const stt: Json = { ...(stored.stt as Json | undefined) }
+  const saved = config.tts.selection
+  const patch: VoiceSelectionPatch = {}
+  let changed = false
 
-  if (draft.takeover !== (config.takeover ?? 'ask')) rest.takeover = draft.takeover
-  if (draft.scope !== settingsScopeFrom(config)) tts.settingsScope = draft.scope
+  const selectionChanged = draft.ttsServiceId !== saved?.serviceId || draft.ttsModel !== saved?.model
+    || draft.ttsVoice !== saved?.voice || draft.ttsSpeed !== (saved?.speed ?? 1)
+  if (selectionChanged) changed = true
 
-  const storedTts = stored.tts as Json | undefined
-  const globalPatch = diffGlobalOptions(globalSetFromConfig(config), draft.global)
-  if (Object.keys(globalPatch).length > 0) tts.options = { ...(storedTts?.options as Json | undefined), ...globalPatch }
-
-  if (draft.touched.length > 0) {
-    const prefs: Record<string, Record<string, unknown>> = { ...(config.tts.modelPrefs ?? {}) }
-    for (const key of draft.touched) {
-      const [serviceId, modelId] = key.split('\u0000')
-      const entry = buildModelPrefEntry(CHUNKING, draft.prefs[serviceId]?.[modelId] ?? emptyPref(CHUNKING))
-      const bucket = { ...(prefs[serviceId] ?? {}) }
-      if (entry === null) delete bucket[modelId]
-      else bucket[modelId] = entry
-      if (Object.keys(bucket).length === 0) delete prefs[serviceId]
-      else prefs[serviceId] = bucket
-    }
-    // An emptied set is stored as {}, as the control plane stores it, but an edit that changed nothing must not add the key.
-    if (Object.keys(prefs).length > 0 || storedTts?.modelPrefs !== undefined) tts.modelPrefs = prefs
+  if (draft.sttServiceId !== (config.stt?.serviceId ?? '')) {
+    patch.sttServiceId = draft.sttServiceId
+    changed = true
+  }
+  if (draft.takeover !== (config.takeover ?? 'ask')) {
+    patch.takeover = draft.takeover
+    changed = true
+  }
+  if (draft.preferStreaming !== (config.stt?.preferStreaming ?? false)) {
+    patch.preferStreaming = draft.preferStreaming
+    changed = true
+  }
+  if (draft.saveMicSamples !== (config.debug?.saveMicSamples ?? false)) {
+    patch.saveMicSamples = draft.saveMicSamples
+    changed = true
+  }
+  if (draft.scope !== settingsScopeFrom(config)) {
+    patch.settingsScope = draft.scope
+    changed = true
   }
 
-  const saved = tuningFromConfig(config)
+  const globalPatch = diffGlobalOptions(globalSetFromConfig(config), draft.global)
+  if (Object.keys(globalPatch).length > 0) {
+    Object.assign(patch, globalPatch)
+    changed = true
+  }
+
+  // A touched model is sent only when its entry now differs from the stored one, so an edit undone before Save sends nothing.
+  const storedPrefs = readPrefs(config.tts.modelPrefs)
+  const prefs: Record<string, Record<string, ModelPref | null>> = {}
+  for (const key of draft.touched) {
+    const [serviceId, modelId] = key.split('\u0000')
+    const entry = buildModelPrefEntry(CHUNKING, draft.prefs[serviceId]?.[modelId] ?? emptyPref(CHUNKING)) as ModelPref | null
+    const stored = buildModelPrefEntry(CHUNKING, storedPrefs[serviceId]?.[modelId] ?? emptyPref(CHUNKING)) as ModelPref | null
+    if (JSON.stringify(entry) === JSON.stringify(stored)) continue
+    prefs[serviceId] = { ...(prefs[serviceId] ?? {}), [modelId]: entry }
+  }
+  if (Object.keys(prefs).length > 0) {
+    patch.modelPrefs = prefs
+    changed = true
+  }
+
+  const stored = tuningFromConfig(config)
   for (const f of TUNING_FIELDS) {
     const value = draft.tuning[f.key]
-    if (value === saved[f.key]) continue
-    // An unset draft value over a stored one is a reset: the key is removed so the engine's default applies again.
-    const section = { ...(stt[f.section] as Json | undefined) }
-    if (value === undefined) delete section[f.key]
-    else section[f.key] = value
-    stt[f.section] = section
+    if (value === stored[f.key]) continue
+    // An unset draft value over a stored one is a reset: null removes it, so the engine's default applies again.
+    const section: Record<string, number | null> = { ...(patch[f.section] ?? {}) }
+    section[f.key] = value ?? null
+    patch[f.section] = section
+    changed = true
   }
 
-  if (Object.keys(tts).length > 0 || stored.tts !== undefined) rest.tts = tts
-  if (Object.keys(stt).length > 0 || stored.stt !== undefined) rest.stt = stt
-  const next = JSON.stringify(rest)
-  return next === JSON.stringify(stored) ? settings.rest : next
-}
-
-function parseObject(json: string): Json {
-  try {
-    const parsed: unknown = JSON.parse(json)
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Json) : {}
-  } catch {
-    return {}
-  }
-}
-
-export interface Write {
-  /** One set per field that changed: the typed fields, and `rest` when an edit landed in it. Empty for an unchanged draft. */
-  ops: SettingsOp[]
-  /** The settings as they will stand once the ops are accepted. */
-  next: PluginSettings
-}
-
-/** Diffs the draft against the settings it was seeded from. `rest` is re-serialised only when an edit changes it. */
-export function buildWrite(settings: PluginSettings, draft: Draft): Write {
-  const next: PluginSettings = { ...settings, rest: patchRest(settings, draft) }
-  for (const field of TYPED_FIELDS) {
-    Object.assign(next, { [field]: draft[field] })
-  }
-  const ops: SettingsOp[] = []
-  for (const field of [...TYPED_FIELDS, 'rest'] as const) {
-    if (next[field] !== settings[field]) ops.push({ op: 'set', path: [field], value: next[field] })
-  }
-  return { ops, next }
+  if (!changed) return null
+  return { serviceId: draft.ttsServiceId, model: draft.ttsModel, voice: draft.ttsVoice, speed: draft.ttsSpeed, ...patch }
 }

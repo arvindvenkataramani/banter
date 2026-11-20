@@ -198,7 +198,7 @@ Under `voice` in `config.json`. The pieces that matter (the service ids and mode
 
 `serviceId` values must match registry entries. A batch-only STT server leaves `voice.stt.model` unset; a server with streaming or loadable models names one there, as in [stt.md](../guide/stt.md#fluid-stt). `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [voices-and-models.md](../guide/voices-and-models.md) for what a roster model and voice are, and how to add or change them.
 
-Banter's settings dialog writes back to `selection` — the STT picker only appears when the registry holds more than one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for Banter to read, but nothing writes it back.
+Banter's settings dialog writes back to `selection` — the STT picker appears when the registry holds at least one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for Banter to read, but nothing writes it back.
 
 ### Settings scope
 
@@ -245,7 +245,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 |---|---|---|
 | `serviceId` | none | Registry id of the STT service. It is started on demand and its endpoint is resolved from the registry. |
 | `model` | none | The model the STT service loads for a voice session. A server holding nothing at start loads this before the first utterance. Leave it unset for a batch-only server. |
-| `preferStreaming` | `false` | For a model that offers both batch and streaming, take the streaming side. Only models reporting both consult it. |
+| `preferStreaming` | `false` | For a model that offers both batch and streaming, take the streaming side: words appear as you speak. Batch transcribes on each pause, so words appear only after it, with no live preview. Only models reporting both consult it; set from the settings dialog's Transcription mode. |
 | `chunkMs` | server's own | Which streaming latency tier to load, for a model that offers a choice. |
 | `maxRecordingMs` | `300000` | Longest an utterance may run before it is force-flushed to transcription, whatever turn detection says. A safety net against a wedged detector, not a turn-taking setting. |
 | `settleOnStopMs` | `1500` | How long turning voice off waits for an utterance still being heard, or held paused, to finish transcribing before closing the transport regardless. |
@@ -276,7 +276,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 | `turnTaking.curve` | power, exponent `2` | Shape of the interpolation between the max and min delay for confidence between `smartTurnLowCutoff` and `smartTurnThreshold`. |
 | `turnTaking.interruptionMinRemainingS` | `0.5` | Seconds of agent audio that must remain for a barge-in to count as interrupting speech. Not set from the settings dialog. |
 
-Values written through the settings dialog must be non-negative, and probabilities at most 1; the control plane refuses a patch that is not.
+Values written through the settings dialog must be non-negative, and probabilities at most 1; the control plane refuses a patch that is not. A field the dialog resets is sent as `null`, which removes it from `config.json` so the engine default applies; an emptied `vad` or `turnTaking` block stays as `{}`.
 
 `curve` takes one of two forms:
 

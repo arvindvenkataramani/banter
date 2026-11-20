@@ -31,12 +31,14 @@ export type VoiceSelectionPatch = {
   modelPrefs?: Record<string, Record<string, ModelChunkingPref | null>>
   settingsScope?: 'global' | 'per-model'
   sttServiceId?: string
+  /** Written to `voice.stt.preferStreaming`: how a model that can do both transcribes. */
+  preferStreaming?: boolean
   saveMicSamples?: boolean
   takeover?: 'ask' | 'always'
-  /** Merged field by field into `voice.stt.vad`. */
-  vad?: Partial<Record<VadTuningField, number>>
-  /** Merged field by field into `voice.stt.turnTaking`. */
-  turnTaking?: Partial<Record<TurnTakingTuningField, number>>
+  /** Merged field by field into `voice.stt.vad`; null removes a field. */
+  vad?: Partial<Record<VadTuningField, number | null>>
+  /** Merged field by field into `voice.stt.turnTaking`; null removes a field. */
+  turnTaking?: Partial<Record<TurnTakingTuningField, number | null>>
 }
 
 /** The listening fields the voice settings dialog tunes, and the bound each
@@ -67,6 +69,7 @@ function validateTuning(
   for (const [field, value] of Object.entries(patch)) {
     const bound = bounds[field]
     if (!bound) throw new ValidationError(`unknown field "${field}" in ${section}`)
+    if (value === null) continue
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
       throw new ValidationError(`${section}.${field} must be a non-negative number`)
     }
@@ -320,14 +323,18 @@ export async function updateVoiceSelection(
   if (patch.vad !== undefined) validateTuning('vad', patch.vad, VAD_TUNING)
   if (patch.turnTaking !== undefined) {
     validateTuning('turnTaking', patch.turnTaking, TURN_TAKING_TUNING)
-    const current = (config.voice.stt?.turnTaking ?? {}) as Record<string, unknown>
-    const min = patch.turnTaking.commitMinDelayMs ?? current.commitMinDelayMs
-    const max = patch.turnTaking.commitMaxDelayMs ?? current.commitMaxDelayMs
+    // The values that stand after the patch: a field sent as null is absent, not its stored value.
+    const after = { ...(config.voice.stt?.turnTaking ?? {}), ...patch.turnTaking } as Record<string, unknown>
+    const min = after.commitMinDelayMs
+    const max = after.commitMaxDelayMs
     if (typeof min === 'number' && typeof max === 'number' && min > max) {
       throw new ValidationError('turnTaking.commitMinDelayMs must not exceed commitMaxDelayMs')
     }
   }
 
+  if (patch.preferStreaming !== undefined && typeof patch.preferStreaming !== 'boolean') {
+    throw new ValidationError('preferStreaming must be a boolean')
+  }
   if (patch.saveMicSamples !== undefined && typeof patch.saveMicSamples !== 'boolean') {
     throw new ValidationError('saveMicSamples must be a boolean')
   }
@@ -390,14 +397,19 @@ function applyVoicePatch(config: PlatformConfig, patch: VoiceSelectionPatch): vo
     config.voice.stt.serviceId = patch.sttServiceId
   }
 
+  if (patch.preferStreaming !== undefined) {
+    if (!config.voice.stt) config.voice.stt = {}
+    config.voice.stt.preferStreaming = patch.preferStreaming
+  }
+
   if (patch.vad !== undefined) {
     if (!config.voice.stt) config.voice.stt = {}
-    config.voice.stt.vad = { ...(config.voice.stt.vad as object | undefined), ...patch.vad }
+    config.voice.stt.vad = mergeTuning(config.voice.stt.vad, patch.vad)
   }
 
   if (patch.turnTaking !== undefined) {
     if (!config.voice.stt) config.voice.stt = {}
-    config.voice.stt.turnTaking = { ...(config.voice.stt.turnTaking as object | undefined), ...patch.turnTaking }
+    config.voice.stt.turnTaking = mergeTuning(config.voice.stt.turnTaking, patch.turnTaking)
   }
 
   if (patch.saveMicSamples !== undefined) {
@@ -406,6 +418,16 @@ function applyVoicePatch(config: PlatformConfig, patch: VoiceSelectionPatch): vo
   }
 
   if (patch.takeover !== undefined) config.voice.takeover = patch.takeover
+}
+
+/** Merges tuning fields by key; a null field is removed, and an emptied section stays as {}. */
+function mergeTuning<T extends object>(current: T | undefined, patch: Record<string, number | null | undefined>): T {
+  const next: Record<string, unknown> = { ...current }
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === null) delete next[field]
+    else if (value !== undefined) next[field] = value
+  }
+  return next as T
 }
 
 export class ValidationError extends Error {

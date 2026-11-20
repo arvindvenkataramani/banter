@@ -1,11 +1,9 @@
-// The settings page's controls that dsh's primitives do not cover: Radix
-// Select, Slider and RadioGroup, carrying the classes settings.css styles.
-// They are bundled into the plugin and use dsh's React through the module table.
+// The settings page's control that dsh's primitives do not cover: a Radix
+// Select carrying the classes settings.css styles. It is bundled into the
+// plugin and uses dsh's React through the module table.
 
 import { useContext, type ReactNode } from 'react'
-import * as RadioGroup from '@radix-ui/react-radio-group'
 import * as Select from '@radix-ui/react-select'
-import * as Slider from '@radix-ui/react-slider'
 import { ReadOnly, SCOPE } from './settings-style.ts'
 
 const Chevron = () => (
@@ -26,15 +24,17 @@ export interface SelectOption {
   disabled?: boolean
 }
 
-export function SelectField({ id, value, options, onChange }: {
+export function SelectField({ id, value, options, onChange, alwaysEnabled }: {
   id: string
   value: string
   options: readonly SelectOption[]
   onChange: (value: string) => void
+  /** A browser-only choice, which stays editable when dsh's stored settings are read-only. */
+  alwaysEnabled?: boolean
 }) {
   const readOnly = useContext(ReadOnly)
   return (
-    <Select.Root value={value} onValueChange={onChange} disabled={readOnly}>
+    <Select.Root value={value} onValueChange={onChange} disabled={readOnly && alwaysEnabled !== true}>
       <Select.Trigger id={id} className="dv-trigger">
         <Select.Value />
         <Select.Icon asChild><Chevron /></Select.Icon>
@@ -52,76 +52,5 @@ export function SelectField({ id, value, options, onChange }: {
         </Select.Content>
       </Select.Portal>
     </Select.Root>
-  )
-}
-
-export function SliderField({ label, min, max, step, value, disabled, onChange }: {
-  label: string
-  min: number
-  max: number
-  step: number
-  value: number
-  disabled?: boolean
-  onChange: (value: number) => void
-}) {
-  const readOnly = useContext(ReadOnly)
-  return (
-    <Slider.Root
-      className="dv-slider"
-      min={min}
-      max={max}
-      step={step}
-      value={[value]}
-      disabled={disabled === true || readOnly}
-      onValueChange={([next]) => { onChange(next) }}
-    >
-      <Slider.Track className="dv-slider-track"><Slider.Range className="dv-slider-range" /></Slider.Track>
-      <Slider.Thumb className="dv-slider-thumb" aria-label={label} />
-    </Slider.Root>
-  )
-}
-
-export interface RadioChoice<Value extends string> {
-  value: Value
-  label: string
-  description: ReactNode
-  /** Rendered under the choice when it is the selected one. */
-  extra?: ReactNode
-}
-
-/** A radio group of labelled choices, each with a one-line description under its label. */
-export function RadioChoices<Value extends string>({ name, label, description, value, choices, onChange }: {
-  /** Prefix of the choices' element ids. */
-  name: string
-  /** The group's name, shown above the choices as a field label. */
-  label: string
-  /** What the choice decides, shown under the label. */
-  description?: ReactNode
-  value: Value
-  choices: readonly RadioChoice<Value>[]
-  onChange: (value: Value) => void
-}) {
-  const readOnly = useContext(ReadOnly)
-  return (
-    <div className="dv-field">
-      <span id={`${name}-label`} className="dv-label">{label}</span>
-      {description !== undefined && <p className="dv-help">{description}</p>}
-    <RadioGroup.Root className="dv-radios" value={value} onValueChange={next => { onChange(next as Value) }} disabled={readOnly} aria-labelledby={`${name}-label`}>
-      {choices.map(choice => (
-        <div key={choice.value} className="dv-field">
-          <div className="dv-radio-row">
-            <RadioGroup.Item id={`${name}-${choice.value}`} value={choice.value} className="dv-radio">
-              <RadioGroup.Indicator className="dv-radio-dot" />
-            </RadioGroup.Item>
-            <div className="dv-radio-text">
-              <label htmlFor={`${name}-${choice.value}`} className="dv-label">{choice.label}</label>
-              <p className="dv-help">{choice.description}</p>
-            </div>
-          </div>
-          {value === choice.value && choice.extra !== undefined && <div className="dv-indent">{choice.extra}</div>}
-        </div>
-      ))}
-    </RadioGroup.Root>
-    </div>
   )
 }

@@ -48,7 +48,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* A click outside is too easy to make by accident to discard staged edits. */}
       <DialogContent
-        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        // One fixed size for every tab, so switching tabs never resizes the dialog; the tab's content scrolls inside it.
+        className="flex h-[min(85vh,56rem)] flex-col sm:max-w-3xl"
         aria-describedby={undefined}
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -58,18 +59,18 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
         <PageSecurityNotice />
 
-        <Tabs defaultValue="voice">
-          <TabsList className="w-full">
-            <TabsTrigger value="voice" className="flex-1">Voice</TabsTrigger>
+        <Tabs defaultValue="speech" className="min-h-0 flex-1">
+          <TabsList className="w-full shrink-0">
             <TabsTrigger value="speech" className="flex-1">Speech</TabsTrigger>
             <TabsTrigger value="listening" className="flex-1">Listening</TabsTrigger>
-            <TabsTrigger value="debug" className="flex-1">Debug</TabsTrigger>
+            <TabsTrigger value="general" className="flex-1">General</TabsTrigger>
+            <TabsTrigger value="help" className="flex-1">Help</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="voice" className="mt-4">{voiceTab(voice.voice)}</TabsContent>
-          <TabsContent value="speech" className="mt-4">{voiceTab(voice.speech)}</TabsContent>
-          <TabsContent value="listening" className="mt-4">{voiceTab(voice.listening)}</TabsContent>
-          <TabsContent value="debug" className="mt-4">{voiceTab(voice.debug)}</TabsContent>
+          <TabsContent value="speech" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{voiceTab(voice.speech)}</TabsContent>
+          <TabsContent value="listening" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{voiceTab(voice.listening)}</TabsContent>
+          <TabsContent value="general" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{voiceTab(voice.general)}</TabsContent>
+          <TabsContent value="help" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{voice.help ?? voiceTab(null)}</TabsContent>
         </Tabs>
 
         <DialogFooter>

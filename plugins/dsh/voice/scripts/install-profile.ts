@@ -1,9 +1,9 @@
-// Builds the package, installs it into a dsh profile, and seeds the plugin's
-// settings from the control plane's voice config.
+// Builds the package, installs it into a dsh profile, and writes the Banter
+// server URL into the plugin's settings.
 //
 //   bun scripts/install-profile.ts <profile> <control-plane-url>
 //
-// It reads GET <control-plane-url>/api/voice once and writes the profile's
+// It checks that GET <control-plane-url>/api/voice answers and writes the profile's
 // plugin row config; it touches nothing else. Live values go into the
 // profile only, never into this repository.
 
@@ -13,8 +13,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { VoiceConfig } from '@platform/voice-engine/voice-config'
-import { settingsFromVoiceConfig } from '../src/host/settings.ts'
 
 declare const Bun: { YAML: { parse(text: string): unknown; stringify(value: unknown, replacer?: null, space?: number): string } }
 
@@ -55,16 +53,17 @@ async function main(): Promise<void> {
   run('bun', [join(root, 'scripts/build.ts')])
   run('npx', [DSH_PACKAGE, 'plugin', '--profile', profile, 'add', join(root, 'dist/package')])
 
-  const response = await fetch(`${controlPlaneUrl.replace(/\/+$/, '')}/api/voice`)
+  // Checked only so a wrong URL fails here, not on the first voice start; the voice settings stay Banter's.
+  const url = controlPlaneUrl.replace(/\/+$/, '')
+  const response = await fetch(`${url}/api/voice`)
   if (!response.ok) fail(`the control plane answered ${response.status} for its voice config`)
-  const settings = settingsFromVoiceConfig(await response.json() as VoiceConfig, controlPlaneUrl.replace(/\/+$/, ''))
 
   const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
   const patchFile = join(home, 'profiles', profile, 'cordis.patch.yml')
   const existing = existsSync(patchFile) ? Bun.YAML.parse(await readFile(patchFile, 'utf8')) : []
   await mkdir(dirname(patchFile), { recursive: true })
-  await writeFile(patchFile, Bun.YAML.stringify(withPluginRow(existing, { ...settings }), null, 2))
-  console.log(`installed into profile "${profile}" and wrote its voice settings`)
+  await writeFile(patchFile, Bun.YAML.stringify(withPluginRow(existing, { controlPlaneUrl: url }), null, 2))
+  console.log(`installed into profile "${profile}" with Banter at ${url}`)
 }
 
 if (import.meta.main) await main()

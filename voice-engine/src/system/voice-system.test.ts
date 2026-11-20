@@ -229,6 +229,31 @@ describe('VoiceSystem', () => {
     expect(mode()).toBe('live')
   })
 
+  it('a live start publishes the transcription mode in use and what decided it, and voice ending clears it', async () => {
+    const config = makeConfig()
+    configure(makeSession(), { ...config, stt: { ...config.stt, preferStreaming: true } })
+    expect(state().stt).toBeNull()
+
+    await goLive(h)
+    // The fake's model only does batch, so the model decides, whatever the choice says.
+    expect(state().stt).toEqual({ mode: 'batch', decidedBy: 'model', model: 'stt-model' })
+
+    h.sys.voiceOff()
+    await flush()
+    expect(state().phase).toBe('off')
+    expect(state().stt).toBeNull()
+  })
+
+  it('for a model that does both, the published mode follows the choice and says so', async () => {
+    h.fakes.services.fetchSttModelFacts.mockImplementation(() => Promise.resolve({ kind: 'both' }) as never)
+    const config = makeConfig()
+    configure(makeSession(), { ...config, stt: { ...config.stt, preferStreaming: true } })
+
+    await goLive(h)
+
+    expect(state().stt).toEqual({ mode: 'streaming', decidedBy: 'choice', model: 'stt-model' })
+  })
+
   it('a start stopped while its services are starting builds no sides, starts no heartbeat and opens no connection when it resumes', async () => {
     configure()
     h.hold('ensureTts', 'tone:ended')

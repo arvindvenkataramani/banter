@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import { editTranscript, useTranscriptStore } from '@platform/voice-engine/store/transcript-store'
+import type { VoiceConfig } from '@platform/voice-engine/voice-config'
+import { useVoiceSessionStore } from '@platform/voice-engine/voice-session-store'
 import type { DshClientContext, DshConfigForm, DshObservable } from './dsh-types'
 import type { DraftMirror } from './draft-mirror'
+import type { ConfigFeed, FeedState } from './config-feed'
 import type { ShownSession } from './shown-session'
 import type { VoiceSessionDeps } from './session-adapter'
 
 // The runtime is real. Its edges are stand-ins: the session adapter records the
-// deps the runtime hands it, the voice system is inert, and dsh's context is a
-// few observables.
+// deps the runtime hands it, the voice system records its calls, the config feed
+// is driven by the test, and dsh's context is a few observables.
 
 const adapterDeps = new Map<string, VoiceSessionDeps>()
 vi.mock('./session-adapter.ts', () => ({
@@ -17,9 +20,8 @@ vi.mock('./session-adapter.ts', () => ({
     return { dispose: vi.fn() }
   },
 }))
-vi.mock('./system.ts', () => ({
-  createVoiceSystem: () => ({ voiceOn: vi.fn(), voiceOff: vi.fn(), reconfigure: vi.fn() }),
-}))
+const system = { voiceOn: vi.fn(), voiceOff: vi.fn(), reconfigure: vi.fn() }
+vi.mock('./system.ts', () => ({ createVoiceSystem: () => system }))
 vi.mock('./services.ts', () => ({ createPluginServices: () => ({}) }))
 
 const { createVoiceRuntime } = await import('./runtime')
@@ -34,7 +36,41 @@ function observable<T>(initial: T): DshObservable<T> & { set(next: T): void } {
   }
 }
 
-function setup() {
+const config = (ttsModel: string, sttServiceId = 'stt-a'): VoiceConfig => ({
+  tts: {
+    providers: [{
+      serviceId: 'tts-b',
+      responseFormat: 'mp3',
+      models: [
+        { id: 'model-1', key: 'model-1', realtime: true, voices: [{ id: 'voice-1', name: 'One', key: 'voice-1' }] },
+        { id: 'model-2', key: 'model-2', realtime: true, voices: [{ id: 'voice-1', name: 'One', key: 'voice-1' }] },
+      ],
+    }],
+    selection: { serviceId: 'tts-b', model: ttsModel, voice: 'voice-1', speed: 1 },
+  },
+  stt: { serviceId: sttServiceId },
+})
+
+/** A feed whose state the test sets; `reload` never answers unless the test says so. */
+function fakeFeed(initial: VoiceConfig | null) {
+  let state: FeedState = { config: initial, loadedAt: initial === null ? null : 1, error: null }
+  const listeners = new Set<() => void>()
+  const feed = {
+    reload: vi.fn(() => new Promise<void>(() => {})),
+    check: vi.fn(),
+    state: () => state,
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  }
+  return {
+    feed: feed as unknown as ConfigFeed & { reload: typeof feed.reload },
+    land(next: VoiceConfig) {
+      state = { config: next, loadedAt: 2, error: null }
+      for (const listener of [...listeners]) listener()
+    },
+  }
+}
+
+function setup(initial: VoiceConfig | null = config('model-1')) {
   const shown = observable<ShownSession>({ sessionId: 'one', panelOpen: false })
   const ctx = {
     sessions: {
@@ -44,9 +80,15 @@ function setup() {
       }),
     },
   } as unknown as DshClientContext
-  const form = observable({ status: 'loading', value: undefined, revision: undefined, writable: false }) as unknown as DshConfigForm<never>
-  const runtime = createVoiceRuntime({ ctx, shown, form, origin: 'http://host' })
-  return { runtime, shown }
+  const form = observable({
+    status: 'ready',
+    value: { controlPlaneUrl: 'http://control.invalid:7000', keepVoiceOutside: false },
+    revision: 1,
+    writable: true,
+  }) as unknown as DshConfigForm<never>
+  const { feed, land } = fakeFeed(initial)
+  const runtime = createVoiceRuntime({ ctx, shown, form, feed, origin: 'http://host' })
+  return { runtime, shown, feed, land }
 }
 
 const fakeBox = () => ({ restore: vi.fn(), snapshot: vi.fn() }) as unknown as DraftMirror & { restore: ReturnType<typeof vi.fn> }
@@ -54,8 +96,11 @@ const transcript = () => useTranscriptStore.getState().settled
 
 beforeEach(() => {
   vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() })
+  vi.stubGlobal('document', { addEventListener: vi.fn(), removeEventListener: vi.fn(), visibilityState: 'visible' })
   vi.stubGlobal('fetch', vi.fn(async () => ({})))
   adapterDeps.clear()
+  system.voiceOn.mockClear()
+  system.reconfigure.mockClear()
   useTranscriptStore.setState({ settled: '', pending: [], sent: {} })
 })
 afterEach(() => {
@@ -112,6 +157,88 @@ describe('runtime — a failed voice send', () => {
     adapterDeps.get('one')?.sendFailed?.('the lost words', 'offline')
 
     expect(transcript()).toBe('typed later')
+    runtime.dispose()
+  })
+})
+
+describe('runtime — the voice settings from Banter', () => {
+  it('a start turns voice on before the reload it starts has answered', () => {
+    const { runtime, feed } = setup()
+    feed.reload.mockClear()
+
+    runtime.start('one')
+
+    expect(system.voiceOn).toHaveBeenCalledTimes(1)
+    expect(feed.reload).toHaveBeenCalledTimes(1)
+    runtime.dispose()
+  })
+
+  it('a start with no config ever loaded does not turn voice on and says Banter can\'t be reached', () => {
+    const { runtime, feed } = setup(null)
+    feed.reload.mockClear()
+
+    runtime.start('one')
+
+    expect(system.voiceOn).not.toHaveBeenCalled()
+    expect(runtime.ui.get().notice).toBe('Can\'t reach Banter at http://control.invalid:7000')
+    expect(feed.reload).toHaveBeenCalledTimes(1)
+    runtime.dispose()
+  })
+
+  it('a reload that changes the selection while voice is live reconfigures it, and one that does not change it leaves it alone', () => {
+    const { runtime, land } = setup()
+    useVoiceSystemStore.setState({ phase: 'live' })
+
+    land(config('model-1'))
+    expect(system.reconfigure).not.toHaveBeenCalled()
+
+    land(config('model-2'))
+    expect(system.reconfigure).toHaveBeenCalledTimes(1)
+    expect(system.reconfigure.mock.calls[0]?.[0]).toMatchObject({ serviceId: 'tts-b', model: 'model-2' })
+
+    land(config('model-2', 'stt-c'))
+    expect(system.reconfigure).toHaveBeenCalledTimes(2)
+    expect(system.reconfigure.mock.calls[1]?.[1]).toBe('stt-c')
+    runtime.dispose()
+  })
+
+  it('a live reconfigure runs while the store still holds the config it replaces', () => {
+    const { runtime, land } = setup()
+    useVoiceSystemStore.setState({ phase: 'live' })
+    let storedAtReconfigure: string | undefined
+    system.reconfigure.mockImplementationOnce(() => {
+      storedAtReconfigure = useVoiceSessionStore.getState().voiceConfig?.stt?.serviceId
+    })
+
+    land(config('model-1', 'stt-c'))
+
+    expect(storedAtReconfigure).toBe('stt-a')
+    expect(useVoiceSessionStore.getState().voiceConfig?.stt?.serviceId).toBe('stt-c')
+    runtime.dispose()
+  })
+
+  it('a reload that lands while voice is starting reaches it by reconfiguring once voice is live', () => {
+    const { runtime, land } = setup()
+    useVoiceSystemStore.setState({ phase: 'starting' })
+
+    land(config('model-2'))
+    expect(system.reconfigure).not.toHaveBeenCalled()
+    expect(useVoiceSessionStore.getState().voiceSelection).toMatchObject({ model: 'model-1' })
+
+    useVoiceSystemStore.setState({ phase: 'live' })
+    expect(system.reconfigure).toHaveBeenCalledTimes(1)
+    expect(system.reconfigure.mock.calls[0]?.[0]).toMatchObject({ model: 'model-2' })
+    expect(useVoiceSessionStore.getState().voiceSelection).toMatchObject({ model: 'model-2' })
+    runtime.dispose()
+  })
+
+  it('a reload that changes the selection while voice is off does not reconfigure, and the next start uses it', () => {
+    const { runtime, land } = setup()
+
+    land(config('model-2'))
+
+    expect(system.reconfigure).not.toHaveBeenCalled()
+    expect(useVoiceSessionStore.getState().voiceSelection).toMatchObject({ serviceId: 'tts-b', model: 'model-2' })
     runtime.dispose()
   })
 })

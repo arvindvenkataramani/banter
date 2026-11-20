@@ -5,6 +5,7 @@ import { createElement } from 'react'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import type { PluginSettings } from '../host/settings.ts'
 import { ActivationPrompt } from './activation-prompt.tsx'
+import { createConfigFeed } from './config-feed.ts'
 import type { DshClientContext, DshSessionSlotProps } from './dsh-types.ts'
 import { createVoiceRuntime } from './runtime.ts'
 import { SettingsCard } from './settings-card.tsx'
@@ -22,7 +23,8 @@ export function apply(ctx: DshClientContext): void {
   const origin = window.location.origin
   const shown = createShownSession(ctx)
   const form = ctx.configForms.get<PluginSettings>(ENTRY_ID)
-  const runtime = createVoiceRuntime({ ctx, shown, form, origin })
+  const feed = createConfigFeed({ origin, fetch: (...args) => fetch(...args), now: () => Date.now() })
+  const runtime = createVoiceRuntime({ ctx, shown, form, feed, origin })
   ctx.effect(() => () => {
     runtime.dispose()
     shown.dispose()
@@ -36,7 +38,7 @@ export function apply(ctx: DshClientContext): void {
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: PACKAGE_NAME,
-  }, () => createElement(SettingsCard, { form })))
+  }, () => createElement(SettingsCard, { form, runtime, origin })))
 
   ctx.slots.inject('plugins.bundle.activation', () => ctx.slots.register({
     name: 'plugins.bundle.activation',

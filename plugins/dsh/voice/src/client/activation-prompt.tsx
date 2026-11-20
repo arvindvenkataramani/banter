@@ -1,5 +1,5 @@
 // Shown when the person enables the bundle: asks for the microphone and
-// checks the configured speech services through the relay.
+// checks the speech services Banter selects through the relay.
 
 import { useEffect, useState } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -21,11 +21,13 @@ export function ActivationPrompt({ runtime, origin, onDismiss, onOpenDetails }: 
   const [services, setServices] = useState<ServiceLine[] | null>(null)
 
   useEffect(() => {
-    const { sttServiceId, ttsServiceId } = runtime.settings()
-    const ids = [...new Set([sttServiceId, ttsServiceId].filter(id => id !== ''))]
     let current = true
-    void Promise.all(ids.map(async id => ({ id, ...await checkService({ origin, fetch: (...args) => fetch(...args) }, id) })))
-      .then(lines => { if (current) setServices(lines) })
+    void runtime.feed.reload().then(async () => {
+      const config = runtime.feed.state().config
+      const ids = [...new Set([config?.stt?.serviceId ?? '', config?.tts.selection?.serviceId ?? ''].filter(id => id !== ''))]
+      const lines = await Promise.all(ids.map(async id => ({ id, ...await checkService({ origin, fetch: (...args) => fetch(...args) }, id) })))
+      if (current) setServices(lines)
+    })
     return () => { current = false }
   }, [runtime, origin])
 
@@ -53,7 +55,7 @@ export function ActivationPrompt({ runtime, origin, onDismiss, onOpenDetails }: 
         </>
       )}
     >
-      <p>Voice needs your microphone and the speech services set in this plugin&apos;s settings.</p>
+      <p>Voice needs your microphone, the Banter server set in this plugin&apos;s settings, and the speech services chosen in Banter.</p>
       <p>
         <Button variant="outline" disabled={mic.phase === 'asking' || mic.phase === 'granted'} onClick={askForMicrophone}>Allow microphone</Button>
         {' '}
@@ -61,7 +63,7 @@ export function ActivationPrompt({ runtime, origin, onDismiss, onOpenDetails }: 
         {mic.phase === 'denied' && `Microphone not allowed: ${mic.reason}`}
       </p>
       {services === null && <p>Checking the speech services…</p>}
-      {services?.length === 0 && <p>No speech services are set yet.</p>}
+      {services?.length === 0 && <p>{runtime.feed.state().error ?? 'Banter names no speech services yet.'}</p>}
       {services?.map(line => <p key={line.id}>{line.id}: {line.detail}</p>)}
     </Modal>
   )

@@ -1,53 +1,45 @@
 # Settings
 
-The plugin's settings are on its card in dsh's **Plugins** page, in four tabs: Speech, Listening, General and Help. Each setting carries a short description on the page itself, so this page only says where things are.
+The plugin's settings are on its card in dsh's **Plugins** page, on one page with no tabs. Each setting carries a short description on the page itself, so this page only says where things are.
 
-Edits are staged. **Save** writes them all; **Cancel** discards them. Both stay disabled until something changes. A new session picks up saved settings the next time voice starts.
+There is no Save button: each setting saves itself. A brief "Saved" appears beside the one that saved, and a refused write shows its reason there.
 
-![The Speech tab of the plugin's settings page.](images/settings.png)
+![The plugin's settings page.](images/settings.png)
 
-*The Speech tab, with an example voice roster.*
+*The plugin's settings page.*
 
-## Speech
-
-How the reply is spoken.
+## Banter server
 
 | Setting | What it does |
 |---|---|
-| Provider | The text-to-speech server. Shown when the roster has more than one. |
-| Model | The speech model on that provider. Shown when there is more than one. Only models that can stream speech are listed. |
-| Voice | The voice, from the chosen model's list. |
-| Speed | Speaking rate, 0.5x to 2x. |
-| Applies to | Whether the chunking settings are shared by every model or kept per model. |
-| How replies are split | The chunking mode: how the reply is cut into pieces to speak. 2-chunk, Paragraph, Sentence or Greedy. |
-| Min words, Max words | The shortest and longest piece spoken at a time. |
-| Reset to model defaults | Clears the per-model edits for the current model. |
-| Playback method | How audio reaches the browser: Auto, MMS, MSE or Blob. Leave on Auto unless speech stutters. Saved in this browser at once, not by Save, and applied when the page reloads. |
+| Banter server URL | The address of your Banter install, the one you open it at. The plugin reaches the speech services through it. Saves when you leave the field or press Enter; Escape puts back the saved value. A value that is not an `http://` or `https://` address is not saved, and the problem shows under the field. |
 
-## Listening
+## Service status
 
-How your speech is heard and when your turn ends.
+One row per check, with its state in words and, when something is wrong, the reason and what to do.
+
+| Row | What it shows |
+|---|---|
+| Banter | Whether the server at the URL answers. |
+| Transcription service, Speech service | Whether each service the voice settings name is running, not running (voice starts it when needed) or unreachable, with the service's name after the badge. A check starts nothing. |
+| Microphone | Whether the browser allows the microphone. **Allow microphone** asks for it and releases it at once. |
+| This page | Whether the page can use the microphone and run turn detection on more than one thread. |
+
+**Test connection** runs every check again, and saves a pending URL edit first. The checks also run when the page opens and after the URL saves.
+
+## Voice settings
+
+A read-only summary of what is in use, as Banter set it: transcription service with its model and mode (plus, while voice is on, which mode is in use and why), provider, model and voice, speed, chunking mode and take-over, with the time it was loaded.
+
+- **Reload voice settings** fetches them from Banter again. Banter's settings are also fetched when the page opens, when the page regains focus, and when voice starts; while voice is on, a changed voice selection reconfigures it. A failed reload says why and leaves the settings in use as they were.
+- **Open voice settings in Banter** opens Banter's settings dialog in a new tab. Voice selection, transcription service, chunking, take-over and the speech-detection and turn-taking sliders are changed there and apply to every client. Disabled until a URL is saved.
+
+## In dsh
 
 | Setting | What it does |
 |---|---|
-| Transcription provider | The speech-to-text server. |
-| Min duration, Min probability | Speech detection: how long and how clearly a sound must be speech to count. |
-| Pause | How much silence counts as a pause. |
-| Commit min, Commit max | How long to wait after a pause before sending your turn, when you sound finished and when you sound mid-thought. |
-| Smart-turn, Smart-turn low | The scores at which the turn-taking model counts you as finished or still going. |
-
-Each slider shows its default until you change it, and has a Reset. For what these do in practice, see [what the settings mean](../../../reference/components/voice-interface.md#what-the-settings-mean).
-
-## General
-
-| Setting | What it does |
-|---|---|
-| Banter server URL | The address of your Banter install, the one you open it at. The plugin reaches the speech services through it. |
-| Always take over | Shown when a speech server serves one session at a time. When another session holds it, take it over without asking. |
 | Keep voice on outside a conversation | Voice keeps running when you move to another dsh page, instead of turning off. |
+| Playback method | How audio reaches the browser: Auto, MMS, MSE or Blob. Leave on Auto unless speech stutters. Saved in this browser at once and applied when the page reloads. |
+| Mute shortcut | The mic mute has no default key. Bind it in dsh's keyboard shortcuts settings ([the mic shortcut](README.md#the-mic-shortcut)). |
 
-The provider, model and voice lists come from the Banter server when the plugin is installed; run the install step again to refresh them ([setup.md](setup.md#what-install-seeds)).
-
-## Help
-
-Links to these docs and to Banter's setup pages, grouped by topic.
+For what the speech-detection and turn-taking settings do in practice, see [what the settings mean](../../../reference/components/voice-interface.md#what-the-settings-mean).

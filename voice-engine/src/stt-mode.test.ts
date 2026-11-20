@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { fetchSttModelFacts, resolveSttMode, resolveChunkMs } from './voice-session-store'
+import { fetchSttModelFacts, resolveSttMode, resolveChunkMs, sttModeSource } from './voice-session-store'
 
 /**
  * Which way a model is brought up, given what its server said about it.
@@ -124,5 +124,16 @@ describe('reading what a model offers from its listing', () => {
     serve(listing)
     const facts = await fetchSttModelFacts('https://stt.test', 'parakeet-unified-0.6b')
     expect(facts.chunkSizesMs).toBeUndefined()
+  })
+})
+
+describe('what decided the mode', () => {
+  it('is the choice for a model that does both, the model where it does one thing, and nothing known where the server said neither', () => {
+    expect(sttModeSource({ kind: 'both' })).toBe('choice')
+    expect(sttModeSource({ transport: ['http', 'websocket'] })).toBe('choice')
+    expect(sttModeSource({ kind: 'batch' })).toBe('model')
+    expect(sttModeSource({ kind: 'streaming', transport: ['http', 'websocket'] })).toBe('model')
+    expect(sttModeSource({ transport: ['websocket'] })).toBe('model')
+    expect(sttModeSource({})).toBe('unknown')
   })
 })

@@ -4,6 +4,9 @@
 /** Plugin-owned path prefixes on dsh's origin. */
 export const SPEECH_PREFIX = '/dsh-voice/speech'
 export const CONTROL_PREFIX = '/dsh-voice/control'
+/** Where the page reads the control plane's voice config, and where it checks the connection without changing what the relays serve. */
+export const CONFIG_PATH = '/dsh-voice/voice'
+export const CONFIG_CHECK_PATH = '/dsh-voice/voice/check'
 /** Where the page tells the host which sessions have voice live, as `{ sessionId, live }`. */
 export const LIVE_PATH = '/dsh-voice/live'
 /** How often the page repeats a live report, and how long the host keeps one without a repeat. */
@@ -32,14 +35,16 @@ export function upstreamHeaders(incoming: Readonly<Record<string, string | strin
 export interface RelaySettings {
   sttServiceId: string
   ttsServiceId: string
+  /** Further service ids served: the selection before the current one, which a running page may still use. */
+  alsoServed?: readonly string[]
   controlPlaneUrl: string
   /** Real endpoint of each service the control plane has reported, by service id. */
   endpoints: Readonly<Record<string, string>>
 }
 
 /** The service ids the relays serve, configured ones only. */
-export function configuredServiceIds(settings: Pick<RelaySettings, 'sttServiceId' | 'ttsServiceId'>): string[] {
-  return [...new Set([settings.sttServiceId, settings.ttsServiceId].filter(id => id !== ''))]
+export function configuredServiceIds(settings: Pick<RelaySettings, 'sttServiceId' | 'ttsServiceId' | 'alsoServed'>): string[] {
+  return [...new Set([settings.sttServiceId, settings.ttsServiceId, ...(settings.alsoServed ?? [])].filter(id => id !== ''))]
 }
 
 /** Splits `<SPEECH_PREFIX>/<serviceId>/<rest>?query` into its service id and the upstream-relative remainder. */
@@ -69,7 +74,7 @@ export function resolveSpeechUpstream(settings: RelaySettings, path: string): UR
 
 /** Whether the control-plane relay may forward this call: the three calls the dashboard's voice code makes, for configured services. */
 export function isAllowedControlCall(
-  settings: Pick<RelaySettings, 'sttServiceId' | 'ttsServiceId'>,
+  settings: Pick<RelaySettings, 'sttServiceId' | 'ttsServiceId' | 'alsoServed'>,
   method: string,
   path: string,
 ): boolean {

@@ -13,10 +13,13 @@ export type VoiceSelectionPatch = {
   modelPrefs?: Record<string, Record<string, ModelPref | null>>
   settingsScope?: SettingsScope
   sttServiceId?: string
+  preferStreaming?: boolean
   saveMicSamples?: boolean
   takeover?: 'ask' | 'always'
-  vad?: Partial<Record<'minSpeechDurationS' | 'minSpeechProb', number>>
-  turnTaking?: Partial<Record<'pauseThresholdMs' | 'commitMinDelayMs' | 'commitMaxDelayMs' | 'smartTurnThreshold' | 'smartTurnLowCutoff', number>>
+  /** null removes a field, so the engine's default applies. */
+  vad?: Partial<Record<'minSpeechDurationS' | 'minSpeechProb', number | null>>
+  /** null removes a field, so the engine's default applies. */
+  turnTaking?: Partial<Record<'pauseThresholdMs' | 'commitMinDelayMs' | 'commitMaxDelayMs' | 'smartTurnThreshold' | 'smartTurnLowCutoff', number | null>>
 }
 
 /** What `PATCH /api/voice/selection` returns — `config.voice` verbatim, so

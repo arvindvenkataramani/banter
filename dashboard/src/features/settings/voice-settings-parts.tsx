@@ -1,10 +1,15 @@
 import { Badge } from '@/components/ui/badge'
 import type { FieldOrigin } from '@platform/voice-engine/model-settings'
 
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, aside, children }: { title?: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="grid gap-3">
-      <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
+      {title !== undefined && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
+          {aside}
+        </div>
+      )}
       {children}
     </div>
   )

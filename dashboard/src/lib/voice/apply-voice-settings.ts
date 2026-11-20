@@ -37,6 +37,7 @@ export function applySavedVoiceSettings(
       ...(updatedVoice.stt?.serviceId && { serviceId: updatedVoice.stt.serviceId }),
       ...(updatedVoice.stt?.vad && { vad: updatedVoice.stt.vad }),
       ...(updatedVoice.stt?.turnTaking && { turnTaking: updatedVoice.stt.turnTaking }),
+      ...(updatedVoice.stt?.preferStreaming !== undefined && { preferStreaming: updatedVoice.stt.preferStreaming }),
     },
     debug: updatedVoice.debug ?? prev.debug,
   } : prev)

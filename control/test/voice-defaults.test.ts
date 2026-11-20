@@ -847,4 +847,100 @@ describe("PATCH /api/voice/selection — listening tuning", () => {
     const disk = JSON.parse(await readFile(configPath, "utf-8"));
     expect(disk.voice.stt.turnTaking.commitMinDelayMs).toBeUndefined();
   });
+
+  it("preferStreaming is written to voice.stt and kept on disk, leaving the section's other fields", async () => {
+    const app = await makeApp({
+      ...BASE_CONFIG,
+      voice: { ...BASE_CONFIG.voice!, stt: { serviceId: "stt-fluid", vad: { minSpeechProb: 0.9 } } },
+    });
+
+    const res = await patch(app, { preferStreaming: true });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).stt.preferStreaming).toBe(true);
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.stt).toEqual({ serviceId: "stt-fluid", vad: { minSpeechProb: 0.9 }, preferStreaming: true });
+  });
+
+  it("a preferStreaming that is not a boolean is refused", async () => {
+    const app = await makeApp();
+    expect((await patch(app, { preferStreaming: "yes" })).status).toBe(400);
+  });
+
+  it("a null field is removed from its section, and the section's other fields and curve stay, in the response and on disk", async () => {
+    const app = await makeApp({
+      ...BASE_CONFIG,
+      voice: {
+        ...BASE_CONFIG.voice!,
+        stt: {
+          serviceId: "stt-fluid",
+          vad: { minSpeechDurationS: 0.5, minSpeechProb: 0.9 },
+          turnTaking: { pauseThresholdMs: 200, commitMaxDelayMs: 800, curve: { type: "power", exponent: 2 } },
+        },
+      },
+    });
+
+    const res = await patch(app, { vad: { minSpeechProb: null }, turnTaking: { pauseThresholdMs: null } });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.stt.vad).toEqual({ minSpeechDurationS: 0.5 });
+    expect(body.stt.turnTaking).toEqual({ commitMaxDelayMs: 800, curve: { type: "power", exponent: 2 } });
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.stt.vad).toEqual({ minSpeechDurationS: 0.5 });
+    expect(disk.voice.stt.turnTaking).toEqual({ commitMaxDelayMs: 800, curve: { type: "power", exponent: 2 } });
+  });
+
+  it("null for a field that was never stored changes nothing but leaves the section in place", async () => {
+    const app = await makeApp({
+      ...BASE_CONFIG,
+      voice: { ...BASE_CONFIG.voice!, stt: { serviceId: "stt-fluid", vad: { minSpeechDurationS: 0.5 } } },
+    });
+
+    const res = await patch(app, { vad: { minSpeechProb: null }, turnTaking: { pauseThresholdMs: null } });
+
+    expect(res.status).toBe(200);
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.stt.vad).toEqual({ minSpeechDurationS: 0.5 });
+    expect(disk.voice.stt.turnTaking).toEqual({});
+  });
+
+  it("removing a section's last field leaves the section as an empty object", async () => {
+    const app = await makeApp({
+      ...BASE_CONFIG,
+      voice: { ...BASE_CONFIG.voice!, stt: { serviceId: "stt-fluid", vad: { minSpeechProb: 0.9 } } },
+    });
+
+    const res = await patch(app, { vad: { minSpeechProb: null } });
+
+    expect(res.status).toBe(200);
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.stt.vad).toEqual({});
+  });
+
+  it("a field the dialog does not tune is refused even when sent as null", async () => {
+    const app = await makeApp({
+      ...BASE_CONFIG,
+      voice: { ...BASE_CONFIG.voice!, stt: { serviceId: "stt-fluid", turnTaking: { interruptionMinRemainingS: 0.5 } } },
+    });
+
+    const res = await patch(app, { turnTaking: { interruptionMinRemainingS: null } });
+
+    expect(res.status).toBe(400);
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.stt.turnTaking.interruptionMinRemainingS).toBe(0.5);
+  });
+
+  it("a commit maximum removed in the same patch no longer limits the commit minimum", async () => {
+    const app = await makeApp({
+      ...BASE_CONFIG,
+      voice: { ...BASE_CONFIG.voice!, stt: { serviceId: "stt-fluid", turnTaking: { commitMaxDelayMs: 800 } } },
+    });
+
+    const res = await patch(app, { turnTaking: { commitMinDelayMs: 900, commitMaxDelayMs: null } });
+
+    expect(res.status).toBe(200);
+    const disk = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(disk.voice.stt.turnTaking).toEqual({ commitMinDelayMs: 900 });
+  });
 });

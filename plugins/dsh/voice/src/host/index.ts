@@ -1,8 +1,9 @@
 // Host half: the plugin's row in dsh's composition. Serves the browser assets
-// at the paths the client build and the engine reference, relays speech
-// traffic and the three control-plane calls, adds voice guidance to the
-// prompt of sessions with voice live, and exposes the plugin's settings as
-// live config.
+// at the paths the client build and the engine reference, hands the page the
+// control plane's voice config, relays speech traffic and the three
+// control-plane calls for the services that config selects, adds voice
+// guidance to the prompt of sessions with voice live, and exposes the plugin's
+// own settings as live config.
 
 import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -10,11 +11,12 @@ import type { Duplex } from 'node:stream'
 import z from '@deepseek-ai/schemastery'
 import { forwardHttp, forwardUpgrade } from './forward.ts'
 import {
-  CONTROL_PREFIX, LIVE_PATH, LIVE_TTL_MS, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath, resolveSpeechUpstream,
-  type RelaySettings,
+  CONFIG_CHECK_PATH, CONFIG_PATH, CONTROL_PREFIX, LIVE_PATH, LIVE_TTL_MS, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath,
+  resolveSpeechUpstream, type RelaySettings,
 } from './relay.ts'
-import { DEFAULT_SETTINGS, type PluginSettings } from './settings.ts'
+import { DEFAULT_SETTINGS } from './settings.ts'
 import { serveStatic } from './static.ts'
+import { createVoiceConfigSource, type ConfigAnswer } from './voice-config.ts'
 import voiceGuidance from '../../../../openclaw/voice-mode/voice-guidance.md?raw'
 
 export const name = 'dsh-voice'
@@ -29,26 +31,12 @@ interface Live<T> {
 
 export interface Config {
   controlPlaneUrl: Live<string>
-  sttServiceId: Live<string>
-  sttModel: Live<string>
-  ttsServiceId: Live<string>
-  ttsModel: Live<string>
-  ttsVoice: Live<string>
-  ttsSpeed: Live<number>
   keepVoiceOutside: Live<boolean>
-  rest: Live<string>
 }
 
 export const Config: z<Config> = z.object({
   controlPlaneUrl: z.string().default(DEFAULT_SETTINGS.controlPlaneUrl).volatile(),
-  sttServiceId: z.string().default(DEFAULT_SETTINGS.sttServiceId).volatile(),
-  sttModel: z.string().default(DEFAULT_SETTINGS.sttModel).volatile(),
-  ttsServiceId: z.string().default(DEFAULT_SETTINGS.ttsServiceId).volatile(),
-  ttsModel: z.string().default(DEFAULT_SETTINGS.ttsModel).volatile(),
-  ttsVoice: z.string().default(DEFAULT_SETTINGS.ttsVoice).volatile(),
-  ttsSpeed: z.number().min(0.25).max(4).default(DEFAULT_SETTINGS.ttsSpeed).volatile(),
   keepVoiceOutside: z.boolean().default(DEFAULT_SETTINGS.keepVoiceOutside).volatile(),
-  rest: z.string().default(DEFAULT_SETTINGS.rest).volatile(),
 }) as unknown as z<Config>
 
 /** The members of dsh's host context this entry uses, typed locally: dsh's packages are not imported. */
@@ -95,36 +83,42 @@ async function readLiveReport(req: IncomingMessage): Promise<{ sessionId: string
   }
 }
 
-const PACKAGE_ROOT =fileURLToPath(new URL('./', import.meta.url))
+function sendAnswer(res: ServerResponse, answer: ConfigAnswer): void {
+  const body = answer.status === 200 ? answer.config : { reason: answer.reason }
+  res.writeHead(answer.status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+}
+
+const PACKAGE_ROOT = fileURLToPath(new URL('./', import.meta.url))
 
 /** The streaming WebSocket path the engine's STT socket opens, below its endpoint. */
 const STT_STREAM_PATH = '/v1/audio/stream'
 
 export function apply(ctx: HostContext, config: Config): void {
-  const settings = (): PluginSettings => ({
-    controlPlaneUrl: config.controlPlaneUrl.get(),
-    sttServiceId: config.sttServiceId.get(),
-    sttModel: config.sttModel.get(),
-    ttsServiceId: config.ttsServiceId.get(),
-    ttsModel: config.ttsModel.get(),
-    ttsVoice: config.ttsVoice.get(),
-    ttsSpeed: config.ttsSpeed.get(),
-    keepVoiceOutside: config.keepVoiceOutside.get(),
-    rest: config.rest.get(),
-  })
+  const controlPlaneUrl = (): string => config.controlPlaneUrl.get()
+  const source = createVoiceConfigSource({ controlPlaneUrl, fetch: (...args) => fetch(...args) })
+
+  /** The services the relays serve, loading them first when no load has succeeded yet. */
+  const selection = async (): Promise<{ sttServiceId: string; ttsServiceId: string; alsoServed: string[] }> => {
+    if (source.selected() === null) await source.load()
+    return { ...(source.selected() ?? { sttServiceId: '', ttsServiceId: '' }), alsoServed: source.allowed() }
+  }
 
   // The control plane reports each service's real endpoint; the relay learns it
   // on first use and forgets it when the settings change or an upstream fails.
   const endpoints = new Map<string, string>()
-  const relaySettings = (): RelaySettings => ({ ...settings(), endpoints: Object.fromEntries(endpoints) })
+  const relaySettings = async (): Promise<RelaySettings> => ({
+    ...await selection(),
+    controlPlaneUrl: controlPlaneUrl(),
+    endpoints: Object.fromEntries(endpoints),
+  })
 
   const endpointOf = async (serviceId: string): Promise<string | null> => {
     const known = endpoints.get(serviceId)
     if (known !== undefined) return known
-    const { controlPlaneUrl } = settings()
-    if (controlPlaneUrl === '') return null
+    const url = controlPlaneUrl()
+    if (url === '') return null
     try {
-      const response = await fetch(`${controlPlaneUrl.replace(/\/+$/, '')}/api/services/${encodeURIComponent(serviceId)}`)
+      const response = await fetch(`${url.replace(/\/+$/, '')}/api/services/${encodeURIComponent(serviceId)}`)
       if (!response.ok) return null
       const body = await response.json() as { network?: { endpoint?: unknown } }
       const endpoint = body.network?.endpoint
@@ -159,6 +153,23 @@ export function apply(ctx: HostContext, config: Config): void {
   staticRoute('/tones', 'public/tones')
   staticRoute('/dsh-voice/assets', 'assets')
 
+  const configRoute = (path: string, answer: () => Promise<ConfigAnswer>, label: string): void => {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path,
+      handler: async (req, res) => {
+        if (rejected(req, res)) return
+        if (req.method !== 'GET') {
+          res.writeHead(405, { allow: 'GET' }).end()
+          return
+        }
+        sendAnswer(res, await answer())
+      },
+    }), label)
+  }
+  configRoute(CONFIG_PATH, () => source.load(), 'dsh-voice: voice config')
+  configRoute(CONFIG_CHECK_PATH, () => source.check(), 'dsh-voice: connection check')
+
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: SPEECH_PREFIX,
@@ -166,12 +177,12 @@ export function apply(ctx: HostContext, config: Config): void {
       if (rejected(req, res)) return
       const url = String(req.url)
       const serviceId = parseSpeechPath(url)?.serviceId
-      if (serviceId === undefined || !configuredServiceIds(settings()).includes(serviceId)) {
+      if (serviceId === undefined || !configuredServiceIds(await selection()).includes(serviceId)) {
         res.writeHead(404).end()
         return
       }
       await endpointOf(serviceId)
-      const upstream = resolveSpeechUpstream(relaySettings(), url)
+      const upstream = resolveSpeechUpstream(await relaySettings(), url)
       if (upstream === null) {
         res.writeHead(404).end()
         return
@@ -183,15 +194,15 @@ export function apply(ctx: HostContext, config: Config): void {
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: CONTROL_PREFIX,
-    handler: (req, res) => {
+    handler: async (req, res) => {
       if (rejected(req, res)) return
       const apiPath = String(req.url).slice(CONTROL_PREFIX.length)
-      const { controlPlaneUrl } = settings()
-      if (controlPlaneUrl === '' || !isAllowedControlCall(settings(), req.method ?? '', apiPath)) {
+      const url = controlPlaneUrl()
+      if (url === '' || !isAllowedControlCall(await selection(), req.method ?? '', apiPath)) {
         res.writeHead(404).end()
         return
       }
-      forwardHttp(req, res, new URL(`${controlPlaneUrl.replace(/\/+$/, '')}${apiPath}`))
+      forwardHttp(req, res, new URL(`${url.replace(/\/+$/, '')}${apiPath}`))
     },
   }), 'dsh-voice: control-plane relay')
 
@@ -231,16 +242,17 @@ export function apply(ctx: HostContext, config: Config): void {
     interpolate: false,
   }), 'dsh-voice: voice guidance')
 
-  // dsh matches upgrade routes by exact path, so the STT stream route follows
-  // the configured service id.
-  let disposeUpgrade: (() => void) | undefined
+  // dsh matches upgrade routes by exact path, so the STT stream routes follow
+  // the served STT services (the selection and the one before it), re-registered
+  // whenever a load changes them.
+  let disposeUpgrades: Array<() => void> = []
   const registerUpgrade = (): void => {
-    disposeUpgrade?.()
-    disposeUpgrade = undefined
-    endpoints.clear()
-    const { sttServiceId } = settings()
-    if (sttServiceId === '') return
-    disposeUpgrade = ctx.webServer.registerUpgrade({
+    for (const dispose of disposeUpgrades) dispose()
+    const sttIds = [source.selected()?.sttServiceId ?? '', source.previous()?.sttServiceId ?? ''].filter((id, i, all) => id !== '' && all.indexOf(id) === i)
+    disposeUpgrades = sttIds.map(sttServiceId => upgradeRoute(sttServiceId))
+  }
+  const upgradeRoute = (sttServiceId: string): (() => void) =>
+    ctx.webServer.registerUpgrade({
       path: `${SPEECH_PREFIX}/${encodeURIComponent(sttServiceId)}${STT_STREAM_PATH}`,
       handler: async (req, socket, head) => {
         const rejection = ctx.connection.requestRejection(req)
@@ -250,7 +262,7 @@ export function apply(ctx: HostContext, config: Config): void {
         }
         const url = String(req.url)
         await endpointOf(sttServiceId)
-        const upstream = resolveSpeechUpstream(relaySettings(), url)
+        const upstream = resolveSpeechUpstream(await relaySettings(), url)
         if (upstream === null) {
           socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
           return
@@ -258,8 +270,18 @@ export function apply(ctx: HostContext, config: Config): void {
         forwardUpgrade(req, socket, head, upstream, () => { endpoints.delete(sttServiceId) })
       },
     })
-  }
-  registerUpgrade()
-  ctx.effect(() => ctx.on('loader/volatile-update', registerUpgrade), 'dsh-voice: follow settings')
-  ctx.effect(() => () => { disposeUpgrade?.() }, 'dsh-voice: STT upgrade route')
+  ctx.effect(() => source.onChange(registerUpgrade), 'dsh-voice: follow the selected STT service')
+  ctx.effect(() => () => { for (const dispose of disposeUpgrades) dispose() }, 'dsh-voice: STT upgrade routes')
+  // A changed URL may name another Banter: forget what the old one selected, and load again.
+  // Other settings changes (keep-voice-outside) leave the served services alone.
+  let loadedUrl = controlPlaneUrl()
+  ctx.effect(() => ctx.on('loader/volatile-update', () => {
+    if (controlPlaneUrl() === loadedUrl) return
+    loadedUrl = controlPlaneUrl()
+    endpoints.clear()
+    source.clear()
+    registerUpgrade()
+    void source.load()
+  }), 'dsh-voice: follow settings')
+  void source.load()
 }

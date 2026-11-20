@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { getTheme, setTheme, type Theme } from '@/lib/theme'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { SettingsDialog } from '@/features/settings/settings-dialog'
 import { postConfigReload } from '@/lib/api'
 
@@ -55,7 +55,14 @@ interface NavBarProps {
 export function NavBar({ currentPath, onNavigate }: NavBarProps) {
   const [theme, setThemeState] = useState<Theme>(getTheme)
   const [reloading, setReloading] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  // A link with ?settings (the dsh plugin's "Open voice settings in Banter") opens the dialog on load.
+  const [settingsOpen, setSettingsOpen] = useState(() => new URLSearchParams(window.location.search).has('settings'))
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('settings')) return
+    url.searchParams.delete('settings')
+    window.history.replaceState(window.history.state, '', url)
+  }, [])
 
   function handleTheme(t: Theme) {
     setTheme(t)

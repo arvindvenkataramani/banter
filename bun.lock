@@ -79,9 +79,7 @@
       "dependencies": {
         "@phosphor-icons/react": "^2.1.10",
         "@platform/voice-engine": "workspace:*",
-        "@radix-ui/react-radio-group": "1.5.1",
         "@radix-ui/react-select": "2.4.1",
-        "@radix-ui/react-slider": "1.6.1",
       },
       "devDependencies": {
         "@deepseek-ai/schemastery": "3.19.0",

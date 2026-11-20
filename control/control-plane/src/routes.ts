@@ -484,19 +484,20 @@ const VoiceSelectionPatchSchema = z.object({
   ).optional().openapi({ description: "Per-model chunking preferences, keyed by serviceId then model; null clears an entry" }),
   settingsScope: z.enum(["global", "per-model"]).optional(),
   sttServiceId: z.string().optional(),
+  preferStreaming: z.boolean().optional().openapi({ description: "Written to voice.stt.preferStreaming: whether a model that can do both streams (live words) or transcribes in batch (on each pause)" }),
   saveMicSamples: z.boolean().optional(),
   takeover: z.enum(["ask", "always"]).optional(),
   vad: z.object({
-    minSpeechDurationS: z.number().optional(),
-    minSpeechProb: z.number().optional(),
-  }).optional().openapi({ description: "Merged field by field into voice.stt.vad; probabilities within [0, 1], durations non-negative" }),
+    minSpeechDurationS: z.number().nullable().optional(),
+    minSpeechProb: z.number().nullable().optional(),
+  }).optional().openapi({ description: "Merged field by field into voice.stt.vad; probabilities within [0, 1], durations non-negative; null removes a field so the engine default applies" }),
   turnTaking: z.object({
-    pauseThresholdMs: z.number().optional(),
-    commitMinDelayMs: z.number().optional(),
-    commitMaxDelayMs: z.number().optional(),
-    smartTurnThreshold: z.number().optional(),
-    smartTurnLowCutoff: z.number().optional(),
-  }).optional().openapi({ description: "Merged field by field into voice.stt.turnTaking; probabilities within [0, 1], durations non-negative" }),
+    pauseThresholdMs: z.number().nullable().optional(),
+    commitMinDelayMs: z.number().nullable().optional(),
+    commitMaxDelayMs: z.number().nullable().optional(),
+    smartTurnThreshold: z.number().nullable().optional(),
+    smartTurnLowCutoff: z.number().nullable().optional(),
+  }).optional().openapi({ description: "Merged field by field into voice.stt.turnTaking; probabilities within [0, 1], durations non-negative; null removes a field so the engine default applies" }),
 }).openapi("VoiceSelectionPatch");
 
 export const patchVoiceSelection = createRoute({

@@ -24,6 +24,7 @@ import {
   setSttEndpoint,
   resolveSttMode,
   resolveChunkMs,
+  sttModeSource,
 } from '../voice-session-store'
 import type { SttModelFacts } from '../voice-session-store'
 import { resolveChunkingFor } from '../agent/chunking-setting'
@@ -43,6 +44,11 @@ export interface VoiceSystemState {
   /** A saved provider change is readying its service and model. */
   reconfiguring: boolean
   lastEnd: { reason: EndReason; message?: string } | null
+  /**
+   * How speech is being transcribed in this session, and what decided it: the `preferStreaming` choice, the
+   * model (it does only one), or nothing known (batch as the fallback). Null while voice is off or before it is known.
+   */
+  stt: { mode: 'batch' | 'streaming'; decidedBy: 'choice' | 'model' | 'unknown'; model: string } | null
 }
 
 export interface HumanSide {
@@ -109,6 +115,7 @@ export const useVoiceSystemStore: UseBoundStore<StoreApi<VoiceSystemState>> = cr
   sessionId: null,
   reconfiguring: false,
   lastEnd: null,
+  stt: null,
 }))
 
 const PING_INTERVAL_MS = 60_000
@@ -187,7 +194,7 @@ export class VoiceSystem {
     const phase = useVoiceSystemStore.getState().phase
     if (phase === 'starting' || phase === 'live') return
     if (phase === 'ending') {
-      useVoiceSystemStore.setState({ phase: 'off', sessionId: null })
+      useVoiceSystemStore.setState({ phase: 'off', sessionId: null, stt: null })
       this.reportMode()
     }
 
@@ -233,6 +240,7 @@ export class VoiceSystem {
         facts = await this.deps.services.fetchSttModelFacts(sttEndpoint, config.stt.model)
         if (!this.isCurrent(sessionId)) return
         sttMode = resolveSttMode(facts, config.stt.preferStreaming)
+        useVoiceSystemStore.setState({ stt: { mode: sttMode, decidedBy: sttModeSource(facts), model: config.stt.model } })
         if (facts.present === false) {
           console.warn(`[voice] ${config.stt.model} has no weights on this node yet — loading may be slow or fail`)
         }
@@ -436,7 +444,7 @@ export class VoiceSystem {
     void Promise.all([humanStop, ended]).then(() => {
       if (useVoiceSystemStore.getState().sessionId !== sessionId) return
       this.deps.player.release()
-      useVoiceSystemStore.setState({ phase: 'off', sessionId: null })
+      useVoiceSystemStore.setState({ phase: 'off', sessionId: null, stt: null })
       this.reportMode()
     })
   }
@@ -488,7 +496,7 @@ export class VoiceSystem {
     this.stopHeartbeat()
     this.human = null
     this.agent = null
-    useVoiceSystemStore.setState({ phase: 'off', sessionId: null, reconfiguring: false, lastEnd: null })
+    useVoiceSystemStore.setState({ phase: 'off', sessionId: null, reconfiguring: false, lastEnd: null, stt: null })
   }
 
   /** Test seam: the player this system owns — the only way to reach it. */

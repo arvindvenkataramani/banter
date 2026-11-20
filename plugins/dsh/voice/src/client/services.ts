@@ -118,7 +118,7 @@ export async function loadSttModel(endpoint: string, model: string, mode?: 'batc
 export async function checkService(deps: { origin: string; fetch: typeof globalThis.fetch }, serviceId: string): Promise<{ healthy: boolean; detail: string }> {
   const { origin, fetch } = deps
   try {
-    const res = await fetch(`${origin}${CONTROL_PREFIX}/api/services/${encodeURIComponent(serviceId)}`)
+    const res = await fetch(`${origin}${CONTROL_PREFIX}/api/services/${encodeURIComponent(serviceId)}`, { signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { healthy: false, detail: `answered ${res.status}` }
     const service = await res.json() as ServiceInfo
     return service.health === 'healthy'

@@ -25,22 +25,17 @@ bun run build
 bun run install-profile web http://localhost:4200
 ```
 
-`install-profile` takes a dsh profile name and the Banter server URL. `web` is the profile `dsh web` uses. It builds the package, adds it to that profile, and writes the plugin's settings. Replace the URL with your own.
+`install-profile` takes a dsh profile name and the Banter server URL. `web` is the profile `dsh web` uses. It builds the package, adds it to that profile, and writes the Banter server URL. Replace the URL with your own.
 
 ### The Banter server URL
 
 It is the address you open Banter at: the Banter server serves the web app and the speech relay from the same address. [The install script](../../install.md#install-script) prints it when it finishes (`http://localhost:4200` unless you changed the port), and it is the address you type into your browser to open Banter. Use the same address in the install command above.
 
-### What install seeds
+### What install writes
 
-`install-profile` reads the voice configuration from the Banter server once and stores it in the profile's plugin settings:
+`install-profile` first checks that the Banter server answers at the URL, and stops with a message if it does not. It then writes one setting into the profile's plugin settings: the Banter server URL. It changes nothing else in the profile.
 
-- the Banter server URL;
-- the selected provider, model, voice and speed, and the transcription provider;
-- the roster the settings page chooses from: the providers, their models and their voices;
-- the chunking, speech-detection and turn-taking values the server has set.
-
-It changes nothing else in the profile. Those lists are copies taken at install time, so they do not follow later changes on the Banter server. After adding a voice, model or speech server in Banter, run the install command again to refresh them. Settings you changed on the plugin's page are replaced by the server's values when you do.
+The voice settings stay on the Banter server, and the plugin reads them from there. Change them in Banter's settings dialog; the plugin's [settings page](settings.md#voice-settings) shows what is in use and has a link to the dialog.
 
 dsh keeps profiles under `~/.dsh`. To use another location, set `DSH_HOME` when you run the install command and when you start dsh.
 
@@ -55,5 +50,4 @@ Open the address it prints. In dsh's **Plugins** page, make sure **@banter/dsh-v
 ## If something is wrong
 
 - **No voice button.** The plugin is off, or was installed into a different profile from the one dsh started with.
-- **Provider, model or voice lists are empty or out of date.** Run the install command again.
-- **Voice will not start.** Hover the red button for the reason. Check the Banter server URL on the General tab, and that the speech services are reachable from Banter.
+- **Voice will not start.** Hover the red button for the reason. Check the Banter server URL on the plugin's settings page, and that the speech services are reachable from Banter.

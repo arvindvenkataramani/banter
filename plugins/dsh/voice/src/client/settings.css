@@ -1,7 +1,7 @@
-/* The settings page's Radix parts and layout, styled from dsh's --dsw-* tokens
- * (declared on body, so they reach the Select menu Radix portals there). Every
- * rule sits under .dsh-voice-settings, which the page and the menu both carry,
- * so nothing here reaches dsh's own elements. */
+/* The settings page's layout and its Radix Select, styled from dsh's --dsw-*
+ * tokens (declared on body, so they reach the Select menu Radix portals
+ * there). Every rule sits under .dsh-voice-settings, which the page and the
+ * menu both carry, so nothing here reaches dsh's own elements. */
 
 .dsh-voice-settings {
   color: var(--dsw-alias-label-primary);
@@ -10,29 +10,16 @@
   line-height: 22px;
 }
 
-.dsh-voice-settings.dv-page {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-}
-
 /* Sections sit further apart than the items inside one, and the items further apart than a label from its control, so each item reads as a group. */
-.dsh-voice-settings .dv-panel {
+.dsh-voice-settings.dv-page {
   display: grid;
   gap: 40px;
   min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.dsh-voice-settings.dv-page[data-readonly] .dv-panel {
-  opacity: 0.6;
 }
 
 .dsh-voice-settings .dv-section {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   min-width: 0;
 }
 
@@ -42,47 +29,6 @@
   font-weight: 600;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
-}
-
-.dsh-voice-settings .dv-heading code {
-  margin-left: 6px;
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.dsh-voice-settings .dv-subheading {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-/* The help links are a reference list, not settings: groups sit closer than the settings' items do. */
-.dsh-voice-settings .dv-help-groups {
-  display: grid;
-  gap: 14px;
-}
-
-.dsh-voice-settings .dv-links {
-  display: grid;
-  gap: 2px;
-}
-
-.dsh-voice-settings .dv-link-list {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.dsh-voice-settings .dv-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 8px;
 }
 
 .dsh-voice-settings .dv-link {
@@ -99,16 +45,15 @@
   outline-offset: 2px;
 }
 
+.dsh-voice-settings .dv-link[aria-disabled='true'] {
+  color: var(--dsw-alias-label-dimmed);
+  pointer-events: none;
+}
+
 .dsh-voice-settings .dv-field {
   display: grid;
   gap: 8px;
   min-width: 0;
-}
-
-.dsh-voice-settings .dv-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 24px;
 }
 
 .dsh-voice-settings .dv-split {
@@ -122,16 +67,19 @@
   align-items: flex-start;
 }
 
-/* Type scale: section heading 15/600; setting label 14/500; option label and link 14/400; group subheading 13/500 secondary; description, value and notice 12/400. */
+.dsh-voice-settings .dv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* Type scale: section heading 15/600; setting label 14/500; link 14/400; group subheading 13/500 secondary; description, value and notice 12/400. */
 .dsh-voice-settings .dv-label {
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
-}
-
-.dsh-voice-settings .dv-radio-text .dv-label {
-  font-weight: 400;
 }
 
 .dsh-voice-settings .dv-help {
@@ -141,23 +89,17 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.dsh-voice-settings .dv-value {
+.dsh-voice-settings .dv-saved {
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-tertiary);
+  line-height: 18px;
+  color: var(--dsw-alias-state-success-primary, var(--dsw-alias-label-tertiary));
 }
 
-.dsh-voice-settings .dv-rule {
-  height: 0;
-  border: 0;
-  border-top: 0.5px solid var(--dsw-alias-border-l3);
+.dsh-voice-settings .dv-problem {
   margin: 0;
-}
-
-.dsh-voice-settings .dv-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .dsh-voice-settings .dv-input {
@@ -170,56 +112,56 @@
   width: 100%;
 }
 
-.dsh-voice-settings .dv-indent {
-  padding-left: 28px;
+/* Service status and the voice settings summary: a label column and a value column. */
+.dsh-voice-settings .dv-table {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 10px 16px;
+  margin: 0;
 }
 
-.dsh-voice-settings .dv-provenance {
+.dsh-voice-settings .dv-table dt {
+  font-size: 14px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-voice-settings .dv-table dd {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* A row wrapper inside .dv-table that leaves its dt and dd on the table's grid. */
+.dsh-voice-settings .dv-contents {
+  display: contents;
+}
+
+.dsh-voice-settings .dv-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.dsh-voice-settings .dv-state {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.dsh-voice-settings .dv-tuning {
-  display: grid;
-  grid-template-columns: 7rem 1fr 11rem;
-  align-items: center;
-  gap: 12px;
-}
+@media (max-width: 480px) {
+  .dsh-voice-settings .dv-table {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 
-.dsh-voice-settings .dv-tuning-end {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.dsh-voice-settings .dv-split > .dv-link {
-  font-size: 12px;
-}
-
-.dsh-voice-settings .dv-reset {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.dsh-voice-settings .dv-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.dsh-voice-settings .dv-problem {
-  margin-right: auto;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-error-primary);
+  .dsh-voice-settings .dv-table dd {
+    margin-bottom: 10px;
+  }
 }
 
 /* Select */
@@ -314,111 +256,4 @@
   width: 16px;
   height: 16px;
   color: var(--dsw-alias-state-business-primary);
-}
-
-/* Slider */
-
-.dsh-voice-settings .dv-slider {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 20px;
-  touch-action: none;
-  user-select: none;
-}
-
-.dsh-voice-settings .dv-slider-track {
-  position: relative;
-  flex: 1;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--dsw-alias-border-l3);
-}
-
-.dsh-voice-settings .dv-slider-range {
-  position: absolute;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--dsw-alias-brand-primary);
-}
-
-.dsh-voice-settings .dv-slider-thumb {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--dsw-alias-brand-primary);
-  border-radius: 50%;
-  background: var(--dsw-alias-bg-layer-1);
-  cursor: pointer;
-}
-
-.dsh-voice-settings .dv-slider-thumb:focus-visible {
-  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
-}
-
-.dsh-voice-settings .dv-slider[data-disabled] {
-  opacity: 0.5;
-}
-
-.dsh-voice-settings .dv-slider[data-disabled] .dv-slider-thumb {
-  cursor: default;
-}
-
-/* Radio */
-
-.dsh-voice-settings .dv-radios {
-  display: grid;
-  gap: 8px;
-}
-
-.dsh-voice-settings .dv-radio-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.dsh-voice-settings .dv-radio {
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  margin-top: 3px;
-  padding: 0;
-  border: 1px solid var(--dsw-alias-border-l4);
-  border-radius: 50%;
-  background: var(--dsw-alias-bg-layer-1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.dsh-voice-settings .dv-radio[data-state='checked'] {
-  border-color: var(--dsw-alias-brand-primary);
-}
-
-.dsh-voice-settings .dv-radio:focus-visible {
-  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
-}
-
-.dsh-voice-settings .dv-radio:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.dsh-voice-settings .dv-radio-dot {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--dsw-alias-brand-primary);
-}
-
-.dsh-voice-settings .dv-radio-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
 }

@@ -451,10 +451,11 @@ Extends: [Service](#service)
 | `modelPrefs` | object | no | Per-model chunking preferences, keyed by serviceId then model; null clears an entry |
 | `settingsScope` | `global` \| `per-model` | no |  |
 | `sttServiceId` | string | no |  |
+| `preferStreaming` | boolean | no | Written to voice.stt.preferStreaming: whether a model that can do both streams (live words) or transcribes in batch (on each pause) |
 | `saveMicSamples` | boolean | no |  |
 | `takeover` | `ask` \| `always` | no |  |
-| `vad` | object | no | Merged field by field into voice.stt.vad; probabilities within [0, 1], durations non-negative |
-| `turnTaking` | object | no | Merged field by field into voice.stt.turnTaking; probabilities within [0, 1], durations non-negative |
+| `vad` | object | no | Merged field by field into voice.stt.vad; probabilities within [0, 1], durations non-negative; null removes a field so the engine default applies |
+| `turnTaking` | object | no | Merged field by field into voice.stt.turnTaking; probabilities within [0, 1], durations non-negative; null removes a field so the engine default applies |
 
 ### ControlPlaneReloadResponse
 

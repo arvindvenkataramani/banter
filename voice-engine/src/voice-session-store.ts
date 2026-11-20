@@ -157,6 +157,19 @@ export function resolveSttMode(
 }
 
 /**
+ * What settled `resolveSttMode`'s answer: the `preferStreaming` choice, for a
+ * model that can do both; the model, where it does one thing; or nothing
+ * known, where the server said neither and batch is the fallback.
+ */
+export function sttModeSource(facts: SttModelFacts): 'choice' | 'model' | 'unknown' {
+  if (facts.kind === 'both') return 'choice'
+  if (facts.kind === 'batch' || facts.kind === 'streaming') return 'model'
+  const routes = facts.transport
+  if (!routes?.length) return 'unknown'
+  return routes.includes('websocket') && routes.includes('http') ? 'choice' : 'model'
+}
+
+/**
  * Which latency tier to load, for a model that offers a choice.
  *
  * A model declaring tiers refuses a load naming none, so this always answers

@@ -206,16 +206,16 @@ The accepted consequence: after a long mute the voice runs behind the conversati
 
 ## Voice Settings
 
-Voice settings are tabs in the app's one Settings dialog (nav bar gear → Settings), built by `useVoiceSettings` in `dashboard/src/features/settings/voice-settings.tsx`. Tabs:
+Voice settings are tabs in the app's one Settings dialog (nav bar gear → Settings, or the page URL with `?settings`, which opens it on load), built by `useVoiceSettings` in `dashboard/src/features/settings/voice-settings.tsx`. The dialog is the one editor of the server's voice config; the dsh plugin reads that config and has no copy. Tabs:
 
-- Voice: TTS provider + model + voice selector, speed slider, STT provider, streaming method
-- Speech: chunk strategy (`two-chunk` (default), `paragraph`, `sentence`, `greedy`) and min/max chunk word counts
-- Listening: the five `turnTaking` and two `vad` thresholds from [What the settings mean](#what-the-settings-mean), each with a line saying what the loop does with it. A field the config does not set shows a disabled slider, since the loop's own default applies there.
-- Debug: saving mic samples to disk
+- Speech: TTS provider, model and voice selectors, speed slider, chunk strategy (`two-chunk` (default), `paragraph`, `sentence`, `greedy`), min/max chunk word counts and scope, streaming method
+- Listening: the STT provider; Transcription mode (Streaming or Batch, `voice.stt.preferStreaming`) with the STT model beside it and, while voice is on, a line saying which mode is in use and why when the model decided it (published by the voice system as `stt` in its state); and the five `turnTaking` and two `vad` thresholds from [What the settings mean](#what-the-settings-mean), each with a line saying what the loop does with it. A field the config does not set is an enabled slider at the engine's default, shown as "default (value)"; dragging it sets the field, and a set field has a Reset that removes it on Save.
+- General: Always take over, and saving mic samples to disk
+- Help: links to the docs for these settings
 
 Everything is staged until the dialog's single Save, which saves only the voice values that changed. When the dialog opens before the chat page has loaded voice config, it fetches the config itself.
 
-All settings read from `GET /api/voice` and write back via `PATCH /api/voice/selection`, which takes the listening thresholds as `vad` and `turnTaking` objects merged field by field into `voice.stt`. Server-authoritative — localStorage is not used for voice selection state.
+All settings read from `GET /api/voice` and write back via `PATCH /api/voice/selection`, which takes the listening thresholds as `vad` and `turnTaking` objects merged field by field into `voice.stt`; a field sent as `null` is removed, so the engine's default applies again. Server-authoritative — localStorage is not used for voice selection state.
 
 Status: implemented and working.
 

@@ -1,16 +1,17 @@
 // The page-level voice runtime: the one VoiceSystem, the dsh session it is
-// attached to, the plugin's settings as the engine reads them, and the facts
+// attached to, Banter's voice settings as the engine reads them, and the facts
 // the controls show. It lives outside React so it outlives every slot mount.
 
 import type { VoiceSystem } from '@platform/voice-engine/system/voice-system'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import { haltAudio } from '@platform/voice-engine/audio-halters'
-import { resolveVoiceSelection } from '@platform/voice-engine/voice-config'
+import { resolveVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
 import { setVoiceConfig, setVoiceSelection, publishSession } from '@platform/voice-engine/voice-session-store'
 import { toggleMuteAll, useMuteStore } from '@platform/voice-engine/human/mute-store'
 import { editTranscript, takeTranscript } from '@platform/voice-engine/store/transcript-store'
 import { LIVE_HEARTBEAT_MS, LIVE_PATH } from '../host/relay.ts'
-import { DEFAULT_SETTINGS, voiceConfigFromSettings, type PluginSettings } from '../host/settings.ts'
+import { DEFAULT_SETTINGS, type PluginSettings } from '../host/settings.ts'
+import type { ConfigFeed } from './config-feed.ts'
 import type { DshClientContext, DshConfigForm, DshObservable } from './dsh-types.ts'
 import { restoreToTranscript, type DraftMirror, type MirrorSnapshot } from './draft-mirror.ts'
 import { createValue, type Value } from './observable.ts'
@@ -34,6 +35,9 @@ export interface VoiceRuntime {
   system: VoiceSystem
   services: PluginServices
   ui: Value<VoiceUi>
+  /** Banter's voice settings as this page last read them. */
+  feed: ConfigFeed
+  /** The plugin's own stored settings. */
   settings(): PluginSettings
   /** Turns voice on for a session; call it from the click that asks for it. */
   start(sessionId: string, opts?: { takeover?: boolean }): void
@@ -54,13 +58,14 @@ export interface RuntimeDeps {
   ctx: DshClientContext
   shown: DshObservable<ShownSession>
   form: DshConfigForm<PluginSettings>
+  feed: ConfigFeed
   origin: string
 }
 
 /** The source label under which the runtime retains the session voice is attached to. */
 const RETAIN_SOURCE = 'dshVoice'
 
-export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): VoiceRuntime {
+export function createVoiceRuntime({ ctx, shown, form, feed, origin }: RuntimeDeps): VoiceRuntime {
   let settings: PluginSettings = DEFAULT_SETTINGS
   let attached: { sessionId: string; adapter: ReturnType<typeof createVoiceSession>; release(): void } | null = null
   const boxes = new Map<string, DraftMirror>()
@@ -80,23 +85,46 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
   const phase = (): string => useVoiceSystemStore.getState().phase
   const running = (): boolean => phase() === 'starting' || phase() === 'live'
 
-  // The plugin's settings are the engine's voice config and selection.
+  // The plugin's own settings: the Banter URL and keep-voice-outside.
   const syncSettings = (): void => {
     const state = form.getSnapshot()
     if (state.status !== 'ready' || state.value === undefined) return
-    const previous = settings
     settings = { ...DEFAULT_SETTINGS, ...state.value }
-    const config = voiceConfigFromSettings(settings)
-    const selection = config.tts.selection ? resolveVoiceSelection(config, config.tts.selection) : null
-    const providerChanged = previous.ttsServiceId !== settings.ttsServiceId || previous.ttsModel !== settings.ttsModel
-      || previous.sttServiceId !== settings.sttServiceId
-    // Reconfiguring reads the config it replaces to see whether the STT service changed.
-    if (phase() === 'live' && providerChanged && selection) system.reconfigure(selection, settings.sttServiceId || undefined)
-    setVoiceConfig(config)
-    setVoiceSelection(selection)
   }
   syncSettings()
   const stopSettings = form.subscribe(syncSettings)
+
+  // Banter's voice settings, as the feed last read them, are the engine's voice config and selection.
+  let applied: VoiceConfig | null = null
+  const syncConfig = (): void => {
+    const config = feed.state().config
+    if (config === null || config === applied) return
+    // A starting system reads the store once, at a moment the runtime can't see; a config that lands
+    // meanwhile waits for the start to end, then goes in by reconfiguring as any live change does.
+    if (phase() === 'starting') return
+    const previous = applied
+    applied = config
+    const selection = config.tts.selection ? resolveVoiceSelection(config, config.tts.selection) : null
+    const changed = previous !== null && (
+      previous.tts.selection?.serviceId !== config.tts.selection?.serviceId
+      || previous.tts.selection?.model !== config.tts.selection?.model
+      || previous.stt?.serviceId !== config.stt?.serviceId)
+    // Reconfiguring reads the config it replaces to see whether the STT service changed, so it runs before the store is updated.
+    if (phase() === 'live' && changed && selection) system.reconfigure(selection, config.stt?.serviceId || undefined)
+    setVoiceConfig(config)
+    setVoiceSelection(selection)
+  }
+  syncConfig()
+  const stopConfig = feed.subscribe(syncConfig)
+  const stopConfigAfterStart = useVoiceSystemStore.subscribe((state, prev) => {
+    if (prev.phase === 'starting' && state.phase !== 'starting') syncConfig()
+  })
+  const reload = (): void => { void feed.reload() }
+  const onFocus = (): void => { reload() }
+  const onVisibility = (): void => { if (document.visibilityState === 'visible') reload() }
+  window.addEventListener('focus', onFocus)
+  document.addEventListener('visibilitychange', onVisibility)
+  reload()
 
   const detach = (): void => {
     if (attached === null) return
@@ -195,14 +223,23 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
     system,
     services,
     ui,
+    feed,
     settings: () => settings,
     start(sessionId, opts) {
       if (running()) return
+      if (feed.state().config === null) {
+        const url = settings.controlPlaneUrl
+        patchUi({ notice: url === '' ? 'No Banter server URL is set' : `Can't reach Banter at ${url}` })
+        reload()
+        return
+      }
       patchUi({ notice: null })
       // voiceOn runs synchronously up to the microphone request, inside the click; the session is
-      // attached before the start reads it, which happens after the first await.
+      // attached before the start reads it, which happens after the first await. The reload is not
+      // awaited: a changed selection reaches the system through the reconfigure in syncConfig.
       system.voiceOn(opts)
       attachTo(sessionId)
+      reload()
     },
     stop() {
       system.voiceOff()
@@ -234,6 +271,10 @@ export function createVoiceRuntime({ ctx, shown, form, origin }: RuntimeDeps): V
     },
     dispose() {
       stopSettings()
+      stopConfig()
+      stopConfigAfterStart()
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
       stopSystemWatch()
       stopFollowing()
       stopReportingPhase()

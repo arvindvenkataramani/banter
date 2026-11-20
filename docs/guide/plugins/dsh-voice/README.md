@@ -2,7 +2,7 @@
 
 A plugin that adds Banter's voice mode to the web UI of dsh (DeepSeek Harness). dsh keeps the conversation, its composer and its run controls. The plugin adds a few buttons to the composer: you talk, your words appear in the text box and are sent when you finish a turn, and the reply is spoken back. You can cut in while it speaks, and type at any time.
 
-Speech recognition and speech synthesis come from a Banter server you run; see [setup.md](setup.md). The plugin is required to use Banter's voice from DeepSeek Harness; it is the only way to get voice there. It needs that server running and reachable at the URL in its settings: without it, turning voice on fails and the voice button turns the error colour. The plugin's [settings page](settings.md) picks the voice, the transcription provider and how patient the turn-taking is.
+Speech recognition and speech synthesis come from a Banter server you run; see [setup.md](setup.md). The plugin is required to use Banter's voice from DeepSeek Harness; it is the only way to get voice there. It needs that server running and reachable at the URL in its settings: without it, turning voice on fails and the voice button turns the error colour. The voice, the transcription provider and how patient the turn-taking is are set in Banter's settings dialog; the plugin's [settings page](settings.md) holds the Banter server URL, a status check and the plugin's own options.
 
 ## Turn voice on
 
@@ -58,4 +58,4 @@ If the box already holds text when voice turns on, voice starts muted in the sam
 ## Where next
 
 - [setup.md](setup.md): build, install and start.
-- [settings.md](settings.md): every setting on the plugin's page.
+- [settings.md](settings.md): the plugin's page.

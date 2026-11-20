@@ -80,6 +80,7 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
   const phase = useStoreValue(useVoiceSystemStore, s => s.phase)
   const reconfiguring = useStoreValue(useVoiceSystemStore, s => s.reconfiguring)
   const lastEnd = useStoreValue(useVoiceSystemStore, s => s.lastEnd)
+  const configLoaded = useSyncExternalStore(listener => runtime.feed.subscribe(listener), () => runtime.feed.state().config !== null)
   const micMuted = useStoreValue(useMuteStore, s => s.micMuted)
   const speechMuted = useStoreValue(useMuteStore, s => s.speechMuted)
   const muteLinked = useStoreValue(useMuteStore, s => s.muteLinked)
@@ -138,13 +139,17 @@ export function VoiceControls({ runtime, sessionId, useInput, inputActions }: Vo
 
   const ended = lastEnd !== null && lastEnd.reason !== 'user' ? lastEnd : null
   const held = ended?.reason === 'held'
-  const title = ended === null
-    ? 'Turn voice on'
-    : held
-      ? 'Another session is using the transcription server. Press to take it over; that session\'s voice will end.'
-      : ended.message || ui.notice || 'Voice ended'
+  // A start refused because Banter's voice settings never loaded leaves no lastEnd, only the notice.
+  const refused = ended === null && !configLoaded && ui.notice !== null ? ui.notice : null
+  const title = refused !== null
+    ? `${refused}. Press to try again.`
+    : ended === null
+      ? 'Turn voice on'
+      : held
+        ? 'Another session is using the transcription server. Press to take it over; that session\'s voice will end.'
+        : ended.message || ui.notice || 'Voice ended'
   return (
-    <Control name="on" title={title} style={ended === null ? undefined : ERROR} onClick={() => { runtime.start(sessionId, held ? { takeover: true } : undefined) }}>
+    <Control name="on" title={title} style={ended === null && refused === null ? undefined : ERROR} onClick={() => { runtime.start(sessionId, held ? { takeover: true } : undefined) }}>
       <WaveformIcon size={ICON} />
     </Control>
   )
