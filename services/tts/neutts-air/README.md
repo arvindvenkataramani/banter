@@ -38,7 +38,7 @@ Copy `voices.example.yaml` to `voices.yaml` beside `server.py` and point it at y
 
 | Variable | Default | |
 |---|---|---|
-| `NEUTTS_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call. `scripts/install.sh` fills in any `*_CORS_ORIGINS` variable in the registry it seeds; a service added later needs it set by hand |
+| `NEUTTS_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call. `ops/install.sh` fills in any `*_CORS_ORIGINS` variable in the registry it seeds; a service added later needs it set by hand |
 
 ## Registry
 
@@ -64,7 +64,7 @@ Copy `voices.example.yaml` to `voices.yaml` beside `server.py` and point it at y
 }
 ```
 
-[docs/setup/tts.md](../../../docs/setup/tts.md#neutts-air) has the matching `roster.providers` entry and `config.json` selection.
+[docs/guide/tts.md](../../../docs/guide/tts.md#neutts-air) has the matching `roster.providers` entry and `config.json` selection.
 
 ## Test
 

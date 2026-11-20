@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "exclude": ["dashboard", "node_modules", "plugins"]
+  "exclude": ["dashboard", "voice-engine", "node_modules", "plugins"]
 }

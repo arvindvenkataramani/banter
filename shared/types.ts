@@ -71,7 +71,7 @@ export interface ServiceOpsEnv {
 }
 
 // One built file, copied from the source tree into the service's working
-// directory by the install scripts (scripts/install-artifacts.sh).
+// directory by the install scripts (ops/install-artifacts.sh).
 export interface InstallArtifact {
   from: string;           // Relative to the source tree the install runs from
   to: string;             // Relative to ops.env.workingDirectory

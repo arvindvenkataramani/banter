@@ -14,8 +14,8 @@ import { SpeakerSlashIcon } from '@phosphor-icons/react/dist/csr/SpeakerSlash'
 import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import { Button } from '@/components/ui/button'
 import { ModelPill } from './model-pill'
-import { tailWords } from '@/lib/voice/human/transcript-view'
-import { usePendingView } from '@/lib/voice/human/use-revealed-transcript'
+import { tailWords } from '@platform/voice-engine/human/transcript-view'
+import { usePendingView } from '@platform/voice-engine/human/use-revealed-transcript'
 import { useTranscriptStore, editTranscript, takeTranscript, useTurnManagerStore, reportComposerSend, reportComposerFocus } from '@/lib/voice'
 
 interface ModelOption {

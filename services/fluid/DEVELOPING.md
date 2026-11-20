@@ -1,6 +1,6 @@
 # Developing the fluid servers
 
-How `fluid-stt` and `fluid-tts` are built, and the API behaviour that is theirs rather than part of the shared [speech server API](../../docs/speech-server-api.md). To set them up, see the [README](README.md).
+How `fluid-stt` and `fluid-tts` are built, and the API behaviour that is theirs rather than part of the shared [speech server API](../../docs/reference/speech-server-api.md). To set them up, see the [README](README.md).
 
 ## One package, two processes
 
@@ -83,7 +83,7 @@ Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directo
 - **Loading the same id with a new mode grows what is resident** instead of reloading it. Parakeet Unified's two encoders share one decoder, joint and vocabulary, so adding the streaming encoder to a resident batch one is cheaper than a reload.
 - **Anything else unloads first.** The same id and variant is a no-op. A different variant, or a different id, unloads what is resident, so two models are never held at once. A failed load leaves nothing resident.
 - **Variants.** `variant` names one directly (`560ms`, `1120ms`, `2240ms` for Nemotron); `chunkMs`, or any other declared parameter, selects the variant that binds it. Naming both, pointing at different variants, is refused.
-- **A session is the sole occupant.** While a WebSocket holds the session (the dashboard's stream or a `/listen` socket), everything else is refused at once: batch transcriptions, loads that would change the model, unloads, and other sessions short of a takeover. A load the resident model already satisfies succeeds unchanged, so voice starting on another device can reach its takeover. Outside a session, requests queue for up to two minutes. The rule assumes one person on one client at a time; the reasoning is in [docs/design/fluid-stt-on-demand-load.md](../../docs/design/fluid-stt-on-demand-load.md).
+- **A session is the sole occupant.** While a WebSocket holds the session (the dashboard's stream or a `/listen` socket), everything else is refused at once: batch transcriptions, loads that would change the model, unloads, and other sessions short of a takeover. A load the resident model already satisfies succeeds unchanged, so voice starting on another device can reach its takeover. Outside a session, requests queue for up to two minutes. The rule assumes one person on one client at a time; the reasoning is in [docs/reference/design/fluid-stt-on-demand-load.md](../../docs/reference/design/fluid-stt-on-demand-load.md).
 - **`cleanup()` releases by reference count.** Memory returns only if nothing else still holds the model, which is why `LoadedModel` owns every reference to its weights. Measured across repeated switches, the process settles to a steady state rather than growing.
 
 ### Routes
@@ -103,7 +103,7 @@ Error bodies are `{"error": "<what is wrong>"}`.
 
 ### Streaming socket
 
-The shared protocol is in the [speech server API](../../docs/speech-server-api.md#streaming-transcription). What is specific to this server:
+The shared protocol is in the [speech server API](../../docs/reference/speech-server-api.md#streaming-transcription). What is specific to this server:
 
 - `done` is accepted as a synonym for `Finalize`. A text frame of any other type, or one that isn't valid JSON, is ignored.
 - The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, refused if another model is resident. Audio arriving during the load waits in the socket. `chunkMs` picks Nemotron's tier.
@@ -166,4 +166,4 @@ Each server also logs to unified logging with its bundle identifier as the subsy
 
 ## Installing
 
-`scripts/install-artifacts.sh`, called by both install scripts, copies each bundle into the working directory its registry entry declares. It writes `SOURCE-COMMIT.txt` recording what it was built from, and logs a `service.installed` event. A running service is stopped through the control API for the swap and started again afterwards; one whose bundle hasn't changed isn't touched.
+`ops/install-artifacts.sh`, called by both install scripts, copies each bundle into the working directory its registry entry declares. It writes `SOURCE-COMMIT.txt` recording what it was built from, and logs a `service.installed` event. A running service is stopped through the control API for the swap and started again afterwards; one whose bundle hasn't changed isn't touched.

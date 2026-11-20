@@ -9,7 +9,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 # Defines BANTER_PROD and the live config and registry paths inside it.
-source "$REPO/scripts/deploy-env.sh"
+source "$REPO/ops/deploy-env.sh"
 VITE_PORT="${VITE_PORT:-5173}"
 BANTER_DEV_CONTROL_PORT="${BANTER_DEV_CONTROL_PORT:-4201}"
 

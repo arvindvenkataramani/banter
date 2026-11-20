@@ -34,6 +34,7 @@
     }
   },
   "include": [
-    "src"
+    "src",
+    "../voice-engine/src/managed-media-source.d.ts"
   ]
 }

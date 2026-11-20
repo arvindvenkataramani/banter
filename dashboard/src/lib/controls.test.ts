@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import { Session } from './session'
-import { SessionControls, ANNOTATIONS, registerAudioHalter } from './controls'
+import { SessionControls, ANNOTATIONS } from './controls'
+import { registerAudioHalter } from '@platform/voice-engine/audio-halters'
 import { normalizeAgentEvent, type RunEvent } from './run-state'
 import type { GatewayConnection } from './gateway-connection'
 

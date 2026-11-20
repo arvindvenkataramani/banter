@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# Where each half of banter deploys to, and what it calls itself. Sourced by
+# every script that installs, runs, stops, or removes either half.
+#
+# The defaults describe an ordinary deployment, so nothing needs to be set for
+# one. To install somewhere else, copy deploy.conf.example to deploy.conf and
+# edit it — that file is per-machine and untracked, so the setting survives
+# every deploy and never has to be retyped or exported. It stays in the
+# checkout's ops/ because it names the deployment folder; a deploy copies
+# it into the deployed ops/, so the scripts systemd runs read it too.
+#
+# Precedence: environment > deploy.conf > defaults. The environment wins so a
+# one-off (a staging deploy, a test) does not require editing the file, and so
+# CI can set the values without one.
+#
+# This file is sourced, never executed: it defines values and does nothing else.
+
+# Per-machine overrides, if present. Sourced before the defaults below so its
+# assignments become the ${VAR:-default} fallbacks rather than being overwritten
+# by them. Any listed name already set in the environment is put back afterwards,
+# so the environment wins.
+__deploy_conf="$(dirname "${BASH_SOURCE[0]}")/deploy.conf"
+if [[ -f "$__deploy_conf" ]]; then
+  __conf_names="BANTER_PROD BANTER_UNIT BANTER_LIVE_DIR BANTER_REGISTRY_PATH BANTER_CONFIG_PATH BANTER_EVENTS_PATH BANTER_STAGE_DIR BANTER_SHARD_PROD BANTER_SHARD_LIVE_DIR BANTER_SHARD_REGISTRY_PATH BANTER_SHARD_EVENTS_PATH"
+  __conf_kept=""
+  for __conf_name in $__conf_names; do
+    if [[ -n "${!__conf_name:-}" ]]; then
+      printf -v "__conf_kept_$__conf_name" '%s' "${!__conf_name}"
+      __conf_kept="$__conf_kept $__conf_name"
+    fi
+  done
+  # shellcheck source=/dev/null
+  source "$__deploy_conf"
+  for __conf_name in $__conf_kept; do
+    __conf_ref="__conf_kept_$__conf_name"
+    printf -v "$__conf_name" '%s' "${!__conf_ref}"
+    unset "$__conf_ref"
+  done
+  unset __conf_names __conf_kept __conf_name __conf_ref
+fi
+unset __deploy_conf
+
+# The control plane, deployed with systemd on the primary machine.
+BANTER_PROD="${BANTER_PROD:-$HOME/services/banter}"
+BANTER_UNIT="${BANTER_UNIT:-banter}"
+# The control plane's live directory, the deployed folder itself: config.json,
+# registry.json, shipped/ and state/. A deploy merges into these and never
+# deletes them.
+BANTER_LIVE_DIR="${BANTER_LIVE_DIR:-$BANTER_PROD}"
+BANTER_REGISTRY_PATH="${BANTER_REGISTRY_PATH:-$BANTER_LIVE_DIR/registry.json}"
+BANTER_CONFIG_PATH="${BANTER_CONFIG_PATH:-$BANTER_LIVE_DIR/config.json}"
+# The control plane's event log, for artifact installs.
+BANTER_EVENTS_PATH="${BANTER_EVENTS_PATH:-$BANTER_PROD/logs/events.jsonl}"
+
+# The shard's half of the same idea, deployed with launchd on a worker Mac.
+# Lowercase `services`, matching the plane. A machine runs one node, so the
+# shard's folder is the same default as the plane's.
+BANTER_SHARD_PROD="${BANTER_SHARD_PROD:-$HOME/services/banter}"
+# The shard's live directory: registry.json, shipped/ and state/.
+BANTER_SHARD_LIVE_DIR="${BANTER_SHARD_LIVE_DIR:-$BANTER_SHARD_PROD}"
+BANTER_SHARD_REGISTRY_PATH="${BANTER_SHARD_REGISTRY_PATH:-$BANTER_SHARD_LIVE_DIR/registry.json}"
+# The shard's event log, where installs are recorded alongside everything else.
+# Same variable the shard itself reads.
+BANTER_SHARD_EVENTS_PATH="${BANTER_SHARD_EVENTS_PATH:-$BANTER_SHARD_PROD/logs/events.jsonl}"
+# The shard's launchd label. The plist template names it literally, so this is
+# a fixed value, not a setting.
+SHARD_LABEL="com.banter.control-shard"
+
+# Where a deploy stages an extracted tree before copying it into place.
+#
+# Not /tmp: on many Linux machines that is tmpfs, small and shared with the
+# running system's memory, and staging extracts the whole repo there, then runs
+# bun install and a dashboard build against it. /var/tmp is disk and is swept at
+# 30 days, so an interrupted deploy that outlives its trap does not leave a repo
+# copy behind forever.
+BANTER_STAGE_DIR="${BANTER_STAGE_DIR:-/var/tmp/banter-deploy-$(id -u)}"
+
+# Stage a deploy source tree and echo its path.
+#
+# One fixed path per unit, cleared on entry rather than a fresh random directory
+# each run. A deploy killed before its trap fires would otherwise leave a full
+# tree behind that the next run never touches, accumulating a copy per failure.
+platform_stage_dir() {
+  local dir="$BANTER_STAGE_DIR/$BANTER_UNIT"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  echo "$dir"
+}
+
+# A non-default directory under the default unit name is the one combination
+# that silently misbehaves: the deploy writes new files while every start, stop,
+# and restart keeps addressing the original install. Catch it here, where both
+# values are known, rather than in each script that uses them.
+if [[ "$BANTER_PROD" != "$HOME/services/banter" && "$BANTER_UNIT" == "banter" ]]; then
+  echo "[deploy-env] error: BANTER_PROD is set to a non-default directory but" >&2
+  echo "[deploy-env]        BANTER_UNIT is still 'banter'. Set both, or neither:" >&2
+  echo "[deploy-env]          $BANTER_PROD" >&2
+  echo "[deploy-env]        systemctl --user restart banter would act on the" >&2
+  echo "[deploy-env]        default install, not this one." >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+# A non-interactive ssh session gets no login profile, so on the Pi neither bun
+# nor jq is on PATH and every deploy script calling them bare fails. Append the
+# usual install locations after whatever PATH already holds, so a working PATH
+# still wins and a bare one still finds them.
+for _platform_dir in "$HOME/.bun/bin" /home/linuxbrew/.linuxbrew/bin /opt/homebrew/bin /usr/local/bin /usr/bin /bin; do
+  if [[ -d "$_platform_dir" && ":$PATH:" != *":$_platform_dir:"* ]]; then
+    PATH="$PATH:$_platform_dir"
+  fi
+done
+unset _platform_dir
+export PATH
+
+# systemd user units run with a minimal PATH, so a wrapper started by systemd
+# cannot assume its tools are on it. Resolve one, preferring whatever is on PATH
+# and falling back to the usual install locations. Pinning a single absolute
+# path works only on the machine it was written on, and under `set -euo
+# pipefail` a missing interpreter kills the service at startup.
+platform_find_tool() {
+  local tool="$1"; shift
+  local candidate
+  if candidate="$(command -v "$tool" 2>/dev/null)"; then
+    echo "$candidate"
+    return 0
+  fi
+  for candidate in "$@"; do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "error: $tool not found on PATH or in the usual install locations" >&2
+  return 1
+}
+
+platform_find_jq() {
+  platform_find_tool jq \
+    /home/linuxbrew/.linuxbrew/bin/jq /opt/homebrew/bin/jq /usr/local/bin/jq /usr/bin/jq
+}
+
+platform_find_bun() {
+  platform_find_tool bun \
+    "$HOME/.bun/bin/bun" /home/linuxbrew/.linuxbrew/bin/bun /opt/homebrew/bin/bun /usr/local/bin/bun
+}
+
+# Which node this machine is, decided by the registries rather than the OS.
+# Sets NODE (control or shard), REGISTRY and PROD, or prints what it looked at
+# and returns 1. The registry's `type` is what tells them apart: both nodes
+# default to the same folder, so the control and shard registry paths are one
+# file unless one of them is moved.
+platform_detect_node() {
+  local jq type
+  jq="$(platform_find_jq)" || return 1
+  if [[ -f "$BANTER_REGISTRY_PATH" ]]; then
+    type="$("$jq" -r '.type // empty' "$BANTER_REGISTRY_PATH" 2>/dev/null || true)"
+    if [[ "$type" == "control" ]]; then
+      NODE=control REGISTRY="$BANTER_REGISTRY_PATH" PROD="$BANTER_PROD"
+      return 0
+    fi
+  fi
+  if [[ -f "$BANTER_SHARD_REGISTRY_PATH" ]]; then
+    type="$("$jq" -r '.type // empty' "$BANTER_SHARD_REGISTRY_PATH" 2>/dev/null || true)"
+    if [[ "$type" == "shard" ]]; then
+      NODE=shard REGISTRY="$BANTER_SHARD_REGISTRY_PATH" PROD="$BANTER_SHARD_PROD"
+      return 0
+    fi
+  fi
+  echo "error: no control or shard registry found; looked at $BANTER_REGISTRY_PATH (control) and $BANTER_SHARD_REGISTRY_PATH (shard)" >&2
+  echo "hint: has banter been deployed? run control-deploy.sh or shard-deploy.sh first." >&2
+  return 1
+}

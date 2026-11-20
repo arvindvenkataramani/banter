@@ -2,7 +2,7 @@
 
 Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why, and what should happen to each difference. Read this before porting anything from platform, and update it when a port lands or a decision is made. It describes the current state; the history is in git.
 
-Compared against platform `c02b137`. Start the next audit from there.
+Compared against platform `c02b137`, plus the voice engine package from platform's unmerged `voice-engine-package` branch (`d755b1b`, `9c279ff`). Start the next audit from `c02b137`, and treat the package as ported from that branch until it reaches platform's main line.
 
 ## The rule
 
@@ -46,7 +46,7 @@ These hunks are removals and stay removed.
 
 Harness-agnostic means Banter can work with other harnesses, not that it drops OpenClaw. These OpenClaw tools stay, ported from platform like everything else:
 
-- `plugins/voice-mode/`, the OpenClaw voice-mode plugin.
+- `plugins/openclaw/voice-mode/`, the OpenClaw voice-mode plugin.
 - `control/probe/`, the OpenClaw gateway probe.
 - `dashboard/src/lib/gateway-types.ts`, OpenClaw's protocol types.
 
@@ -68,9 +68,26 @@ Banter changes that platform lacks. They stay.
 - **Dashboard lint fixes:** `caughtErrorsIgnorePattern` in `eslint.config.js`, `gateway-context.tsx` deriving the connection with `useMemo`, the `use-session-manager.ts` effect dependencies, `use-wake-lock.ts`'s targeted exemption, `services/page.tsx` depending on `[load]`, and `service-history.tsx` deriving its loading state.
 - **`CONTRIBUTING.md`:** the testing table and the human-review list.
 - **Open-source files with no platform counterpart:** `LICENSE`, `NOTICE`, `SECURITY.md`, `.github/`, `.nvmrc`, `install.sh`, `render-plist.sh`, `dashboard/scripts/fetch-models.ts` and the `setup` script, the example registries and config, `services/README.md`, `services/fluid/README.md` and `DEVELOPING.md`.
-- **Harness-agnostic docs:** `docs/gateway/dsh/` and `docs/gateway/opencode/`.
+- **Harness-agnostic docs:** `docs/reference/protocols/dsh/` and `docs/reference/protocols/opencode/`.
 - **Page security notice:** the settings dialog warns when the page is not a secure context, so voice can't reach the microphone, and notes when a secure page is not cross-origin isolated, so the voice models run on one thread (`features/settings/page-security-notice.tsx`, `voice-page-support.ts`). Platform is always served over https, so it never shows.
 - **Cross-platform example services:** the example registries register Banter's own `services/stt/faster-whisper` and `services/tts/kokoro` adapters; the fluid servers are an Apple Silicon option in `services/fluid/registry.fluid.example.json`. Every Python adapter reads its CORS allowlist from a `*_CORS_ORIGINS` variable and sends no CORS headers without one.
+
+## Ported ahead of platform's main line
+
+The browser voice engine is the workspace package `@platform/voice-engine` at `voice-engine/`, taken from platform's `voice-engine-package` branch, which platform has not merged. [voice-engine-package.md](voice-engine-package.md) records the boundary. The path map:
+
+| Was | Is |
+|---|---|
+| `dashboard/src/lib/voice/` (all but the four files below) | `voice-engine/src/` |
+| `dashboard/src/lib/system/devices.ts`, `mic-frames-worklet.js`, `dashboard/src/managed-media-source.d.ts` | `voice-engine/src/` |
+| `dashboard/src/lib/voice/system/index.ts`, `voice-service.ts`, `apply-voice-settings.ts`, `index.ts` | unchanged, in the dashboard |
+| `agent/speech-chunker.test.ts`, `human/whisper-features.test.ts`, `voice-service.test.ts` | unchanged, in the dashboard |
+| `RunEvent`, `Activity` (`run-state.ts`) | `voice-engine/src/run-event.ts`, re-exported from `run-state.ts` |
+| `VoiceAnnotation`, `registerAudioHalter` (`controls.ts`) | `voice-engine/src/session.ts`, `voice-engine/src/audio-halters.ts` |
+| `VoiceSelectionPatch`, `VoiceUpdateResult` (`api.ts`) | `voice-engine/src/voice-config.ts`, re-exported from `api.ts` |
+| `SttModelKind` (`voice-service.ts`) | `voice-engine/src/human/stt-transport.ts` |
+
+Banter's copy differs from the branch only where Banter's voice code already differed: comment pointers to Banter's docs, and the CORS hint in `stt-client.ts`.
 
 ## Banter is behind: port from platform
 
@@ -101,9 +118,9 @@ Live config's git-backed history of the live files (`history.ts`).
   - whisper's loopback bind
 - **The Kokoro and NeuTTS-Air adapters stay**, as cross-platform speech options. Platform has retired them.
 - **Banter installs no Python.** `install.sh` seeds the registry and points at each adapter's README, which tells a user how to install it.
-- **`probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
+- **`dev/probes/browser-audio` stays**, documented for anyone debugging speaker crackle while the microphone is open.
 - **UI icons follow platform** (Phosphor).
 - **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
-  - `onnxruntime-web` 1.31.1, in the dashboard: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade; [turn-taking.md](../../docs/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.
+  - `onnxruntime-web` 1.31.1, in `voice-engine/package.json`: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade; [turn-taking.md](../../docs/reference/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.
   - The FluidAudio fork, at a commit: Banter's patches depend on it.
 - **OpenClaw tools stay** (see above).

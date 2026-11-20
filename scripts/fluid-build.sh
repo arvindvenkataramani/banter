@@ -8,7 +8,7 @@
 # needs for them (services, roster providers and voices) are in
 # services/fluid/registry.fluid.example.json:
 #
-#   scripts/fluid-build.sh && scripts/control-install-services.sh
+#   scripts/fluid-build.sh && ops/control-install-services.sh
 #
 # The servers read the roster section of the deployed registry, so a change to
 # the roster's shape ships with a deploy and a server build.

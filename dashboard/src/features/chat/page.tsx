@@ -6,11 +6,11 @@ import { useSessionManager } from '@/lib/use-session-manager'
 import { consumePendingChatLaunch } from '@/lib/chat-launch'
 import { fetchVoiceConfig, loadVoiceSelection, setSaveMicSamples } from '@/lib/voice'
 import { useTurnManagerStore, loopStateFromSnapshot, playbackStateFromSnapshot } from '@/lib/voice'
-import { useMuteStore, toggleMuteAll, toggleSpeechMuted, relinkMutes, setMicAutoMuted } from '@/lib/voice/human/mute-store'
+import { useMuteStore, toggleMuteAll, toggleSpeechMuted, relinkMutes, setMicAutoMuted } from '@platform/voice-engine/human/mute-store'
 import {
   useVoiceSessionStore, publishSession, setVoiceConfig as publishVoiceConfig,
   setVoiceSelection as publishVoiceSelection,
-} from '@/lib/voice/voice-session-store'
+} from '@platform/voice-engine/voice-session-store'
 import { useVoiceSystemStore, voiceSystem } from '@/lib/voice/system'
 import { voiceOn, voiceOff, armVoice, commitVoice, isArmed, cancelArm } from '@/lib/media-voice-mode'
 import { useMediaEngine } from '@/lib/media-engine'

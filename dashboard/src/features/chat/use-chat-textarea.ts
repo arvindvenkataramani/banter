@@ -3,7 +3,7 @@ import { useStore } from 'zustand'
 import { cancelArm } from '@/lib/media-voice-mode'
 import { useTranscriptStore, editTranscript, takeTranscript } from '@/lib/voice'
 import { useTurnManagerStore, reportComposerSend, reportComposerFocus } from '@/lib/voice'
-import { usePendingView } from '@/lib/voice/human/use-revealed-transcript'
+import { usePendingView } from '@platform/voice-engine/human/use-revealed-transcript'
 
 export interface UseChatTextareaOpts {
   onSend: (text: string) => void

@@ -11,7 +11,7 @@ faster-whisper has no Metal backend, so on a Mac it runs on the CPU. On Apple Si
 | `GET /healthz` | `{"status": "ok", "model": "<name>"}`, once the model is loaded |
 | `POST /audio/transcriptions` and `POST /v1/audio/transcriptions` | multipart `file`, plus optional `language` and `response_format` |
 
-`response_format` `text` returns plain text. Every other value, `verbose_json`, `srt` and `vtt` included, returns JSON with `text`, `language` and, where faster-whisper reports it, `duration`. The model is fixed when the server starts: a `model` field in the request is accepted and ignored. There are no streaming or `/v1/models` routes, so leave `voice.stt.model` unset and the dashboard transcribes in batch ([speech-server-api.md](../../../docs/speech-server-api.md)).
+`response_format` `text` returns plain text. Every other value, `verbose_json`, `srt` and `vtt` included, returns JSON with `text`, `language` and, where faster-whisper reports it, `duration`. The model is fixed when the server starts: a `model` field in the request is accepted and ignored. There are no streaming or `/v1/models` routes, so leave `voice.stt.model` unset and the dashboard transcribes in batch ([speech-server-api.md](../../../docs/reference/speech-server-api.md)).
 
 ## Install
 
@@ -45,7 +45,7 @@ Read from the environment, which the registry sets under `ops.env.variables`. Wh
 | `FASTER_WHISPER_MODEL` | `turbo` | A model name faster-whisper downloads (`turbo`, `large-v3`, `distil-large-v3`, `small`, and so on), or a path to a converted model |
 | `FASTER_WHISPER_DEVICE` | `auto` | `cpu`, `cuda` or `auto` |
 | `FASTER_WHISPER_COMPUTE_TYPE` | `int8` on `cpu`, otherwise `auto` | `int8`, `float16`, `int8_float16`, and the other CTranslate2 types |
-| `FASTER_WHISPER_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call. `scripts/install.sh` fills it in the registry it seeds |
+| `FASTER_WHISPER_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call. `ops/install.sh` fills it in the registry it seeds |
 
 On a machine with no GPU, `FASTER_WHISPER_DEVICE=cpu` with the default `int8` is the CPU setting. With `auto` on a CPU-only machine the compute type is left to CTranslate2.
 

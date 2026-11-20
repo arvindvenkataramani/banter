@@ -1,4 +1,4 @@
-// Pure-function tests for the roster assembler (docs/design/model-roster.md,
+// Pure-function tests for the roster assembler (docs/reference/design/model-roster.md,
 // "The assembler"). Plain objects in, plain objects out — no HTTP, no
 // poller.
 

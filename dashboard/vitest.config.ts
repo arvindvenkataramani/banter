@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: false,
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', '../voice-engine/src/**/*.test.{ts,tsx}'],
     setupFiles: ['./src/test-setup.ts'],
   },
 })

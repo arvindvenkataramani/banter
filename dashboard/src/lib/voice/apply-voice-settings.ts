@@ -1,6 +1,6 @@
 import type { VoiceUpdateResult } from '@/lib/api'
-import type { VoiceSelection } from './voice-config'
-import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from './voice-session-store'
+import type { VoiceSelection } from '@platform/voice-engine/voice-config'
+import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from '@platform/voice-engine/voice-session-store'
 import { voiceSystem } from './system'
 
 /**

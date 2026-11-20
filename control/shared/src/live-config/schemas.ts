@@ -32,7 +32,10 @@ const sttSchema = z.object({
     commitMaxDelayMs: z.number().optional(),
     smartTurnThreshold: z.number().optional(),
     smartTurnLowCutoff: z.number().optional(),
-    curve: z.object({ type: z.string().optional(), exponent: z.number().optional() }).optional(),
+    curve: z.union([
+      z.object({ type: z.literal("power"), exponent: z.number() }),
+      z.object({ type: z.literal("sigmoid"), center: z.number(), steepness: z.number() }),
+    ]).optional(),
     interruptionMinRemainingS: z.number().optional(),
   }).optional(),
   reconnect: z.object({

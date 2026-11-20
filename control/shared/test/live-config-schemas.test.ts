@@ -30,3 +30,14 @@ describe("the schemas accept the files the repo ships", () => {
     expect((r.doc as any).version).toBe(stateSpec.version);
   });
 });
+
+describe("the turn-taking curve", () => {
+  it.each([
+    ["power", { type: "power", exponent: 2 }],
+    ["sigmoid", { type: "sigmoid", center: 0.5, steepness: 8 }],
+  ])("loads a %s curve with no unknown-field warning", (_name, curve) => {
+    const r = syncDocument({ version: 3, voice: { stt: { turnTaking: { curve } } } }, configSpec);
+    expect(r.warnings).toEqual([]);
+    expect((r.doc as any).voice.stt.turnTaking.curve).toEqual(curve);
+  });
+});

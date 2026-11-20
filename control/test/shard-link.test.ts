@@ -1,6 +1,6 @@
 // The control plane's link to a shard: polling it, merging what it reports
 // with the local registry, and forwarding requests for its services.
-// Promises: docs/components/control-plane-api.md, "Shards".
+// Promises: docs/reference/components/control-plane-api.md, "Shards".
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";

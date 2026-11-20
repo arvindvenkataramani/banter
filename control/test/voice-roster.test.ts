@@ -3,7 +3,7 @@ import { voiceModeProviders } from "../control-plane/src/voice-roster";
 import type { AssembledRoster } from "../control-plane/src/roster-assembly";
 
 // voiceModeProviders builds voice mode's providers/models/voices from the
-// assembled roster (docs/design/model-roster.md). GET /api/voice (app.ts) is
+// assembled roster (docs/reference/design/model-roster.md). GET /api/voice (app.ts) is
 // what wires an actual assembly through to this function; these tests hand
 // it a plain AssembledRoster instead of driving HTTP.
 

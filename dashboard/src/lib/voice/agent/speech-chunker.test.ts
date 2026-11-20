@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { SpeechChunker } from './speech-chunker'
-import type { SpeechChunkerCallbacks } from './speech-chunker'
+import { SpeechChunker } from '@platform/voice-engine/agent/speech-chunker'
+import type { SpeechChunkerCallbacks } from '@platform/voice-engine/agent/speech-chunker'
 import { Conversation } from '../../conversation-store'
 import { normalizeAgentEvent, chatToRunEvent, type RunEvent } from '../../run-state'
 import type { Session } from '../../session'

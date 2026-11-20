@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { WhisperFeatureExtractor } from '@huggingface/transformers'
-import { N_FRAMES, N_MELS, WINDOW_SAMPLES, WhisperFeatures, smartTurnWaveform } from './whisper-features'
+import { N_FRAMES, N_MELS, WINDOW_SAMPLES, WhisperFeatures, smartTurnWaveform } from '@platform/voice-engine/human/whisper-features'
 
 // The spectrogram's reference is transformers.js's own extractor, given the
 // waveform smartTurnWaveform prepares, with max_length = 8 s. Differences come

@@ -2,10 +2,10 @@ import { create } from 'zustand'
 import { useStore } from 'zustand'
 import { flushSync } from 'react-dom'
 import { useMediaEngine, close as closeMedia, setOnPlayCommand } from './media-engine'
-import { useMuteStore } from './voice/human/mute-store'
-import { useTurnManagerStore } from './voice/store/turn-manager-store'
+import { useMuteStore } from '@platform/voice-engine/human/mute-store'
+import { useTurnManagerStore } from '@platform/voice-engine/store/turn-manager-store'
 import { voiceSystem, useVoiceSystemStore } from './voice/system'
-import type { Snapshot } from './voice/turn-manager'
+import type { Snapshot } from '@platform/voice-engine/turn-manager'
 
 // the design record-H8. Media and voice never
 // coexist — the invariant belongs to exactly three writers here, never to a
@@ -176,7 +176,7 @@ function isAgentAudible(snapshot: Snapshot): boolean {
 // ── The invariant, enforced by subscription ────────────────────────────────
 //
 // media-engine.ts cannot import this module (U-H7's dependency direction is
-// unchanged — the media engine still imports nothing from lib/voice/, and by
+// unchanged — the media engine still imports nothing from the voice engine, and by
 // extension nothing from this module either, since that would let a voice
 // concern leak back into it). So the media-side half of the invariant —
 // loading a track turns voice off; closing clears the arm — is applied here,

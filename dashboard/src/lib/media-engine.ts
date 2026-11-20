@@ -6,7 +6,7 @@ import { create } from 'zustand'
 // src/play/pause/seek/Media Session. No component owns the element, so no
 // unmount destroys it (B1). React reads everything through the store (B3);
 // the only way to command playback is through this module's exported
-// functions. Imports nothing from dashboard/src/lib/voice/ (U3) — the
+// functions. Imports nothing from the voice engine or lib/voice/ (U3) — the
 // coordinator is the only module that knows both engines exist.
 
 export interface MediaTrack {

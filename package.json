@@ -3,12 +3,12 @@
   "private": true,
   "license": "Apache-2.0",
   "engines": { "node": ">=22 <25" },
-  "workspaces": ["shared", "control", "dashboard"],
+  "workspaces": ["shared", "voice-engine", "control", "dashboard", "plugins/dsh/voice"],
   "scripts": {
     "control-dev": "bash scripts/control-dev.sh",
-    "control-deploy": "bash scripts/control-deploy.sh",
+    "control-deploy": "bash ops/control-deploy.sh",
     "shard-dev": "bash scripts/shard-dev.sh",
-    "shard-deploy": "bash scripts/shard-deploy.sh",
+    "shard-deploy": "bash ops/shard-deploy.sh",
     "docs": "bun run scripts/generate-api-docs.ts"
   },
   "devDependencies": {

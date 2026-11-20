@@ -1,0 +1,28 @@
+{
+  "name": "@banter/dsh-voice",
+  "private": true,
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "test": "vitest run",
+    "lint": "../../../dashboard/node_modules/.bin/eslint -c ../../../dashboard/eslint.config.js src scripts",
+    "install-profile": "bun scripts/install-profile.ts"
+  },
+  "dependencies": {
+    "@platform/voice-engine": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-radio-group": "1.5.1",
+    "@radix-ui/react-select": "2.4.1",
+    "@radix-ui/react-slider": "1.6.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "3.19.0",
+    "@types/node": "^24.19.2",
+    "@types/react": "^18.3.12",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^4.1.12"
+  }
+}
