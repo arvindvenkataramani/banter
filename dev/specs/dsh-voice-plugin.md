@@ -4,7 +4,7 @@ The contract for building Banter's voice mode as a DeepSeek Harness (dsh) plugin
 
 **Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
 
-**Target:** dsh `dsh-v0.2.2-rc.5`, which the plugin was verified against and declares as its lower bound (`engines.dsh` is `>=0.2.2-rc.5`; dsh refuses to load a plugin outside that range), source at `~/Code/contrib/deepseek-harness`, Node `>=24.9.0`. Line references below are at that tag.
+**Target:** dsh `dsh-v0.2.2-rc.5`, which the plugin was verified against and declares as its lower bound (`engines.dsh` is `>=0.2.2-rc.5`; dsh refuses to load a plugin outside that range), source at [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness), Node `>=24.9.0`. Line references below are at that tag.
 
 ---
 
