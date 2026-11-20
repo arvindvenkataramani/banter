@@ -93,7 +93,7 @@ Host `Config` and `PluginSettings`: `controlPlaneUrl` (string, default `''`) and
 
 ### Install
 
-`install-profile` fetches `<url>/api/voice` and fails with the existing message on a non-2xx, then writes `{ controlPlaneUrl }` as the row's config.
+`ops/dsh-plugin-install.sh` fetches `<url>/api/voice` and fails with the existing message on a non-2xx, then writes `{ controlPlaneUrl }` as the row's config.
 
 ## 4. Tests
 

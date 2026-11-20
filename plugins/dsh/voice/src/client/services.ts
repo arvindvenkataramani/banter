@@ -29,6 +29,23 @@ export function relayEndpoint(origin: string, serviceId: string): string {
   return `${origin}${SPEECH_PREFIX}/${encodeURIComponent(serviceId)}`
 }
 
+/**
+ * Where the streaming transport opens its WebSocket. In the desktop app the page's origin is `dsh-app://app`, which
+ * fetch reaches through the app but a WebSocket can't; the app names its Host's own http origin as
+ * `__DSH_TRANSPORT__.streamBaseUrl` (dsh-client-connection's README), and dsh's own streams connect there. A relay
+ * endpoint on the page's origin moves onto that base; anything else, or a page without one, is left as it is.
+ */
+export function streamingEndpoint(endpoint: string, pageOrigin: string, streamBaseUrl: string | undefined): string {
+  if (streamBaseUrl === undefined || !endpoint.startsWith(`${pageOrigin}/`)) return endpoint
+  return `${streamBaseUrl.replace(/\/+$/, '')}${endpoint.slice(pageOrigin.length)}`
+}
+
+/** The page's stream base, when the page declares one. */
+export function pageStreamBaseUrl(): string | undefined {
+  const base = (globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: unknown } }).__DSH_TRANSPORT__?.streamBaseUrl
+  return typeof base === 'string' && /^https?:\/\//.test(base) ? base : undefined
+}
+
 export function createPluginServices(deps: { origin: string; fetch: typeof globalThis.fetch }): PluginServices {
   const { origin, fetch } = deps
 

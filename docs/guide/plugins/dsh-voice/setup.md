@@ -6,26 +6,24 @@ Build the plugin, install it into a dsh profile, and start dsh. Tested with dsh 
 
 - **A running Banter server with speech services, reachable at the Banter server URL in the plugin's settings.** The plugin is required to use Banter's voice from DeepSeek Harness, and it is the only way to get voice there. It takes its speech recognition and speech synthesis from Banter, so register at least one speech-to-text and one text-to-speech server there: [install Banter](../../install.md) first, then [connect speech servers](../../speech-servers.md). The plugin's speech traffic and the starting of speech services go through that server. Without it, turning voice on fails and the voice button shows the error colour.
 - **A checkout of this repository** with its dependencies installed (`bun install` at the repo root, which [the install script](../../install.md#install-script) also runs).
-- **[Bun](https://bun.sh)** to build and install the plugin, and **Node.js** for `npx`.
+- **[Bun](https://bun.sh)** to build and install the plugin, **pnpm**, which dsh's plugin command uses, and **Node.js** for `npx`.
 - **A browser that allows the microphone** on the dsh page. `localhost` and `127.0.0.1` count as secure; see [the https note](../../install.md).
 
-dsh runs from the command line, not as the desktop app:
-
-```bash
-npx @deepseek-ai/dsh web
-```
+The plugin runs in the DeepSeek Harness desktop app and in `dsh web` (`npx @deepseek-ai/dsh web`). Each keeps its own dsh profile: `desktop` for the app, `web` for `dsh web`.
 
 ## Build and install
 
 From the repo root:
 
 ```bash
-cd plugins/dsh/voice
-bun run build
-bun run install-profile web http://localhost:4200
+ops/dsh-plugin-install.sh http://localhost:4200
 ```
 
-`install-profile` takes a dsh profile name and the Banter server URL. `web` is the profile `dsh web` uses. It builds the package, adds it to that profile, and writes the Banter server URL. Replace the URL with your own.
+It takes the Banter server URL (replace it with your own) and installs into every dsh profile it finds; `--profile desktop` or `--profile web` limits it to one. It builds the plugin and installs a copy of it into each profile, so the profile keeps working whatever happens to this checkout; `--link` links the checkout's build instead, so a rebuild shows up when dsh restarts. When the desktop app is installed, the script uses the app's own dsh command, which matches the app's version.
+
+Quit the desktop app fully first (⌘Q): dsh changes the `desktop` profile only while the app is closed, and the script stops before touching any profile if it is open. The app's profile exists once the app has been opened once.
+
+`ops/dsh-plugin-uninstall.sh` removes the plugin and its settings from every profile, or from those named with `--profile`.
 
 ### The Banter server URL
 
@@ -33,7 +31,7 @@ It is the address you open Banter at: the Banter server serves the web app and t
 
 ### What install writes
 
-`install-profile` first checks that the Banter server answers at the URL, and stops with a message if it does not. It then writes one setting into the profile's plugin settings: the Banter server URL. It changes nothing else in the profile.
+The install first checks that the Banter server answers at the URL, and stops with a message if it does not. It then sets the plugin's Banter server URL in each profile's `cordis.patch.yml`, keeping its keep-voice-on setting. It changes no other line of that file, and nothing else in the profile.
 
 The voice settings stay on the Banter server, and the plugin reads them from there. Change them in Banter's settings dialog; the plugin's [settings page](settings.md#voice-settings) shows what is in use and has a link to the dialog.
 
@@ -41,11 +39,13 @@ dsh keeps profiles under `~/.dsh`. To use another location, set `DSH_HOME` when 
 
 ## Start dsh
 
+Open the desktop app, or start `dsh web` and open the address it prints:
+
 ```bash
 npx @deepseek-ai/dsh web
 ```
 
-Open the address it prints. In dsh's **Plugins** page, make sure **@banter/dsh-voice** is on. When you turn it on, a short "Set up voice" dialog offers to ask for microphone access and checks the speech services; **Open settings** goes to the plugin's [settings](settings.md). Then open a conversation: the voice button is in the composer ([README](README.md#turn-voice-on)).
+dsh loads a newly installed plugin when its profile starts, so restart whichever was already running. In dsh's **Plugins** page, make sure **@banter/dsh-voice** is on. When you turn it on, a short "Set up voice" dialog offers to ask for microphone access and checks the speech services; **Open settings** goes to the plugin's [settings](settings.md). Then open a conversation: the voice button is in the composer ([README](README.md#turn-voice-on)).
 
 ## If something is wrong
 

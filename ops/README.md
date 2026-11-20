@@ -56,6 +56,15 @@ Run these on the worker. See [../docs/guide/shard.md](../docs/guide/shard.md).
 | `shard-uninstall.sh` | Removes the agent and the deployment folder `$BANTER_SHARD_PROD`, including the live `registry.json` and `state/`. |
 | `shard-install-services.sh` | Called by `shard-deploy.sh`. Installs launchd plists named by the shard's live registry (the one the shard reads, `registry.json` at the top of `$BANTER_SHARD_PROD`; fails if there is none) and the built artifacts each service declares in `ops.install`. Nothing else under `services/` is copied. |
 
+## DeepSeek Harness plugin
+
+Run these from a checkout, on the machine where DeepSeek Harness runs. See [docs/guide/plugins/dsh-voice/setup.md](../docs/guide/plugins/dsh-voice/setup.md).
+
+| Script | What it does |
+|---|---|
+| `dsh-plugin-install.sh` | Builds the dsh voice plugin and installs a copy into every dsh profile under `$DSH_HOME/profiles` (`desktop` for the app, `web` for `dsh web`), or those named with `--profile`; `--link` links the checkout's build instead. Sets the plugin's Banter server URL in each, after checking Banter answers. The desktop app must be fully quit. |
+| `dsh-plugin-uninstall.sh` | Removes the plugin and its settings from every profile, or those named with `--profile`. |
+
 ## Diagnostics and safety
 
 | Script | What it does |

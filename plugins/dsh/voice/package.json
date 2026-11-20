@@ -7,8 +7,7 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "test": "vitest run",
-    "lint": "../../../dashboard/node_modules/.bin/eslint -c ../../../dashboard/eslint.config.js src scripts",
-    "install-profile": "bun scripts/install-profile.ts"
+    "lint": "../../../dashboard/node_modules/.bin/eslint -c ../../../dashboard/eslint.config.js src scripts"
   },
   "dependencies": {
     "@platform/voice-engine": "workspace:*",

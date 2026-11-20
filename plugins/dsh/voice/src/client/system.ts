@@ -10,7 +10,7 @@ import { HumanVoice } from '@platform/voice-engine/human/human-voice'
 import { AgentVoice } from '@platform/voice-engine/agent/agent-voice'
 import { SileroVad } from '@platform/voice-engine/human/silero-vad'
 import { SmartTurn } from '@platform/voice-engine/human/smart-turn'
-import { loadSttModel, loadTtsModel, type PluginServices } from './services.ts'
+import { loadSttModel, loadTtsModel, pageStreamBaseUrl, streamingEndpoint, type PluginServices } from './services.ts'
 
 export interface VoiceSystemParts {
   services: PluginServices
@@ -52,7 +52,12 @@ export function createVoiceSystem(parts: VoiceSystemParts): VoiceSystem {
       ping: services.ping,
     },
     loadModels,
-    createTransport: (opts) => createSttTransport({ ...opts, ensureServiceReady: services.ensureServiceReady }),
+    createTransport: (opts) => createSttTransport({
+      ...opts,
+      // Only the streaming transport opens a WebSocket; the batch one fetches, which the page's own origin carries.
+      endpoint: opts.mode === 'streaming' ? streamingEndpoint(opts.endpoint, window.location.origin, pageStreamBaseUrl()) : opts.endpoint,
+      ensureServiceReady: services.ensureServiceReady,
+    }),
     createHuman: (vad, smartTurn, cb) => new HumanVoice(vad, smartTurn, cb),
     createAgent: (speechPlayer) => new AgentVoice(speechPlayer),
     notify: parts.notify,

@@ -25,7 +25,7 @@ These are settled. Changing any of them is a tier-2 brief, not a build decision.
 - Two halves: `src/client/` (browser) and `src/host/` (runs in the dsh process).
 - **Client build.** Vite, so the engine's `?url` imports and `new URL(…, import.meta.url)` resolve as they do for the dashboard. The output is one script in dsh's client module format: `window.__ModuleLoader__.load({ id, factory: (require) => { … return module.exports } })`, with dsh's shared module table (React, React DOM, cordis and the other entries in `packages/client/web/src/platform.ts:8`) left as `require` calls and everything else bundled.
 - **Installable package.** A build script produces a self-contained package directory (no `workspace:` dependencies) that `dsh plugin --profile <p> add <dir>` accepts. It declares `dsh.client`, `dsh.bundle` and `engines.dsh` matching the target (`dev/analysis/dsh-voice-plugin.md` § What dsh gives a browser plugin).
-- Scripts: `build`, `test` (vitest), `lint` (the dashboard's eslint config, as `voice-engine/package.json` does), and `install-profile` (section 8).
+- Scripts: `build`, `test` (vitest), `lint` (the dashboard's eslint config, as `voice-engine/package.json` does); the installer is `ops/dsh-plugin-install.sh` (section 8).
 - Build output (`plugins/dsh/voice/dist/`) is gitignored.
 
 ### Modules
@@ -131,7 +131,7 @@ The engine's transcript store (`voice-engine/src/store/transcript-store.ts`) is 
 - **Storage.** Two fields: `controlPlaneUrl` and `keepVoiceOutside`.
 - **No Save mic samples.** The engine posts mic samples to Banter's own server route, which dsh's origin does not serve, so the host removes `debug` from every config it hands the page.
 - **Activation prompt** (`plugins.bundle.activation`): asks for microphone permission and checks the selected services through the relay.
-- **`install-profile <profile> <control-plane-url>`**: builds the package, installs it into the named profile with `dsh plugin --profile <profile> add`, checks that `GET <control-plane-url>/api/voice` answers, and writes the URL as the plugin's settings into the profile. It writes nothing anywhere else.
+- **`ops/dsh-plugin-install.sh <banter-url> [--profile <p>]... [--link]`** (logic in `scripts/install-dsh.ts`): builds the package, installs a packed copy (or with `--link` the build) into every profile under `$DSH_HOME/profiles` or the named ones with `dsh plugin --profile <p> add`, removing an earlier install first, using the desktop app's dsh command when the app is installed and refusing to run while the app is open when `desktop` is a target, checks that `GET <control-plane-url>/api/voice` answers, and writes the URL as the plugin's settings into the profile. It writes nothing anywhere else.
 
 ## 9. Proving the plumbing (spike)
 

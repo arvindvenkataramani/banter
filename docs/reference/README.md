@@ -56,7 +56,7 @@ bunx tsc -p .
 
 **OpenClaw voice-mode.** Run `bun run build` in `plugins/openclaw/voice-mode` after every change. The built `dist/` is what OpenClaw loads. [Changing the plugin](../guide/plugins/openclaw.md#changing-the-plugin) has the details.
 
-**dsh voice.** Run `bun run build` in `plugins/dsh/voice` to rebuild the package into `dist/package`. `bun run install-profile <profile> <banter-url>` builds it and adds `dist/package` to a dsh profile. [Setting up the dsh voice plugin](../guide/plugins/dsh-voice/setup.md) walks through the install, including what it writes to the profile.
+**dsh voice.** Run `bun run build` in `plugins/dsh/voice` to rebuild the package into `dist/package`. `ops/dsh-plugin-install.sh <banter-url>` builds it and installs it into your dsh profiles (`--link` to link this checkout's build instead of a copy). [Setting up the dsh voice plugin](../guide/plugins/dsh-voice/setup.md) walks through the install, including what it writes to the profile.
 
 ## Repository layout
 

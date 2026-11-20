@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isAllowedControlCall, resolveSpeechUpstream } from '../host/relay'
-import { createPluginServices, relayEndpoint } from './services'
+import { createPluginServices, relayEndpoint, streamingEndpoint } from './services'
 
 const origin = 'http://dsh.invalid:3000'
 
@@ -77,5 +77,18 @@ describe('plugin services', () => {
   it('the relay endpoint the engine is given is one the host resolves to the configured service', () => {
     const url = new URL(`${relayEndpoint(origin, 'stt-a')}/v1/models?x=1`)
     expect(resolveSpeechUpstream(settings, url.pathname + url.search)?.href).toBe('http://stt.invalid:8000/v1/models?x=1')
+  })
+})
+
+describe('the streaming endpoint', () => {
+  it('moves a relay endpoint from the desktop page\'s origin onto the Host\'s stream base, path intact', () => {
+    expect(streamingEndpoint('dsh-app://app/dsh-voice/speech/stt-a', 'dsh-app://app', 'http://127.0.0.1:51234/'))
+      .toBe('http://127.0.0.1:51234/dsh-voice/speech/stt-a')
+  })
+
+  it('leaves the endpoint alone on a page without a stream base, and one not on the page\'s origin', () => {
+    expect(streamingEndpoint('http://127.0.0.1:3080/dsh-voice/speech/stt-a', 'http://127.0.0.1:3080', undefined))
+      .toBe('http://127.0.0.1:3080/dsh-voice/speech/stt-a')
+    expect(streamingEndpoint('http://elsewhere.invalid/x', 'dsh-app://app', 'http://127.0.0.1:51234')).toBe('http://elsewhere.invalid/x')
   })
 })

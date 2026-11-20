@@ -1,7 +1,7 @@
 // The voice controls in dsh's composer tool row. Banter's composer set, in
 // Banter's order; state is carried by colour on the buttons, never by text.
 
-import { useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { loopStateFromSnapshot, playbackStateFromSnapshot } from '@platform/voice-engine/floor-selectors'
 import { relinkMutes, toggleSpeechMuted, useMuteStore } from '@platform/voice-engine/human/mute-store'
@@ -40,12 +40,22 @@ const ICON_BUTTON: CSSProperties = { width: 28, padding: 0 }
 /** Phosphor's regular weight at the size of dsh's outline icons; colour comes from currentColor. */
 const ICON = 16
 
-/** The turning ring: animated in the SVG itself, since the bundle carries no stylesheet. */
+const SPIN_BOX: CSSProperties = { display: 'inline-flex', width: ICON, height: ICON, lineHeight: 0 }
+
+/**
+ * The turning ring. The bundle carries no stylesheet for the composer, so it turns through the Web Animations API, on
+ * an HTML box that pivots on its centre in every browser; a transform on the SVG itself pivots differently per engine.
+ */
 function Spinner() {
+  const box = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const animation = box.current?.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 900, iterations: Infinity })
+    return () => { animation?.cancel() }
+  }, [])
   return (
-    <CircleNotchIcon size={ICON}>
-      <animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="0.9s" repeatCount="indefinite" />
-    </CircleNotchIcon>
+    <span ref={box} style={SPIN_BOX}>
+      <CircleNotchIcon size={ICON} />
+    </span>
   )
 }
 
