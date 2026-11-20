@@ -1,0 +1,58 @@
+# Publishes a Banter release when a tag v<version> is pushed. <version> must
+# equal the version in the root package.json. The release carries notes
+# generated from the commits since the last release, and the dsh voice plugin
+# built from the tagged commit, which installs with
+# `dsh plugin --profile <profile> add ./<file>.tgz`.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Check the tag matches the version
+        run: |
+          version="$(jq -r .version package.json)"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version ${version}" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test the dsh plugin
+        working-directory: plugins/dsh/voice
+        run: bun run test
+
+      - name: Build and pack the dsh plugin
+        working-directory: plugins/dsh/voice
+        run: |
+          bun run build
+          cd dist/package
+          npm pack --pack-destination "$GITHUB_WORKSPACE"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tarball="$(ls banter-dsh-voice-*.tgz)"
+          cat > notes.md <<EOF
+          Install or update Banter from this tag: see the [install guide](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/guide/install.md).
+
+          **DeepSeek Harness plugin.** \`${tarball}\` is Banter's voice mode for DeepSeek Harness, built from this release; it needs a Banter server. Download it, fully quit the desktop app, then run \`dsh plugin --profile desktop add ./${tarball}\` (or \`--profile web\` for \`dsh web\`), start dsh, and set the Banter server URL on the plugin's page in Plugins. See the [plugin setup guide](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/guide/plugins/dsh-voice/setup.md).
+          EOF
+          gh release create "${GITHUB_REF_NAME}" "${tarball}" \
+            --title "Banter ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --generate-notes

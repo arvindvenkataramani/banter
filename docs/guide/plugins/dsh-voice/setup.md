@@ -25,6 +25,16 @@ Quit the desktop app fully first (⌘Q): dsh changes the `desktop` profile only 
 
 `ops/dsh-plugin-uninstall.sh` removes the plugin and its settings from every profile, or from those named with `--profile`.
 
+### From a release, without a checkout
+
+Each [Banter release](https://github.com/arvindvenkataramani/banter/releases) carries the plugin built from it, `banter-dsh-voice-<version>.tgz`; use the one matching your Banter server's version. Download it, quit the desktop app fully, and add it to a profile with dsh's own command (`npx @deepseek-ai/dsh` works where the app's isn't on your path):
+
+```bash
+dsh plugin --profile desktop add ./banter-dsh-voice-0.1.0.tgz   # or --profile web for dsh web
+```
+
+Start dsh, then enter the Banter server URL on the plugin's page in **Plugins**.
+
 ### The Banter server URL
 
 It is the address you open Banter at: the Banter server serves the web app and the speech relay from the same address. [The install script](../../install.md#install-script) prints it when it finishes (`http://localhost:4200` unless you changed the port), and it is the address you type into your browser to open Banter. Use the same address in the install command above.

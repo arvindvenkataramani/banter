@@ -58,6 +58,18 @@ bunx tsc -p .
 
 **dsh voice.** Run `bun run build` in `plugins/dsh/voice` to rebuild the package into `dist/package`. `ops/dsh-plugin-install.sh <banter-url>` builds it and installs it into your dsh profiles (`--link` to link this checkout's build instead of a copy). [Setting up the dsh voice plugin](../guide/plugins/dsh-voice/setup.md) walks through the install, including what it writes to the profile.
 
+## Releasing
+
+Banter has one version, `version` in the root `package.json`, numbered with [semantic versioning](https://semver.org): the patch number for fixes, the minor number for features and for anything a person updating should read about first; it stays below 1.0. The dsh plugin's package carries the same version.
+
+To release, set the new version in the root `package.json`, commit, and push a matching tag:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The tag runs `.github/workflows/release.yml`: it refuses a tag that does not match the version, runs the dsh plugin's tests, and creates a GitHub release with notes generated from the commits since the last one and the dsh plugin built from the tagged commit (`banter-dsh-voice-<version>.tgz`).
+
 ## Repository layout
 
 | Folder | What it holds |

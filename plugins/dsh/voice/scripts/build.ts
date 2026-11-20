@@ -23,7 +23,11 @@ const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-ui-dockkit',
 ]
 
-const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { name: string; version: string }
+// The package carries Banter's version, from the repo root's package.json: a plugin build belongs to the Banter it was built with.
+const pkg = {
+  name: (JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { name: string }).name,
+  version: (JSON.parse(await readFile(join(root, '../../../package.json'), 'utf8')) as { version: string }).version,
+}
 
 await rm(dist, { recursive: true, force: true })
 
