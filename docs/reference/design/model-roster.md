@@ -24,7 +24,7 @@ Moving a list from Swift to JSON would move the assertion without checking it. W
 
 **Role** — the definition surface. One per node, declaring what that node can produce. There is no roster file: each node builds its roster from the `roster` section of its own `registry.json`.
 
-**Ownership** — providers, the models each serves, the parameters a server needs to instantiate one, the voices those models render, and the recordings those voices are built from. Every one is machine-local: a reference path is true only on the machine holding the file, and a model exists only where its weights are.
+**Ownership** — the models on this node, the providers that serve them, the curated voices and how each model renders them, and the recordings clones are made from. Every one is machine-local: a recording path is true only on the machine holding the file, and a model exists only where its weights are.
 
 **Why node-local.** Declaring a filesystem path anywhere else asserts something the declaring node cannot check, and turns a hardware change into an edit on a machine that was not involved. A node declares what it can verify.
 
@@ -40,7 +40,7 @@ Moving a list from Swift to JSON would move the assertion without checking it. W
 
 **Key logic** — polls each node alongside the service poll it already runs, tags each provider with its host and whether that host is answering, and serves the union. An unreachable node keeps its last known roster, with its providers flagged unreachable — the same treatment the service poller already gives a shard that stops answering, and for the same reason: a node being down is not evidence its models ceased to exist.
 
-Voices merge by id. The same person offered on two machines is one voice with the model links from both, and each link keeps the recordings of the node that declared it, since a reference path means nothing on another machine. Model ids do not merge: a selection names a model by id alone, so an id declared on two nodes would leave one of them unreachable. The assembler leaves such a model out on both nodes and names the collision, because a silent winner is the failure this design exists to remove.
+A model or voice id declared on two nodes is a collision. The assembler leaves it out on both nodes and names the collision, because a silent winner is the failure this design exists to remove. Recordings stay with the node that declared them, since a recording path means nothing on another machine.
 
 **Relationships** — the control plane plays this role and also builds a node roster of its own from its own registry, exactly as it owns a registry and merges the shard's services into it. The two roles are fused in one process; separating them is a larger refactor that this design neither requires nor blocks.
 
@@ -50,13 +50,13 @@ Voices merge by id. The same person offered on two machines is one voice with th
 
 **Ownership** — which model and voice are selected, and tuning that belongs to a use rather than to a model: chunk strategy, VAD thresholds, turn-taking curves.
 
-**Relationships** — read the assembled roster; write selections that reference roster ids.
+**Relationships** — read the assembled roster; write selections that reference roster ids. A request names a voice id, a model id and a runtime. It never carries a recording path, a transcript or a runtime's own name for a voice or model.
 
 ### Servers Banter builds
 
 **Role** — instantiate what they are given.
 
-**Ownership** — the mapping from a manager name and its parameters to a live manager. That is the irreducible code.
+**Ownership** — the mapping from a manager name and its parameters to a live manager, and, for a synthesis server, turning a voice id into what its model needs. That is the irreducible code.
 
 **Key logic** — told where the node's registry is and which provider it is, such a server never enumerates. Its listing endpoint reports exactly what that provider declares, annotated with what only it knows. An id it cannot map to a manager is a startup failure naming the id.
 
@@ -68,23 +68,61 @@ A running server logs the path and provider it loaded, so what it offers is alwa
 
 Third-party servers receive nothing and are not asked to. For those, the roster is the control plane's claim about what the service will accept; a wrong id fails at the request. The annotations below apply only where Banter controls the server.
 
+### The shard, for runtimes that cannot read the registry
+
+**Role** — resolves voices on behalf of a runtime on its own machine that cannot read the registry.
+
+**Key logic** — the shard answers a resolution: given a voice, a model and such a runtime, it applies the voice resolution rule and returns what the runtime needs. The caller then sends its request to the runtime directly; the shard does not carry the traffic. The shard is the nearest Banter service to the runtime and holds the recordings, so the work stays on the machine where the definitions can be verified. No actor on another machine resolves a voice for anyone. A runtime on the control plane's own host has no shard beside it, and the control plane resolves for it from its own node roster, by the same rule: it is then the node holding the definitions.
+
+**Relationships** — the shard is a resolver for these runtimes, not a proxy. A caller that skips the resolution and names a voice to such a runtime itself is outside Banter's guarantees, since nothing between it and the runtime can refuse an undeclared name.
+
 ---
 
 ## What a roster contains
 
+Three entities and two relations, each declared in exactly one place.
+
+| Thing | What it is | Declared in |
+|---|---|---|
+| **Model** | A set of weights, the same model whichever runtime serves it | `ttsModels`, `sttModels` |
+| **Runtime** | A registered service that serves models | `providers`, keyed by service id |
+| **Voice** | A person with a name, independent of any model | `voices` |
+| **Serving** (model × runtime) | This runtime serves this model, and how | the runtime's `serves` |
+| **Rendering** (voice × model) | This model produces this voice, and how | the voice's `renderings` |
+| **Recording** | Audio of a voice, kept so models can clone her | the voice's `recordings` |
+
+```
+roster
+  ttsModels   [ { id, name, cloning?: { requiresText, minDurationS?, maxDurationS?, sampleRate? }, chunkProfile?, chunking? } ]
+  sttModels   [ { id, name, kind, params?, variants? } ]
+  providers   service id → { resolvesVoices (tts), responseFormat?, sessions?, defaultModel?, idleUnloadMs?,
+                             serves: [ { model, key, streaming?, realtime?, concurrency?, requestParams? } ] }
+  voices      [ { id, name,
+                  recordings?: [ { audio, text, durationS, sampleRate } ],
+                  renderings:  [ { model, method: preset | clone, key? } ] } ]
+```
+
+`schemas/platform.schema.json` is the field-level contract.
+
+**Every order of choosing is a traversal.** A reader inverts the two relations at load, giving four lookups: a voice's models, a model's voices, a runtime's models, a model's runtimes. Voice then model then runtime, runtime then model then voice, and every other order are compositions of those four. Nothing about a voice names a runtime: a voice is available on a runtime when some model renders her and that runtime serves that model.
+
 ### Providers
 
-Keyed by registry service id. The key being a service id is what makes availability checkable rather than asserted: a provider naming no registered service is a load error. The service's registry entry supplies its host and port, so the roster stores neither.
+Keyed by registry service id. The key being a service id is what makes availability checkable rather than asserted: a provider naming no registered service is a load error. The service's registry entry supplies its name, host and port, so the roster stores none of them.
 
 A service absent from the roster is a service the control plane will not route to. That is the mechanism working, and it is how a deprecated or unwanted service is excluded — by omission, needing no code change and no freeze.
 
+A provider lists what it **serves**: each model it runs, by model id, with the runtime's own key for that model and the facts true of this runtime rather than of the weights. For synthesis those are whether it can stream the model's audio (`streaming`), whether it is fast enough for the realtime voice loop (`realtime`), how many requests it takes at once (`concurrency`), and fields every request carries, in this runtime's vocabulary (`requestParams`). An absent flag means no.
+
+A synthesis provider states whether it **resolves voices itself** (`resolvesVoices`). A runtime that reads the registry does; any other has the shard resolve for it. The flag is declared rather than inferred from the runner command, so no actor has to parse a command line to decide where resolution happens.
+
+**The key is the runtime's, not Banter's.** `pocket-tts` under the FluidAudio server and `mlx-community/pocket-tts` under mlx-audio are one model reached by two runtimes that address it differently. What files a key resolves to, in which cache root, under whose conventions, is the runtime's business and the roster does not model it.
+
 ### Models
 
-A model has an identity — this model, these weights — and declares what it is capable of and what it accepts. It does not name a Swift class, a loader, or a directory. Which class serves a request is the server's business, and a roster that named one would be describing the runtime again.
+A model has an identity — this model, these weights — independent of the runtime running it, and is declared once per node however many runtimes serve it. It does not name a Swift class, a loader, or a directory. Which class serves a request is the server's business, and a roster that named one would be describing the runtime again.
 
-For ASR a model declares its kind: batch, streaming, or both. For TTS it declares what synthesis requires, including whether it can clone and what it demands of a recording, the preset voices it knows by name, whether it is fast enough for the realtime voice loop (`realtime`), and whether its runtime can stream its audio (`streaming`). The voice loop's defaults for a model — how to split text (`chunking`), how many requests to send at once (`concurrency`), and fields every request carries (`requestParams`) — are declared on the model too. A model's capability — speech-to-text or text-to-speech — comes from its provider's registry entry, and decides which fields are required.
-
-**The key is the runtime's, not Banter's.** A model entry carries the identifier each provider's runtime uses to reach it. `pocket-tts` under the FluidAudio server and `mlx-community/pocket-tts` under mlx-audio are one model reached by two runtimes that address it differently — the same relation a voice has to a model that offers her under its own name. What files a key resolves to, in which cache root, under whose conventions, is the runtime's business and the roster does not model it. FluidAudio backends read FluidAudio's cache roots; other runtimes read theirs.
+A synthesis model declares what cloning demands of a recording, if it can clone at all, and its chunker constraint (`chunkProfile`). A speech-to-text model declares its kind: batch, streaming, or both. These are facts about the model, taken from its documentation and measurements, not chosen per installation.
 
 **Loading names a mode where there is a choice.** A model that does one thing needs no mode. A model capable of both is refused if asked to load without one — naming the model and the choices — rather than defaulting silently into the wrong latency. Both is a legitimate explicit choice. The refusal is what keeps a caller from discovering its mistake as unexplained latency instead of an error.
 
@@ -110,39 +148,102 @@ Mode stays its own field. It picks which of a model's components come up over we
 
 ### Voices
 
-A voice is a conceptual identity: a person, with a name. It is not a property of any model, because several may render her, and it is not a recording, because there may be several.
+A voice is a person with a name, independent of any model. The voice list is curated: it holds the voices chosen for use on this node, not every voice the models could produce. A voice absent from the list does not exist to Banter, and a request for it is refused.
 
-Each voice carries the recordings it was built from and the models that provide it. A recording states what it is — its file, its transcript where one exists, its duration and sample rate. A model entry states how that model reaches this voice: by naming the model's own built-in identifier for her, or by cloning from one of her recordings.
+**A rendering** is a voice as produced by one model, and is declared on the voice. Its method is either:
+
+- **preset** — the model was trained with her, and the rendering carries the model's own name for her (`key`);
+- **clone** — the model imitates her from one of her recordings.
+
+A voice may have both kinds, on different models. Heart is a Kokoro preset and can be cloned by Pocket-TTS and LuxTTS from her recordings. She sounds different on each, which is what a rendering represents: one voice, produced several ways.
 
 ```
-voice: example
-  name: Example
-  references:
-    - audio, transcript, duration, sample rate
-    - audio, duration, sample rate          (a shorter cut, no transcript)
-  models:
-    - model: Kokoro       key: af_heart    (the model's own name for her)
-    - model: pocket-tts   key: clone        (use a reference below)
+voice: heart
+  name: Heart
+  recordings:
+    - audio, transcript, 9.15 s, 24 kHz
+    - audio, transcript, 4.9 s, 24 kHz
+  renderings:
+    - kokoro-82m   preset  key: af_heart
+    - pocket-tts   clone
+    - luxtts       clone
 
-model: pocket-tts
-  cloning: available, maximum length, transcript required or not
+voice: eponine
+  name: Eponine
+  renderings:
+    - pocket-tts   preset  key: eponine
+
+model: luxtts
+  cloning: transcript used, at most 5 s
 ```
 
-**Why one shape for both.** A model may have a voice baked in, or may clone her from a recording, and the same voice can be available both ways. Treating preset and clone as two kinds of entry would make that case unrepresentable.
+**A rendering names a model, never a runtime.** Kokoro calls Heart `af_heart` under both its runtimes, and Pocket-TTS clones her under both. A rendering on one runtime only is not expressible, and nothing in Banter needs it.
+
+**Renderings are declared, not derived.** A model that can clone and a voice with recordings do not make a rendering: a newly recorded voice is offered on no model until someone links her, and may be linked to some cloning models and not others. Which models produce which voices is curation.
+
+**A voice has a readable id, whatever renders her.** The voice is `heart`; `af_heart` is only the model's key for her, and never leaves the resolver.
+
+**A recording** states what it is: the path to its audio, the path to its transcript, its duration and its sample rate. Recordings exist only for cloning, so a voice rendered only as a preset has none. Whether a model is sent the transcript is the model's decision.
 
 ### Compatibility is derived
 
-Models differ in what cloning demands: a transcript or not, a maximum length, a sample rate. Those demands belong to the model. What a recording *is* belongs to the recording. Whether a model can use a recording is arithmetic over the two, computed at load rather than written down.
+Models differ in what cloning demands: whether the transcript is used, a minimum or maximum length, a sample rate. Those demands belong to the model. What a recording *is* belongs to the recording. Whether a model can use a recording is arithmetic over the two, computed at load rather than written down. Length bounds are inclusive: a 5.0 s recording fits a 5 s limit.
 
-What is derived is whether a pairing works, not whether it exists. A voice still names the models that offer her, because that is a decision someone makes — this person is available on that model. What nobody writes down is the compatibility arithmetic: a clone entry whose voice has no recording satisfying that model's requirements fails at load, naming both sides. The failure that matters is the silent one, and this is what makes it loud.
+What is derived is whether a clone works, not whether it is offered. A clone rendering whose voice has no recording satisfying that model fails at load, naming both sides. The failure that matters is the silent one, and this is what makes it loud.
 
 Recording facts are declared, not probed. Voices change rarely; a filesystem read on every load buys protection against an edit that almost never happens, and a stale duration produces audio that sounds wrong — loud enough at this frequency.
 
+### Resolving a voice
+
+A resolver turns a voice id, a model id and a runtime into what the runtime needs.
+
+```
+resolve(voice, model, runtime):
+  no such voice                          → refuse
+  the runtime does not serve the model   → refuse
+  the voice has no rendering on the model → refuse
+  the first rendering on the model is
+    preset → send the rendering's key
+    clone  → send the first recording, in declared order, the model
+             accepts, with its transcript only if the model uses one
+  in every case the model is named by the serving's key, and the
+  serving's requestParams go along
+```
+
+**Declared order is the preference.** Where more than one recording satisfies a model, the first listed is used, and the same holds for renderings. Reordering is how a preference is expressed.
+
+**Nothing passes through.** Only values read from the roster reach a runtime. A forwarded unknown name is answered with the runtime's default voice and no error, or makes a library try to download one.
+
+**A request that carries a recording has chosen it.** A benchmark may name an arbitrary recording file, and nothing is looked up. Only an actor that resolves accepts such a request.
+
+**Who resolves.** The runtime, if it reads the registry; otherwise the node on the runtime's machine: the shard there, or the control plane for a runtime on its own host. No other actor resolves. `schemas/voice-resolution-cases.json` holds cases both resolvers are tested against, so the two cannot drift apart unnoticed. A runtime that read the registry at startup needs a restart to see a changed voice, and a reload names it.
+
 ### Selection belongs to the consumer
 
-The roster states what exists and what each model can take. Which recording to use when several qualify, and which model when several provide a voice, are decisions — and decisions live with whoever is making the request. The control plane's `config.json` holds only those decisions and the settings a dialog edits; it declares no provider, model or voice.
+The roster states what exists. Which voice, model and runtime to use are decisions, and decisions live with whoever is making the request. The control plane's `config.json` holds only those decisions and the settings a dialog edits; it declares no provider, model or voice.
 
-The roster names no default voice. A default is a selection, which the control plane resolves from its configuration and always sends to the shard. A dispatch naming no voice is refused.
+**A selection names all three: voice, model and runtime.** Since a model can be served by more than one runtime, a model id alone does not say where a request goes, and a selection that left the runtime out would leave the choice to whatever looked it up.
+
+The roster names no default voice. The voice loop's selection in `config.json` is the only default, and a resolution naming no voice, model or runtime is refused.
+
+---
+
+## What the control plane serves
+
+The control plane assembles the node rosters and serves them as they are declared: models, providers with what they serve, and voices with their renderings. It does not rebuild a tree in one order, provider then model then voice, because that bakes one way of choosing into every consumer; a picker builds whichever order it needs from the four lookups. Recordings stay on the node that declares them and are not served: no consumer upstream of a resolver needs a path.
+
+`GET /api/voice` serves, under `tts`:
+
+- `models`: each synthesis model, with its name, whether it can clone, and its chunking defaults.
+- `providers`: each synthesis runtime, with its host, whether that host is answering, its name from the service entry, its response format, whether it takes sessions, and what it serves.
+- `voices`: each voice, with its name and her renderings as model and method. A preset's key is not served; it is the resolver's.
+- `selection`: the stored selection, voice, model and runtime, and `request`, below.
+
+## Reaching a resolution
+
+The control plane resolves a voice only for a runtime on its own host. When it serves the voice selection, on `GET /api/voice` and in the answer to a selection change, it asks the shard on the selection's runtime host to resolve the selection, or resolves it from its own roster when the runtime is on its own host, and serves the answer as `selection.request`: the fields the browser puts into a speech request, which it sends to the runtime unchanged. One resolution per selection, never one per utterance.
+
+The shard answers `POST /api/voices/resolve` with a voice, a model and a runtime. For a runtime that resolves voices itself the answer is the roster's ids. For any other it is the runtime's key for the model, and either the preset's key or a recording's audio path, with the transcript's text when the model uses one, plus the serving's request parameters. A refusal names the voice and model. An unreachable shard leaves `request` absent, with the reason, and the voice loop reports that it cannot speak.
 
 ---
 
@@ -169,27 +270,35 @@ A model capable of both is one entry reporting `kind: both`, not two entries. Wh
 
 ## Validation
 
-Each check kills a failure that has occurred.
+Each check catches a fact that could be wrong or inconsistent.
 
 **A provider must name a registered service.** Otherwise the roster advertises something with nowhere to route.
 
-**Required fields follow capability**, read from the provider's registry entry, so a model missing what its kind requires fails at startup naming the model.
+**Ids are unique.** Voice ids within the voices; model ids across synthesis and speech-to-text models. A duplicate would make a reference silently resolve to the wrong one.
 
-**Every reference resolves.** A voice claiming clone access to a model that cannot clone, or a clone entry with no recording satisfying that model's requirements. Each is an error naming both sides.
+**A serving names a declared model of the provider's capability.** Otherwise a runtime is routed a model that does not exist, or a synthesis runtime is asked to transcribe.
 
-**A synthesis model id is unique across providers.** Definitions are served keyed by model id alone, so a second provider reusing an id would make one of the two unreachable. A node checks this within its registry at load; the assembler checks it across nodes, where it can only exclude and report.
+**A rendering names a declared synthesis model.** Otherwise a voice is offered on a model that is not there, found only at request time.
 
-**A fact appears once.** A recording path, a model id, a requirement — one place. The failure being designed out is silence: a mapping edited in one file and not the other produces no error and no symptom until something sounds wrong.
+**A preset rendering has a key, and a clone rendering has none.** Otherwise a preset has no name to send, or a clone sends one.
+
+**A clone rendering's model can clone, and the voice has a recording it accepts.** Otherwise a voice is offered and fails, or sounds wrong, on first use. The failure names the voice and the model.
+
+**A synthesis provider states whether it resolves voices itself.** Otherwise nobody resolves, and a raw id reaches a library that tries to download it.
+
+**A fact appears once.** A recording path, a model id, a requirement — one place. The failure being designed out is silence: a mapping edited in one place and not the other produces no error and no symptom until something sounds wrong.
+
+Deliberately unchecked: that a preset key exists in the model, since the roster holds no list of every preset; that recording files exist, since recording facts are declared; and that every voice has a rendering or every model a serving, since an empty answer is a true one.
 
 ---
 
 ## Consequences
 
-**A picker needs the node reachable.** Reading the roster from the API replaces lists compiled into the dashboard. Those work offline with stale options; the roster does not. This is correct — a model on an unreachable node cannot be loaded — but it is a behaviour change, and the roster carries reachability so a picker can show a model as declared-but-unreachable rather than dropping it.
+**A picker needs the node reachable.** The dashboard reads the roster from the API rather than compiling lists of its own, so it offers no stale options while a node is down; a model on an unreachable node cannot be loaded. The roster carries reachability so a picker can show a model as declared-but-unreachable rather than dropping it.
 
-**One voice, several instances.** A voice rendered as a preset by one model and cloned by another will sound like different people. The roster represents this faithfully, so a consumer chooses an instance, not only a voice.
+**A runtime that cannot resolve is protected only by its callers.** The shard resolves for it but does not stand in front of it, so a caller that names a voice directly can still reach an undeclared one. Every Banter caller asks the shard first.
 
-**The assembly generalises.** A node brings its own definitions and the assembler merges one more set. If everything later collapses onto one machine, that machine's roster is the whole roster and the merge is a no-op. Neither case is a migration.
+**The assembly generalises.** A node brings its own definitions and the assembler merges one more set.
 
 ---
 

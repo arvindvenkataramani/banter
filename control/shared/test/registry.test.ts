@@ -23,13 +23,13 @@ type Doc = Record<string, any>;
 /** A valid control registry with one systemd service, edited by `edit` before it is written. */
 async function write(edit: (doc: Doc) => void = () => {}): Promise<Doc> {
   const doc: Doc = {
-    version: 3,
+    version: 4,
     type: "control",
     hosts: [{ id: "host1", name: "Host One", hostname: "host1.ts.net", role: "control" }],
-    capabilities: [{ id: "cap1", name: "Capability One" }],
+    capabilities: [{ id: "tts", name: "Text-to-Speech" }],
     services: [{
       id: "svc1",
-      capabilityId: "cap1",
+      capabilityId: "tts",
       hostId: "host1",
       permissions: { enabled: true },
       runner: { type: "systemd", unit: "svc1", unitFile: "ops/systemd/svc1.service" },
@@ -45,14 +45,14 @@ async function write(edit: (doc: Doc) => void = () => {}): Promise<Doc> {
 const svc = (doc: Doc) => doc.services[0];
 const MANAGED = { type: "managed", startCmd: ["paseo", "daemon", "start"], stopCmd: ["paseo", "daemon", "stop"], healthCmd: "paseo daemon status" };
 const INSTALL = { env: { workingDirectory: "/srv/app" }, install: { artifacts: [{ from: "services/app/.build/app", to: ".build/app" }] } };
-const ROSTER = { providers: { svc1: { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } }, voices: [] };
+const ROSTER = { ttsModels: [{ id: "m", name: "M" }], sttModels: [], providers: { svc1: { resolvesVoices: false, serves: [{ model: "m", key: "k" }] } }, voices: [] };
 
 describe("loading", () => {
   it("loads hosts, capabilities and services, with an empty roster when none is declared and no default host port", async () => {
     await write();
     const registry = await loadRegistry(registryPath);
     expect(registry.services.map(s => s.id)).toEqual(["svc1"]);
-    expect(registry.roster).toEqual({ providers: {}, voices: [] });
+    expect(registry.roster).toMatchObject({ providers: {}, voices: [] });
     expect(registry.hosts[0].port).toBeUndefined();
   });
 
@@ -63,7 +63,7 @@ describe("loading", () => {
     ["a service naming an unknown host", d => { svc(d).hostId = "nope"; }, /hostId/],
     ["a service with no enabled flag", d => { svc(d).permissions = {}; }, /enabled/],
     ["a host port that is not a positive integer", d => { d.hosts[0].port = -1; }, /port/],
-    ["a roster provider naming a service not in this registry", d => { d.roster = { providers: { ghost: ROSTER.providers.svc1 }, voices: [] }; }, /roster:.*ghost/],
+    ["a roster provider naming a service not in this registry", d => { d.roster = { ...ROSTER, providers: { ghost: ROSTER.providers.svc1 } }; }, /roster:.*ghost/],
     ["a service with no runner", d => { delete svc(d).runner; }, /runner is required/],
     ["an unknown runner type", d => { svc(d).runner = { type: "docker" }; }, /runner\.type/],
     ["a process runner without main", d => { svc(d).runner = { type: "process" }; }, /process runner requires runner.main/],

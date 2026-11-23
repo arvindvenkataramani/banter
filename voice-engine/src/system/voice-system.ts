@@ -64,6 +64,8 @@ export interface AgentSide {
   chunkConfig: { chunkStrategy: ChunkStrategy; minChunkWords: number | undefined; maxChunkWords: number | undefined }
   ttsEndpoint: string | null
   ttsSelection: VoiceSelection | null
+  /** Called once per unresolved selection when an utterance arrives with no request to speak with. */
+  onCannotSpeak?: (reason: string) => void
   attach(session: VoiceSession): void
   detach(): void
 }
@@ -226,6 +228,10 @@ export class VoiceSystem {
       if (!config || !selection || !provider) {
         throw new Error('Voice not configured')
       }
+      const ttsModel = selection.request?.model
+      if (typeof ttsModel !== 'string') {
+        throw new Error(`Voice cannot speak: ${selection.requestError ?? 'the selection was not resolved'}`)
+      }
 
       const [ttsEndpoint, sttEndpoint] = await Promise.all([
         this.deps.services.ensureTtsReady(provider.serviceId),
@@ -247,7 +253,7 @@ export class VoiceSystem {
       }
       const sttChunkMs = sttMode === 'streaming' && facts ? resolveChunkMs(facts, config.stt?.chunkMs) : undefined
       await Promise.all([
-        this.deps.services.loadTtsModel(ttsEndpoint, selection.modelKey),
+        this.deps.services.loadTtsModel(ttsEndpoint, ttsModel),
         sttEndpoint && config.stt?.model && sttMode
           ? this.deps.services.loadSttModel(sttEndpoint, config.stt.model, sttMode, sttChunkMs)
           : Promise.resolve(),
@@ -272,6 +278,7 @@ export class VoiceSystem {
       }
       agent.ttsEndpoint = ttsEndpoint
       agent.ttsSelection = selection
+      agent.onCannotSpeak = (reason) => this.deps.notify(`Voice cannot speak: ${reason}`)
       agent.attach(session)
       this.agent = agent
       this.deps.player.setConcurrency(chunking.concurrency)
@@ -454,12 +461,17 @@ export class VoiceSystem {
     const prev = useVoiceSessionStore.getState().voiceConfig
     const provider = prev?.tts.providers.find((p) => p.serviceId === selection.serviceId)
     if (!provider) return
+    const ttsModel = selection.request?.model
+    if (typeof ttsModel !== 'string') {
+      this.deps.notify(`Voice cannot speak: ${selection.requestError ?? 'the selection was not resolved'}`)
+      return
+    }
 
     useVoiceSystemStore.setState({ reconfiguring: true })
     this.deps.services.ensureTtsReady(provider.serviceId)
       .then((endpoint) => {
         useVoiceSessionStore.setState({ ttsEndpoint: endpoint })
-        return this.deps.services.loadTtsModel(endpoint, selection.modelKey)
+        return this.deps.services.loadTtsModel(endpoint, ttsModel)
       })
       .then(() => { useVoiceSystemStore.setState({ reconfiguring: false }) })
       .catch(() => { useVoiceSystemStore.setState({ reconfiguring: false }) })

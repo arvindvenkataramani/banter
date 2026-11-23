@@ -12,7 +12,7 @@ Both servers are executables of this package and share `FluidServerKit`: the res
 
 FluidAudio has no common interface across models: each family has its own manager type, constructor and call shape. Supporting another model means adapting a new manager, not adding configuration. The roster only chooses among models the code already supports.
 
-FluidAudio is pinned to a fork, `arvindvenkataramani/FluidAudio`, for the Pocket TTS patches in [patches/](patches/README.md). The STT server uses the same pin but does not depend on the patches.
+FluidAudio is pinned to an exact upstream release, `FluidInference/FluidAudio` at 0.18.4. [verification/README.md](verification/README.md) says what to check before changing it.
 
 ## Source layout
 
@@ -69,7 +69,7 @@ FluidAudio is pinned to a fork, `arvindvenkataramani/FluidAudio`, for the Pocket
 
 Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directory. Tests: `swift test`.
 
-`scripts/fluid-smoke.sh` checks `fluid-stt` as built, installed and running: it deploys the bundle into a scratch directory through the real install code, runs it on port 18767 under a throwaway bundle identifier, and checks health, on-demand load, batch transcription, Deepgram's `/listen` (batch and socket) and idle unload against a sentence spoken by `say`. Everything it deploys is removed on exit, including an interrupted one, and it never touches a live server or downloads weights. Exit 0 is a pass, 1 a failure, 3 a skip for missing weights or `say`. `--keep` leaves the scratch deploy for debugging.
+`scripts/fluid-smoke.sh [stt|tts]` checks the servers as built, installed and running, both by default: it deploys each bundle into a scratch directory through the real install code and runs it under a throwaway bundle identifier, with outbound network access denied. `fluid-stt` runs on port 18767 and is checked on health, on-demand load, batch transcription, Deepgram's `/listen` (batch and socket) and idle unload against a sentence spoken by `say`. `fluid-tts` runs on port 18769 and has each roster model synthesize that sentence in one voice (the first roster voice with a preset on the model, else the first that clones under it), and the scratch `fluid-stt` must hear the audio back. It fails if a model directory gained a file, which means a load tried to download. It reads the roster from `services/fluid/registry.fluid.example.json`. Everything it deploys is removed on exit, including an interrupted one, and it never touches a live server or downloads weights. Exit 0 is a pass, 1 a failure, 3 a skip for missing weights or `say`. `--keep` leaves the scratch deploy for debugging.
 
 ## fluid-stt
 
@@ -134,7 +134,7 @@ The boundary rule is written against parakeet-mlx's own tokenizer behaviour, whi
 
 ## fluid-tts
 
-- **Responses are AAC by default**, in ADTS framing, with `wav` the only other `response_format`; anything else is refused rather than substituted. A streamed response is one encoded stream, not one file per interval, so there's no gap at the seams.
+- **Responses are AAC by default**, in ADTS framing. `wav` and `pcm` (headerless 16-bit mono at 24 kHz) are the other `response_format` values; anything else is refused rather than substituted. A streamed response is one encoded stream, not one file per interval, so there's no gap at the seams.
 - **Streaming is a capability, not a special case.** Only Pocket TTS streams today (`TtsStreamingDriver`). A backend that can't stream, asked for `stream: true`, returns the whole utterance in the same container, so a client never branches on which model it's talking to.
 - **Streamed audio is emitted in fixed-duration chunks**, every 2 s of generated audio by default (mlx-audio's default and field name), overridable per request with `streaming_interval`. Below about 1 s the time to first audio stops tracking the interval and settles near 0.3 s, so 0.5 s is the useful floor. Set it per model with the roster's `requestParams`.
 - **Long text is split for backends with a hard input cap**, at sentence and clause boundaries rather than between words.
@@ -150,7 +150,7 @@ It takes the same `session` and `takeover` rules and error codes as `fluid-stt`'
 
 Each server ships as an `.app` bundle, `<name>.app/Contents/MacOS/<name>` beside `Contents/Info.plist`, rather than a bare executable, so macOS keys its per-application locations by a stable bundle identifier instead of a file name: `com.banter.fluid-stt` and `com.banter.fluid-tts`.
 
-`scripts/fluid-build.sh` builds both executables with `swift build -c release`, then assembles each bundle under `.build/release/`. `Info.plist` is rendered from the matching template in `Resources/`, with the package version from `VERSION` and the source commit filled in, and the bundle is ad-hoc signed. `fluid-tts.app` also gets FluidAudio's `FluidAudio_FluidAudio.bundle` (the lexicon and G2P tables LuxTTS loads through `Bundle.module`) in `Contents/Resources/`, since a bundled executable's resource lookup checks there first. `swift-nio`'s two bundles hold only privacy manifests and aren't copied.
+`scripts/fluid-build.sh` builds both executables with `swift build -c release`, then assembles each bundle under `.build/release/`. `Info.plist` is rendered from the matching template in `Resources/`, with the package version from `VERSION` and the source commit filled in, and the bundle is ad-hoc signed. Every FluidAudio resource bundle (`FluidAudio_*.bundle`, which includes the lexicon and G2P tables LuxTTS loads through `Bundle.module`) is copied into each app's `Contents/Resources/`, since a bundled executable's resource lookup checks there first. `swift-nio`'s two bundles hold only privacy manifests and aren't copied.
 
 `AppLocations` derives three paths from the identifier:
 

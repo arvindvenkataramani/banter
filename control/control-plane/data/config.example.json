@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "runtime": {
     "host": "localhost",
     "eventsPath": "~/services/banter/logs/events.jsonl"

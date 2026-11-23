@@ -76,16 +76,29 @@ public enum TtsError: Error, CustomStringConvertible {
     case unsupported(String)
     case busy
     case unknownFormat(String)
+    /// A roster voice asked of a model she is not offered on. Passing her id
+    /// through would be answered with the runtime's default voice and no error.
+    case voiceNotOffered(voice: String, model: String)
+    case noUsableReference(voice: String, model: String)
+    /// A voice named with no model to resolve it under: the request names none
+    /// and none is resident.
+    case noModelNamed(voice: String)
 
     public var description: String {
         switch self {
+        case .noModelNamed(let voice):
+            return "voice '\(voice)' cannot be resolved: no model is named and none is loaded"
+        case .voiceNotOffered(let voice, let model):
+            return "voice '\(voice)' is not offered on model '\(model)'"
+        case .noUsableReference(let voice, let model):
+            return "voice '\(voice)' has no recording meeting what '\(model)' requires of one"
         case .unknownModel(let m): return "unknown model '\(m)'"
         case .missingReference(let m): return m
         case .notLoaded: return "no model is loaded"
         case .modelMismatch(let m): return m
         case .unsupported(let m): return m
         case .unknownFormat(let f):
-            return "unknown response_format '\(f)'; expected aac or wav"
+            return "unknown response_format '\(f)'; expected aac, wav or pcm"
         case .busy:
             return "the model is busy with another request; one runs at a time"
         }
@@ -106,7 +119,7 @@ extension TtsError: SocketCoded {
             return .busy
         case .unknownFormat:
             return .badFormat
-        case .missingReference, .unsupported:
+        case .missingReference, .unsupported, .voiceNotOffered, .noUsableReference, .noModelNamed:
             return .failed
         }
     }
@@ -136,7 +149,10 @@ actor PocketTtsDriver: TtsBackendDriver {
             dir.lastPathComponent == PocketTtsConstants.defaultModelsSubdirectory
                 ? dir.deletingLastPathComponent() : dir
         }
-        manager = PocketTtsManager(directory: adjusted)
+        // Named, not defaulted: FluidAudio's `.english` follows Kyutai's newest
+        // checkpoint, and a pack that is not on disk is one the library
+        // downloads. `.english2026Apr` is the pack in `v2.1/english`.
+        manager = PocketTtsManager(language: .english2026Apr, directory: adjusted)
     }
 
     func load() async throws {

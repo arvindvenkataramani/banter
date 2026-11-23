@@ -16,29 +16,21 @@ let configPath: string;
 // providers are declared on the control plane's own registry (no shard) —
 // which is what makes them resolvable without a poll.
 const ROSTER: NodeRoster = {
+  ttsModels: [
+    { id: "kokoro-82m", name: "Kokoro 82M" },
+    { id: "other-model", name: "Other" },
+  ],
+  sttModels: [],
   providers: {
-    "tts-mlx-audio": {
-      ttsModels: [{
-        id: "kokoro-82m",
-        name: "Kokoro 82M",
-        key: "prince-canuma/Kokoro-82M",
-        presetVoices: [
-          { id: "bf_isabella", name: "Isabella" },
-          { id: "af_heart", name: "Heart" },
-        ],
-      }],
-    },
-    "tts-other": {
-      ttsModels: [{
-        id: "other-model",
-        name: "Other",
-        key: "other-model",
-        presetVoices: [{ id: "voice-a", name: "Voice A" }],
-      }],
-    },
+    "tts-mlx-audio": { resolvesVoices: false, serves: [{ model: "kokoro-82m", key: "prince-canuma/Kokoro-82M" }] },
+    "tts-other": { resolvesVoices: false, serves: [{ model: "other-model", key: "other-model" }] },
   },
-  voices: [],
-};
+  voices: [
+    { id: "isabella", name: "Isabella", renderings: [{ model: "kokoro-82m", method: "preset", key: "bf_isabella" }] },
+    { id: "heart", name: "Heart", renderings: [{ model: "kokoro-82m", method: "preset", key: "af_heart" }] },
+    { id: "voice-a", name: "Voice A", renderings: [{ model: "other-model", method: "preset", key: "voice-a" }] },
+  ],
+} as unknown as NodeRoster;
 
 function makeRegistry(roster: NodeRoster | undefined = ROSTER, shards: Registry["shards"] = []): Registry {
   return {
@@ -91,7 +83,7 @@ const BASE_CONFIG: PlatformConfig = {
       selection: {
         serviceId: "tts-mlx-audio",
         model: "kokoro-82m",
-        voice: "bf_isabella",
+        voice: "isabella",
         speed: 1.0,
       },
       options: {
@@ -146,7 +138,7 @@ describe("GET /api/voice", () => {
     const provider = body.tts.providers.find((p: any) => p.serviceId === "tts-mlx-audio");
     expect(provider).toBeDefined();
     expect(provider.hostId).toBe("home-server");
-    expect(provider.models.some((m: any) => m.id === "kokoro-82m")).toBe(true);
+    expect(provider.serves.some((s: any) => s.model === "kokoro-82m")).toBe(true);
   });
 });
 
@@ -158,13 +150,13 @@ describe("PATCH /api/voice/selection", () => {
       new Request("http://localhost/api/voice/selection", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice: "af_heart" }),
+        body: JSON.stringify({ voice: "heart" }),
       })
     );
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.tts.selection.voice).toBe("af_heart");
+    expect(body.tts.selection.voice).toBe("heart");
     // Other fields unchanged
     expect(body.tts.selection.serviceId).toBe("tts-mlx-audio");
     expect(body.tts.selection.model).toBe("kokoro-82m");
@@ -172,7 +164,7 @@ describe("PATCH /api/voice/selection", () => {
     // Verify persisted to disk
     const diskRaw = await readFile(configPath, "utf-8");
     const disk = JSON.parse(diskRaw);
-    expect(disk.voice.tts.selection.voice).toBe("af_heart");
+    expect(disk.voice.tts.selection.voice).toBe("heart");
   });
 
   it("saves into the file as it is on disk: keeps an unknown field and a hand edit made since load", async () => {
@@ -186,13 +178,13 @@ describe("PATCH /api/voice/selection", () => {
       new Request("http://localhost/api/voice/selection", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice: "af_heart" }),
+        body: JSON.stringify({ voice: "heart" }),
       })
     );
 
     expect(res.status).toBe(200);
     const disk = JSON.parse(await readFile(configPath, "utf-8"));
-    expect(disk.voice.tts.selection.voice).toBe("af_heart");
+    expect(disk.voice.tts.selection.voice).toBe("heart");
     expect(disk.somethingNewer).toEqual({ kept: true });
     expect(disk.timezone).toBe("Europe/London");
   });
@@ -212,7 +204,7 @@ describe("PATCH /api/voice/selection", () => {
     const body = await res.json();
     expect(body.tts.selection.speed).toBe(1.5);
     // Other fields unchanged
-    expect(body.tts.selection.voice).toBe("bf_isabella");
+    expect(body.tts.selection.voice).toBe("isabella");
     expect(body.tts.options.chunkStrategy).toBe("two-chunk");
 
     const diskRaw = await readFile(configPath, "utf-8");
@@ -477,7 +469,7 @@ describe("PATCH /api/voice/selection", () => {
     expect(body.tts.selection.speed).toBe(0.8);
     expect(body.tts.selection.serviceId).toBe("tts-mlx-audio");
     expect(body.tts.selection.model).toBe("kokoro-82m");
-    expect(body.tts.selection.voice).toBe("bf_isabella");
+    expect(body.tts.selection.voice).toBe("isabella");
     // Options unchanged
     expect(body.tts.options.chunkStrategy).toBe("two-chunk");
     expect(body.tts.options.minChunkWords).toBe(12);

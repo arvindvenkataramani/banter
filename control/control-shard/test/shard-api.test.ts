@@ -30,7 +30,7 @@ const service = (id: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function doc(modelName = "Model A") {
+function doc(servingKey = "model-a") {
   return {
     version: 2,
     type: "shard",
@@ -41,7 +41,12 @@ function doc(modelName = "Model A") {
       service("off", { permissions: { enabled: false } }),
       service("always", { lifecycle: { loadStrategy: "startup" } }),
     ],
-    roster: { providers: { demand: { ttsModels: [{ id: "model-a", name: modelName, key: "model-a" }] } }, voices: [] },
+    roster: {
+      ttsModels: [{ id: "model-a", name: "Model A" }],
+      sttModels: [],
+      providers: { demand: { resolvesVoices: false, serves: [{ model: "model-a", key: servingKey }] } },
+      voices: [],
+    },
   };
 }
 
@@ -152,13 +157,13 @@ describe("starting and stopping", () => {
 describe("the roster and reload", () => {
   it("serves the roster as reloaded, with a warning naming the provider that changed", async () => {
     const app = shardApp();
-    await writeFile(registryPath, JSON.stringify(doc("Model A v2")));
+    await writeFile(registryPath, JSON.stringify(doc("model-a-v2")));
 
     const reload = await call(app, "POST", "/api/config/reload");
     expect(reload.status).toBe(200);
     expect(reload.body.registry).toEqual({ ok: true });
     expect(reload.body.warnings).toContainEqual(expect.objectContaining({ kind: "provider-changed", serviceId: "demand" }));
-    expect((await call(app, "GET", "/api/roster")).body.providers.demand.ttsModels[0].name).toBe("Model A v2");
+    expect((await call(app, "GET", "/api/roster")).body.providers.demand.serves[0].key).toBe("model-a-v2");
   });
 
   it.each([

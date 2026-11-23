@@ -3,7 +3,7 @@ import type { VoiceConfig } from '@platform/voice-engine/voice-config'
 import { createConfigFeed } from './config-feed'
 
 const config = (voice: string): VoiceConfig => ({
-  tts: { providers: [], selection: { serviceId: 'tts-b', model: 'model-1', voice, speed: 1 } },
+  tts: { models: [], providers: [], voices: [], selection: { serviceId: 'tts-b', model: 'model-1', voice, speed: 1 } },
   stt: { serviceId: 'stt-a' },
 })
 

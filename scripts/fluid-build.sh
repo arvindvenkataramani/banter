@@ -85,14 +85,17 @@ for name in fluid-stt fluid-tts; do
     -e "s/__BUILD_VERSION__/$commit/" \
     "$PACKAGE/Resources/$name.plist" > "$bundle/Contents/Info.plist"
 
-  # FluidAudio's SwiftPM resource bundle looks for itself at Bundle.main's
-  # resourceURL first, which for an .app is Contents/Resources/ — the bare
-  # executable's own directory (its second fallback) no longer is one.
-  resource_bundle="$PACKAGE/.build/release/FluidAudio_FluidAudio.bundle"
-  if [[ -d "$resource_bundle" ]]; then
+  # A SwiftPM resource bundle looks for itself at Bundle.main's resourceURL
+  # first, which for an .app is Contents/Resources/ — the bare executable's
+  # own directory (its second fallback) no longer is one. Every bundle
+  # FluidAudio builds is copied, not a named one: a target that cannot find
+  # its bundle traps at first use, which for LuxTTS's G2P resources is the
+  # first synthesis rather than startup.
+  for resource_bundle in "$PACKAGE"/.build/release/FluidAudio_*.bundle; do
+    [[ -d "$resource_bundle" ]] || continue
     mkdir -p "$bundle/Contents/Resources"
     cp -R "$resource_bundle" "$bundle/Contents/Resources/"
-  fi
+  done
 
   codesign --force --sign - --timestamp=none "$bundle"
   echo "[fluid-build] $name.app ($version, $commit)"

@@ -5,7 +5,7 @@
 import type { VoiceSystem } from '@platform/voice-engine/system/voice-system'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import { haltAudio } from '@platform/voice-engine/audio-halters'
-import { resolveVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
+import { loadVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
 import { setVoiceConfig, setVoiceSelection, publishSession } from '@platform/voice-engine/voice-session-store'
 import { toggleMuteAll, useMuteStore } from '@platform/voice-engine/human/mute-store'
 import { editTranscript, takeTranscript } from '@platform/voice-engine/store/transcript-store'
@@ -104,7 +104,7 @@ export function createVoiceRuntime({ ctx, shown, form, feed, origin }: RuntimeDe
     if (phase() === 'starting') return
     const previous = applied
     applied = config
-    const selection = config.tts.selection ? resolveVoiceSelection(config, config.tts.selection) : null
+    const selection = loadVoiceSelection(config)
     const changed = previous !== null && (
       previous.tts.selection?.serviceId !== config.tts.selection?.serviceId
       || previous.tts.selection?.model !== config.tts.selection?.model

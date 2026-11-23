@@ -6,16 +6,31 @@
   "$defs": {
     "nodeRoster": {
       "title": "Node roster",
-      "description": "The roster section of a node's registry.json: the providers that node runs, the models each serves, and the voices those models render. A node declares only what it can verify, and the control plane assembles every node's roster.",
+      "description": "The roster section of a node's registry.json: the models, the providers that serve them, and the voices those models render. A node declares only what it can verify, and the control plane assembles every node's roster.",
       "type": "object",
       "required": [
-        "providers"
+        "providers",
+        "voices"
       ],
       "additionalProperties": false,
       "properties": {
+        "ttsModels": {
+          "type": "array",
+          "description": "Synthesis models on this node, each declared once however many providers serve it.",
+          "items": {
+            "$ref": "#/$defs/ttsModel"
+          }
+        },
+        "sttModels": {
+          "type": "array",
+          "description": "Speech-to-text models on this node, each declared once however many providers serve it.",
+          "items": {
+            "$ref": "#/$defs/sttModel"
+          }
+        },
         "providers": {
           "type": "object",
-          "description": "Keyed by registry service id. The key being a service id is what makes availability checkable rather than asserted: a provider naming no registered service is a load error. Host and port come from that registry entry and are not stored here. A service absent from this map is one the platform will not route to — that is how a deprecated service is excluded, needing no code change.",
+          "description": "Keyed by registry service id; a key naming no registered service is a load error. Host, port and name come from that service entry. A service absent from this map is one the platform will not route to.",
           "propertyNames": {
             "type": "string",
             "minLength": 1
@@ -26,7 +41,7 @@
         },
         "voices": {
           "type": "array",
-          "default": [],
+          "description": "The curated voices: a voice absent from this list does not exist to the platform.",
           "items": {
             "$ref": "#/$defs/voice"
           }
@@ -35,14 +50,29 @@
     },
     "assembledRoster": {
       "title": "Assembled roster",
-      "description": "What the assembler serves: the union of the node rosters, each provider tagged with its host and whether that host is answering. An unreachable node keeps its last known roster with its providers flagged rather than dropping out — a node being down is not evidence its models ceased to exist, and a picker should show a model as declared-but-unreachable rather than silently omitting it. Voices are merged by id across nodes and their model lists concatenated.",
+      "description": "What the assembler holds: the node rosters side by side, as declared. Each provider is tagged with its host and whether that host is answering; an unreachable node keeps its last known roster, flagged, because a node being down is not evidence its models ceased to exist. A model or voice id declared on two nodes is left out everywhere and named in `collisions`. Recordings and preset keys stay on the node that declares them.",
       "type": "object",
       "required": [
+        "ttsModels",
+        "sttModels",
         "providers",
-        "voices"
+        "voices",
+        "collisions"
       ],
       "additionalProperties": false,
       "properties": {
+        "ttsModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ttsModel"
+          }
+        },
+        "sttModels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sttModel"
+          }
+        },
         "providers": {
           "type": "array",
           "items": {
@@ -52,7 +82,84 @@
         "voices": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/voice"
+            "$ref": "#/$defs/assembledVoice"
+          }
+        },
+        "collisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rosterCollision"
+          }
+        }
+      }
+    },
+    "assembledVoice": {
+      "type": "object",
+      "description": "A voice as the assembler serves it: her name and the models that produce her, without recordings or preset keys.",
+      "required": [
+        "id",
+        "name",
+        "renderings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "renderings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "model",
+              "method"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "method": {
+                "enum": [
+                  "preset",
+                  "clone"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "rosterCollision": {
+      "type": "object",
+      "description": "A model or voice id declared on more than one node, and so left out of the assembly.",
+      "required": [
+        "kind",
+        "id",
+        "hostIds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "model",
+            "voice"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hostIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       }
@@ -152,7 +259,29 @@
           "description": "Which variant is resident, for the loaded model that has several."
         },
         "cloning": {
-          "$ref": "#/$defs/cloning"
+          "type": "object",
+          "description": "The model's cloning terms, as declared, with `available` always true: the entry is present only for a model that can clone.",
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "requiresText": {
+              "type": "boolean"
+            },
+            "minDurationS": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "maxDurationS": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "sampleRate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         },
         "chunkProfile": {
           "type": "object",
@@ -191,7 +320,7 @@
               }
             }
           },
-          "description": "Voices this model already knows by name, needing no reference recording."
+          "description": "The voices with a preset rendering on this model, derived from the roster's voices; each id is the voice's id."
         },
         "canClone": {
           "type": "boolean",
@@ -205,15 +334,15 @@
     },
     "provider": {
       "type": "object",
-      "description": "A service that serves models. Which model list is required follows from the provider's registry capabilityId, checked at load — an STT model lacking params fails then, naming the model, rather than at first use.",
+      "description": "A registered service that serves models. A serving names a model of the provider's capability, checked at load.",
       "required": [
-        "name"
+        "serves"
       ],
       "additionalProperties": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
+        "resolvesVoices": {
+          "type": "boolean",
+          "description": "Whether this runtime resolves voices itself by reading the registry; otherwise the shard resolves for it. Required on a synthesis provider."
         },
         "responseFormat": {
           "description": "The audio format this runtime returns from /v1/audio/speech, the same for every model it serves. Absent means mp3.",
@@ -223,65 +352,37 @@
             "wav"
           ]
         },
-        "sttModels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/sttModel"
-          }
-        },
-        "ttsModels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ttsModel"
-          }
-        },
         "sessions": {
           "type": "boolean",
           "description": "Whether this runtime's streaming socket understands session ids and take-over. Absent means no."
         },
         "defaultModel": {
           "type": "string",
-          "description": "The STT model a request naming none loads into an empty slot. Must name an sttModels entry that needs no parameter."
+          "description": "The STT model a request naming none loads into an empty slot. Must name a served model that needs no parameter."
         },
         "idleUnloadMs": {
           "type": "integer",
           "description": "How long an STT runtime's model may go without work before it is unloaded. Absent or not positive means 30 minutes."
-        }
-      },
-      "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "sttModels"
-          ],
-          "properties": {
-            "sttModels": {
-              "type": "array",
-              "minItems": 1
-            }
-          }
         },
-        {
-          "type": "object",
-          "required": [
-            "ttsModels"
-          ],
-          "properties": {
-            "ttsModels": {
-              "type": "array",
-              "minItems": 1
-            }
+        "serves": {
+          "type": "array",
+          "description": "The models this runtime runs.",
+          "items": {
+            "$ref": "#/$defs/serving"
           }
         }
-      ]
+      }
     },
     "assembledProvider": {
       "type": "object",
+      "description": "A provider as the assembler serves it: its node's host and reachability, its name from the service entry, and what it serves.",
       "required": [
         "serviceId",
         "hostId",
         "reachable",
-        "name"
+        "name",
+        "responseFormat",
+        "serves"
       ],
       "additionalProperties": false,
       "properties": {
@@ -294,46 +395,46 @@
           "minLength": 1
         },
         "reachable": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether the provider's host is answering; false means this is its last known roster."
         },
         "name": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "From the service entry, falling back to the service id."
         },
-        "sttModels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/sttModel"
-          }
+        "responseFormat": {
+          "enum": [
+            "mp3",
+            "aac",
+            "wav"
+          ],
+          "description": "The audio format this runtime returns from /v1/audio/speech. mp3 where the roster declares none."
         },
-        "ttsModels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ttsModel"
-          }
+        "resolvesVoices": {
+          "type": "boolean",
+          "description": "Whether this runtime resolves voices itself rather than having the shard do it."
         },
         "sessions": {
           "type": "boolean",
           "description": "Whether this runtime's streaming socket understands session ids and take-over. Absent means no."
         },
-        "defaultModel": {
-          "type": "string",
-          "description": "The STT model a request naming none loads into an empty slot. Must name an sttModels entry that needs no parameter."
-        },
-        "idleUnloadMs": {
-          "type": "integer",
-          "description": "How long an STT runtime's model may go without work before it is unloaded. Absent or not positive means 30 minutes."
+        "serves": {
+          "type": "array",
+          "description": "The models this runtime runs, less any left out as collisions.",
+          "items": {
+            "$ref": "#/$defs/serving"
+          }
         }
       }
     },
     "sttModel": {
       "type": "object",
-      "description": "An ASR model: an identity, what it is capable of, and what it accepts. It does not name a Swift class, a loader or a directory — which class serves a request is the server's business, and a roster naming one would describe the runtime rather than the model.",
+      "description": "An ASR model: an identity, what it is capable of, and what it accepts. It names no Swift class, loader or directory.",
       "required": [
         "id",
         "name",
-        "kind",
-        "key"
+        "kind"
       ],
       "additionalProperties": false,
       "properties": {
@@ -346,18 +447,13 @@
           "type": "string",
           "minLength": 1
         },
-        "key": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The identifier this provider's runtime uses to reach the model. What files it resolves to, in which cache root, is the runtime's business."
-        },
         "kind": {
           "enum": [
             "batch",
             "streaming",
             "both"
           ],
-          "description": "What the model can do. A model reporting `both` must be asked to load with an explicit mode: loading it without one is refused rather than defaulted, so a caller does not discover the wrong choice as unexplained latency."
+          "description": "What the model can do. A model reporting `both` must be asked to load with an explicit mode."
         },
         "params": {
           "type": "array",
@@ -365,7 +461,7 @@
           "items": {
             "$ref": "#/$defs/modelParam"
           },
-          "description": "What a load of this model accepts, each with the values it may take. A parameter selects weights only where a variant maps it; the server refuses one its manager cannot use."
+          "description": "What a load of this model accepts, each with the values it may take. A parameter selects weights only where a variant maps it."
         },
         "variants": {
           "type": "array",
@@ -373,7 +469,7 @@
           "items": {
             "$ref": "#/$defs/modelVariant"
           },
-          "description": "The distinct sets of weights under this id. Absent, the model has one implicit variant. Each names the parameter values that select it — the whole of the coupling between parameters and variants, held as data so the server never knows per model which parameters change weights."
+          "description": "The distinct sets of weights under this id. Absent, the model has one implicit variant. Each names the parameter values that select it."
         }
       }
     },
@@ -438,16 +534,17 @@
     },
     "ttsModel": {
       "type": "object",
+      "description": "A synthesis model: this set of weights, whichever runtime serves it.",
       "required": [
         "id",
-        "name",
-        "key"
+        "name"
       ],
       "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "The platform's identity for this model, used by selections and renderings."
         },
         "name": {
           "type": "string",
@@ -456,31 +553,9 @@
         "cloning": {
           "$ref": "#/$defs/cloning"
         },
-        "presetVoices": {
-          "type": "array",
-          "description": "Voice identifiers baked into this model that no voice entry claims. A preset a voice does claim is declared there instead, via a models[] entry whose key names it — that is what lets one person exist as a preset on one model and a clone on another.",
-          "items": {
-            "type": "object",
-            "required": [
-              "id",
-              "name"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "name": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        },
         "chunkProfile": {
           "type": "object",
-          "description": "The model's own chunker constraint, not a preference. A voice rendered under a second model must use that model's profile, or one model's constraint silently shapes another's output.",
+          "description": "The model's own chunker constraint for the generation pipeline, not a preference.",
           "required": [
             "words",
             "chars"
@@ -497,40 +572,49 @@
             }
           }
         },
-        "requestParams": {
+        "chunking": {
           "type": "object",
-          "description": "Model-specific synthesis parameters passed through to the service.",
-          "additionalProperties": true
-        },
-        "key": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The identifier this provider's runtime uses to reach the model. `pocket-tts` under the FluidAudio server and `mlx-community/pocket-tts` under mlx-audio are one model reached by two runtimes that address it differently."
+          "description": "How the realtime voice loop splits text for this model.",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "two-chunk",
+                "paragraph",
+                "sentence",
+                "greedy"
+              ]
+            },
+            "minWords": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxWords": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         }
       }
     },
     "cloning": {
       "type": "object",
-      "description": "What this model DEMANDS of a recording. Whether a given model can use a given recording is arithmetic over this and a voiceReference, computed at load — never written down per voice, because a written mapping means editing every voice when a model is added, and missing one fails silently. Absent means the model cannot clone.",
-      "required": [
-        "available"
-      ],
+      "description": "What this model demands of a recording; whether a recording satisfies it is computed at load. Absent means the model cannot clone.",
       "additionalProperties": false,
       "properties": {
-        "available": {
-          "type": "boolean"
-        },
         "requiresText": {
           "type": "boolean",
-          "description": "The model needs a transcript alongside the audio."
+          "description": "The model is sent the transcript alongside the audio."
         },
         "minDurationS": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "description": "Shortest accepted recording, inclusive."
         },
         "maxDurationS": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "description": "Longest accepted recording, inclusive."
         },
         "sampleRate": {
           "type": "integer",
@@ -541,11 +625,11 @@
     },
     "voice": {
       "type": "object",
-      "description": "A conceptual identity: a person, with a name. Not a property of any model, because several may render her, and not a recording, because there may be several.",
+      "description": "A person with a name, independent of any model. A voice is offered on a model when she has a rendering on it.",
       "required": [
         "id",
         "name",
-        "models"
+        "renderings"
       ],
       "additionalProperties": false,
       "properties": {
@@ -557,75 +641,19 @@
           "type": "string",
           "minLength": 1
         },
-        "references": {
+        "recordings": {
           "type": "array",
-          "description": "The recordings this voice was built from. Several, because models differ in what they accept and one voice may have a ten-second cut with a transcript and a five-second one without. Which to use when more than one qualifies is the consumer's decision, not the roster's. A voice with a clone entry must have at least one reference satisfying that model's cloning requirements.",
+          "description": "Audio of this voice that models clone her from. Declared order is the preference.",
           "items": {
-            "$ref": "#/$defs/voiceReference"
+            "$ref": "#/$defs/recording"
           }
         },
-        "models": {
+        "renderings": {
           "type": "array",
-          "minItems": 1,
+          "description": "The models that produce this voice, and how. Declared order is the preference.",
           "items": {
-            "$ref": "#/$defs/voiceModel"
+            "$ref": "#/$defs/rendering"
           }
-        }
-      }
-    },
-    "voiceReference": {
-      "type": "object",
-      "description": "What a recording IS — facts about the file, true regardless of which model reads it. Declared rather than probed: voices change rarely, and a filesystem read on every load buys protection against an edit that almost never happens, while a stale duration produces audio that sounds wrong, which is loud enough at this frequency.",
-      "required": [
-        "audio",
-        "durationS",
-        "sampleRate"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "audio": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Absolute path, on the node that declares it."
-        },
-        "text": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Absolute path to the transcript, where one exists."
-        },
-        "durationS": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "sampleRate": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
-    },
-    "voiceModel": {
-      "type": "object",
-      "description": "How one model reaches one voice. A model may have her baked in or clone her from a recording, and the same voice can be available both ways — a preset on one model and a cloning reference on another, the same person rendered differently. One shape for both, or that case cannot be represented at all.",
-      "required": [
-        "serviceId",
-        "model",
-        "key"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "serviceId": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The provider serving this model. Present because the same model id can appear under two providers, making a model reference a service-and-model pair rather than an id alone."
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1
-        },
-        "key": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The model's own identifier for this voice, or \"clone\" to render her from one of the voice's references."
         }
       }
     },
@@ -837,6 +865,136 @@
               "description": "Seconds of speech still to play for a barge-in to count as interrupting something, rather than landing on audio that was ending anyway."
             }
           }
+        }
+      }
+    },
+    "serving": {
+      "type": "object",
+      "description": "One model run by one runtime, with the facts true of this runtime rather than of the weights.",
+      "required": [
+        "model",
+        "key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of a declared model of this provider's capability."
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this runtime calls the model; the same model has a different key under a different runtime."
+        },
+        "streaming": {
+          "type": "boolean",
+          "description": "The runtime can stream this model's audio as it renders. Absent means no."
+        },
+        "realtime": {
+          "type": "boolean",
+          "description": "Fast enough for the realtime voice loop. Absent means no."
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Most requests the realtime voice loop sends this model at once."
+        },
+        "requestParams": {
+          "type": "object",
+          "description": "Fields passed verbatim into every synthesis request for this model, in this runtime's vocabulary.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "rendering": {
+      "type": "object",
+      "description": "A voice as produced by one model. A preset carries the model's own key for her; a clone carries none.",
+      "required": [
+        "model",
+        "method"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of a declared synthesis model."
+        },
+        "method": {
+          "enum": [
+            "preset",
+            "clone"
+          ],
+          "description": "`preset`: the model was trained with her. `clone`: the model imitates her from one of her recordings."
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model's own name for the voice. Required for a preset, absent for a clone."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "preset"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "key"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "clone"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "key"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "recording": {
+      "type": "object",
+      "description": "Facts about a recording, declared rather than probed from the file.",
+      "required": [
+        "audio",
+        "text",
+        "durationS",
+        "sampleRate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute path to the audio, on the node that declares it."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute path to the transcript."
+        },
+        "durationS": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sampleRate": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }

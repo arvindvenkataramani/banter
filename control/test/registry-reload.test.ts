@@ -30,7 +30,7 @@ function base(): Doc {
       runner: { type: "process", main: ".venv/bin/server" },
       network: { port: 8001, healthPath: "/health" },
     }],
-    roster: { providers: { "svc-a": { sttModels: [{ id: "m", name: "M", key: "k", kind: "batch" }] } }, voices: [] },
+    roster: { ttsModels: [{ id: "m", name: "M" }], sttModels: [], providers: { "svc-a": { resolvesVoices: false, serves: [{ model: "m", key: "k" }] } }, voices: [] },
     shards: [{ hostId: "gpu-machine", port: 5007 }],
     intervals: { healthMs: 60000 },
   };
@@ -96,7 +96,7 @@ describe("reloadRegistry", () => {
 
   const WARNINGS: [string, (doc: Doc) => void, boolean, Record<string, unknown>[]][] = [
     ["nothing changed", () => {}, true, []],
-    ["a provider's roster section changed", d => { d.roster.providers["svc-a"].sttModels[0].name = "M v2"; }, false, [{ kind: "provider-changed", serviceId: "svc-a" }]],
+    ["a provider's roster section changed", d => { d.roster.providers["svc-a"].serves[0].key = "k2"; }, false, [{ kind: "provider-changed", serviceId: "svc-a" }]],
     ["a running service was removed", d => { d.services = []; d.roster = undefined; }, true, [{ kind: "service-removed", serviceId: "svc-a" }, { kind: "provider-changed", serviceId: "svc-a" }]],
     ["a stopped service was removed", d => { d.services = []; d.roster = undefined; }, false, [{ kind: "provider-changed", serviceId: "svc-a" }]],
     ["the shards list changed", d => { d.shards[0].port = 9999; }, false, [{ kind: "shards-changed" }]],
@@ -109,15 +109,61 @@ describe("reloadRegistry", () => {
     expect(result.warnings).toEqual(expected.map(w => expect.objectContaining(w)));
   });
 
+  describe("when a voice changes", () => {
+    // Two synthesis providers: one handed the registry, which resolves voices
+    // for itself and read them at startup, and one that is not.
+    const VOICE = {
+      id: "nicole",
+      name: "Nicole",
+      recordings: [{ audio: "/refs/nicole.wav", text: "/refs/nicole.txt", durationS: 8, sampleRate: 24000 }],
+      renderings: [{ model: "clones", method: "clone" }],
+    };
+    const serving = (id: string) => ({ resolvesVoices: false, serves: [{ model: id, key: id }] });
+    function withVoices(voices: unknown[]): Doc {
+      const doc = base();
+      const service = (id: string, main: string, port: number) => ({ ...doc.services[0], id, runner: { type: "process", main }, network: { port, healthPath: "/health" } });
+      doc.services = [
+        service("svc-built", "server --registry {registry} --provider svc-built", 8001),
+        service("svc-third-party", ".venv/bin/server", 8002),
+      ];
+      doc.roster = {
+        ttsModels: [{ id: "clones", name: "clones", cloning: { requiresText: false } }, { id: "other", name: "other", cloning: { requiresText: false } }],
+        sttModels: [],
+        providers: { "svc-built": { ...serving("clones"), resolvesVoices: true }, "svc-third-party": serving("other") },
+        voices,
+      };
+      return doc;
+    }
+
+    it("names only the server that reads the registry as needing a restart", async () => {
+      await writeFile(registryPath, JSON.stringify(withVoices([VOICE])));
+      const live = await loadRegistry(registryPath);
+      const edited = { ...VOICE, recordings: [{ ...VOICE.recordings[0], audio: "/refs/nicole-v2.wav" }] };
+      await writeFile(registryPath, JSON.stringify(withVoices([edited])));
+
+      const result = await reloadRegistry(registryPath, live, () => false);
+      if (!result.ok) throw new Error(result.error);
+      expect(result.warnings).toEqual([expect.objectContaining({ kind: "provider-changed", serviceId: "svc-built" })]);
+    });
+
+    it("names nothing when the voices are as they were", async () => {
+      await writeFile(registryPath, JSON.stringify(withVoices([VOICE])));
+      const live = await loadRegistry(registryPath);
+      const result = await reloadRegistry(registryPath, live, () => false);
+      if (!result.ok) throw new Error(result.error);
+      expect(result.warnings).toEqual([]);
+    });
+  });
+
   it("applies the roster at once, and leaves shards and intervals for a restart", async () => {
     const live = await liveThenEdit(d => {
-      d.roster.providers["svc-a"].sttModels[0].name = "M v2";
+      d.roster.providers["svc-a"].serves[0].key = "k2";
       d.shards[0].port = 9999;
       d.intervals.healthMs = 30000;
     });
     await reloadRegistry(registryPath, live, () => false);
 
-    expect(live.roster?.providers["svc-a"].sttModels?.[0].name).toBe("M v2");
+    expect(live.roster?.providers["svc-a"].serves[0].key).toBe("k2");
     expect(live.shards?.[0].port).toBe(5007);
     expect(live.intervals).toEqual({ healthMs: 60000 });
   });

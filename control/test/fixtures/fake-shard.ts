@@ -11,7 +11,7 @@ export class FakeShard {
   services: ServiceWithHealth[] = [];
   events: Event[] = [];
   /** A roster to serve, or a reply in its place (a 404 from a shard older than the route, a malformed body). */
-  roster: NodeRoster | Reply = { providers: {}, voices: [] };
+  roster: NodeRoster | Reply = { ttsModels: [], sttModels: [], providers: {}, voices: [] };
   requests: { method: string; path: string; body: string }[] = [];
   private replies = new Map<string, Reply>();
   private server: ReturnType<typeof Bun.serve>;

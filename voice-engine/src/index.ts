@@ -1,5 +1,5 @@
-export type { TtsVoice, TtsModel, TtsModelChunking, TtsProvider, SttOption, VoiceSelection, StoredVoiceSelection, AudioFormat, VoiceConfig, ChunkStrategy } from './voice-config'
-export { fetchVoiceConfig, loadVoiceSelection, resolveVoiceSelection } from './voice-config'
+export type { TtsVoice, TtsModel, TtsModelChunking, TtsProvider, TtsServing, SttOption, VoiceSelection, StoredVoiceSelection, AudioFormat, VoiceConfig, ChunkStrategy } from './voice-config'
+export { fetchVoiceConfig, loadVoiceSelection } from './voice-config'
 export type {
   SettingsScope, FieldOrigin, ModelPref, ModelPrefs, SettingDraft, ResolvedField,
 } from './model-settings'

@@ -62,8 +62,7 @@ describe('PlaybackEngine — held chunks', () => {
     engine.enqueueChat({
       endpoint: 'http://localhost:1234',
       text: 'hello',
-      modelId: 'm1',
-      voiceId: 'v1',
+      request: { model: 'm1', voice: 'v1' },
       format: 'mp3',
       speed: 1.0,
     })
@@ -86,7 +85,7 @@ describe('PlaybackEngine — held chunks', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    await engine.enqueueChat({ endpoint: '', text: 'a', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'a', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
 
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -94,7 +93,7 @@ describe('PlaybackEngine — held chunks', () => {
   it('releases what was parked once a later enqueue finds play, in the order they were held', async () => {
     const engine = new PlaybackEngine()
     setNewAudio('park')
-    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
     expect(lastAgentReport()?.supply.pending).toBe(1)
 
     setNewAudio('play')
@@ -104,7 +103,7 @@ describe('PlaybackEngine — held chunks', () => {
     // an initialised element, so both dispatches reject the same way — the
     // held chunk first, in the order it was parked, ahead of the chunk
     // that arrives already finding play.
-    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
 
     await expect(p1).rejects.toThrow('init()')
     await expect(p2).rejects.toThrow('init()')
@@ -114,8 +113,8 @@ describe('PlaybackEngine — held chunks', () => {
     const engine = new PlaybackEngine()
     setNewAudio('park')
 
-    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
-    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
     expect(lastAgentReport()?.supply.pending).toBe(2)
 
     engine.cancel()
@@ -226,7 +225,7 @@ describe('PlaybackEngine — the element survives a reset', () => {
     // turn open on the floor — reasserted before each enqueue, the way a
     // real conversation report holding the floor open would keep it stable
     // for the run's whole duration.
-    const req = { endpoint: 'http://localhost:1234', modelId: 'm1', voiceId: 'v1', format: 'mp3' as const, speed: 1.0 }
+    const req = { endpoint: 'http://localhost:1234', request: { model: 'm1', voice: 'v1' }, format: 'mp3' as const, speed: 1.0 }
     setNewAudio('play')
     await engine.enqueueChat({ ...req, text: 'first' })
     setNewAudio('play')
@@ -244,9 +243,10 @@ describe('PlaybackEngine — the element survives a reset', () => {
     ).toBeGreaterThan(playCount)
   })
 
-  // The bytes are decoded as the runtime's format, so the request asks for
-  // that format whatever a model's params say.
-  it("requests the runtime's audio format, over any params naming another", async () => {
+  // The speech request is what the control plane served as `selection.request`,
+  // sent as it came: no key, recording or voice is looked up here. The bytes are
+  // decoded as the runtime's format, so that one field is the engine's own.
+  it("sends the served request as it came, adds only the text and the runtime's audio format, and asks for that format over any the request names", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       blob: () => Promise.resolve(new Blob([new Uint8Array([1])])),
@@ -258,14 +258,19 @@ describe('PlaybackEngine — the element survives a reset', () => {
     engine.init()
     engine.beginRun('r-aac')
     setNewAudio('play')
-    await engine.enqueueChat({
-      endpoint: 'http://localhost:1234', text: 'hi', modelId: 'm', voiceId: 'v',
-      format: 'aac', speed: 1, params: { response_format: 'mp3', streaming_interval: 0.5 },
-    })
+    const request = { model: 'mlx-community/pocket-tts', ref_audio: '/refs/priya.wav', ref_text: 'spoken words', streaming_interval: 0.5, response_format: 'mp3' }
+    await engine.enqueueChat({ endpoint: 'http://localhost:1234', text: 'hi', format: 'aac', speed: 1, request })
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.response_format).toBe('aac')
-    expect(body.streaming_interval).toBe(0.5)
+    expect(body).toMatchObject({
+      model: 'mlx-community/pocket-tts',
+      ref_audio: '/refs/priya.wav',
+      ref_text: 'spoken words',
+      streaming_interval: 0.5,
+      input: 'hi',
+      response_format: 'aac',
+    })
+    expect(body.voice).toBeUndefined()
     engine.cancel()
   })
 })
@@ -358,7 +363,7 @@ describe('PlaybackEngine — reconcile and the agent report', () => {
     engine.init()
     engine.beginRun('run-a')
     setNewAudio('play')
-    await engine.enqueueChat({ endpoint: '', text: 'hi', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'hi', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
     await Promise.resolve()
     // Blob's own "played out": the queued slot has to actually reach the
     // element (playNext() sets audio.src) before the element reports it
@@ -378,7 +383,7 @@ describe('PlaybackEngine — reconcile and the agent report', () => {
     expect(currentAgentUtterance()).toMatchObject({ id: 'run-a', phase: 'ended', outcome: 'completed' })
 
     setNewAudio('play')
-    await engine.enqueueChat({ endpoint: '', text: 'hi again', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'hi again', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
     expect(currentAgentUtterance()).toMatchObject({ id: 'run-b' })
   })
 
@@ -396,7 +401,7 @@ describe('PlaybackEngine — reconcile and the agent report', () => {
     engine.init()
     engine.beginRun('run-a')
     setNewAudio('play')
-    await engine.enqueueChat({ endpoint: '', text: 'hi', modelId: 'm', voiceId: 'v', format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'hi', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
     await Promise.resolve()
 
     const supersededSnapshot = makeSnapshot({

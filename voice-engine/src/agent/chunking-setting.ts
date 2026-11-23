@@ -43,9 +43,8 @@ export const CHUNKING: SettingDescriptor<ChunkingField, ChunkingValue> = {
     minWords: config?.tts.options?.minChunkWords,
     maxWords: config?.tts.options?.maxChunkWords,
   }),
-  modelDefaults: (config, serviceId, modelId) =>
-    config?.tts.providers.find(p => p.serviceId === serviceId)
-      ?.models.find(m => m.id === modelId)?.chunking ?? {},
+  modelDefaults: (config, _serviceId, modelId) =>
+    config?.tts.models.find(m => m.id === modelId)?.chunking ?? {},
   patchKeys: { mode: 'chunkStrategy', minWords: 'minChunkWords', maxWords: 'maxChunkWords' },
 }
 
@@ -79,14 +78,14 @@ export function resolveChunkingFor(
   }
   const draft = chunkingLayersFor(config, selection.serviceId, selection.model)
   const fields = resolveChunkingFields(draft)
-  const model = config?.tts.providers
+  const serving = config?.tts.providers
     .find(p => p.serviceId === selection.serviceId)
-    ?.models.find(m => m.id === selection.model)
+    ?.serves.find(s => s.model === selection.model)
   return {
     strategy: fields.mode.value ?? DEFAULT_CHUNK_STRATEGY,
     minWords: fields.minWords.value,
     maxWords: fields.maxWords.value,
-    concurrency: model?.concurrency,
+    concurrency: serving?.concurrency,
   }
 }
 

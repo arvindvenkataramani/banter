@@ -9,26 +9,20 @@ import Foundation
 /// was fetched, which is how nine ids came to be offered for four sets of
 /// weights.
 ///
-/// Contract: `schemas/platform.schema.json#/$defs/ttsModel`. Design record:
+/// Contract: `schemas/platform.schema.json#/$defs/nodeRoster`. Design record:
 /// `docs/reference/design/model-roster.md`.
 
-/// One model as the roster declares it.
+/// One synthesis model as the roster declares it, whichever runtime serves it.
 struct TtsRosterEntry: Sendable, Codable {
     /// The platform's identity for this model — what a selection names.
     let id: String
     let name: String
-    /// The identifier this runtime reaches the model by. `pocket-tts` here and
-    /// `mlx-community/pocket-tts` under mlx-audio are one model addressed by
-    /// two runtimes; what files a key resolves to is the runtime's business.
-    let key: String
     /// What cloning demands of a recording, where the model can clone at all.
-    /// Absent means it cannot, and a voice asking to clone under it is refused.
+    /// Absent means it cannot.
     let cloning: TtsCloning?
     /// The model's own chunker constraint. Carried so a caller can respect it
     /// rather than discover it as degraded audio.
     let chunkProfile: TtsChunkProfile?
-    /// Voices this model knows by name, needing no reference recording.
-    let presetVoices: [TtsPresetVoice]?
 }
 
 struct TtsChunkProfile: Sendable, Codable {
@@ -36,32 +30,76 @@ struct TtsChunkProfile: Sendable, Codable {
     let chars: Int
 }
 
-struct TtsPresetVoice: Sendable, Codable {
-    let id: String
-    let name: String
+/// One model this runtime serves. `key` is what this runtime calls it:
+/// `pocket-tts` here and `mlx-community/pocket-tts` under mlx-audio are one
+/// model addressed by two runtimes.
+struct TtsServing: Sendable, Codable {
+    let model: String
+    let key: String
 }
 
-/// What a model demands of a cloning reference. Whether a given recording
-/// satisfies it is arithmetic the shard does at load — this server only states
-/// the requirement and enforces that a request carries what it asked for.
+/// What a model demands of a cloning recording.
 struct TtsCloning: Sendable, Codable {
-    let available: Bool
     let requiresText: Bool?
     let minDurationS: Double?
     let maxDurationS: Double?
     let sampleRate: Int?
+
+    /// Whether a recording meets these demands, length bounds inclusive. The
+    /// same arithmetic as `satisfies` in `control/shared/src/roster.ts`.
+    func accepts(_ recording: TtsRecording) -> Bool {
+        if requiresText == true && recording.text.isEmpty { return false }
+        if let minDurationS, recording.durationS < minDurationS { return false }
+        if let maxDurationS, recording.durationS > maxDurationS { return false }
+        if let sampleRate, recording.sampleRate != sampleRate { return false }
+        return true
+    }
 }
 
-/// A roster entry the server has checked it can build a driver for.
+/// Audio of a voice that models clone her from.
+struct TtsRecording: Sendable, Codable {
+    let audio: String
+    /// Path to the recording's transcript.
+    let text: String
+    let durationS: Double
+    let sampleRate: Int
+}
+
+/// A voice as produced by one model: a preset (`key` is the model's own name
+/// for her) or a clone from one of her recordings.
+struct TtsRendering: Sendable, Codable {
+    let model: String
+    let method: String
+    let key: String?
+}
+
+/// A person, with a name, her recordings and the models that produce her.
+struct TtsVoice: Sendable, Codable {
+    let id: String
+    let name: String
+    let recordings: [TtsRecording]?
+    let renderings: [TtsRendering]
+}
+
+/// What a driver is given for a voice name under one of this server's models.
+enum ResolvedVoice: Equatable, Sendable {
+    /// The model's own name for a roster voice.
+    case preset(String)
+    /// A recording to clone from. `text` is the path to its transcript, and is
+    /// present only when the model requires one.
+    case clone(audio: String, text: String?)
+}
+
+/// A roster model the server has checked it can build a driver for.
 struct ValidatedTtsModel: Sendable {
     let entry: TtsRosterEntry
+    /// This runtime's key for the model, from its serving.
+    let key: String
 
     var id: String { entry.id }
     var name: String { entry.name }
-    var key: String { entry.key }
     var cloning: TtsCloning? { entry.cloning }
     var chunkProfile: TtsChunkProfile? { entry.chunkProfile }
-    var presetVoices: [TtsPresetVoice] { entry.presetVoices ?? [] }
 
     /// Every synthesis model serves both routes: the file consumer posts and
     /// the voice loop upgrades to the socket, on one port. Reported as a set
@@ -73,7 +111,7 @@ struct ValidatedTtsModel: Sendable {
     /// driver serves a one-shot request and a stream. Every model is `both`.
     var kind: String { "both" }
 
-    var canClone: Bool { entry.cloning?.available ?? false }
+    var canClone: Bool { entry.cloning != nil }
     var requiresRefText: Bool { entry.cloning?.requiresText ?? false }
 
     /// Whether this model's weights are in the cache root its own runtime
@@ -81,7 +119,7 @@ struct ValidatedTtsModel: Sendable {
     /// models live — asking the runtime rather than assuming one root is what
     /// keeps this honest.
     var present: Bool {
-        guard let folder = Self.folder(for: entry.key) else { return false }
+        guard let folder = Self.folder(for: key) else { return false }
         return FileManager.default.fileExists(
             atPath: Self.modelsRoot.appendingPathComponent(folder).path)
     }
@@ -117,6 +155,7 @@ enum TtsRosterError: Error, CustomStringConvertible {
     case empty
     case unknownKey(id: String, key: String)
     case duplicateId(String)
+    case undeclaredModel(String)
 
     var description: String {
         switch self {
@@ -138,6 +177,8 @@ enum TtsRosterError: Error, CustomStringConvertible {
             return "roster model \(id) names key \(key), which this server has no driver for"
         case .duplicateId(let id):
             return "roster names model \(id) twice"
+        case .undeclaredModel(let id):
+            return "roster serves model \(id), which ttsModels does not declare"
         }
     }
 }
@@ -145,6 +186,46 @@ enum TtsRosterError: Error, CustomStringConvertible {
 /// The roster this server was handed, checked.
 struct TtsRoster: Sendable {
     let models: [ValidatedTtsModel]
+    /// Every voice the node's roster declares, whichever provider offers her.
+    let voices: [TtsVoice]
+    /// This server's own provider id.
+    let provider: String
+
+    init(models: [ValidatedTtsModel], voices: [TtsVoice] = [], provider: String = "") {
+        self.models = models
+        self.voices = voices
+        self.provider = provider
+    }
+
+    /// Resolves a voice name for one of this server's models, by the rule in
+    /// `docs/reference/design/model-roster.md`. Its TypeScript twin is `resolveVoiceForModel` in
+    /// `control/shared/src/roster.ts`; `schemas/voice-resolution-cases.json`
+    /// holds the cases both are tested against. A name that is not a declared
+    /// voice with a rendering on the model is refused.
+    func resolve(voice name: String, model id: String) throws -> ResolvedVoice {
+        guard model(id: id) != nil,
+            let voice = voices.first(where: { $0.id == name }),
+            let rendering = voice.renderings.first(where: { $0.model == id })
+        else {
+            throw TtsError.voiceNotOffered(voice: name, model: id)
+        }
+        if rendering.method == "preset", let key = rendering.key { return .preset(key) }
+
+        guard let cloning = model(id: id)?.cloning,
+            let recording = (voice.recordings ?? []).first(where: { cloning.accepts($0) })
+        else {
+            throw TtsError.noUsableReference(voice: name, model: id)
+        }
+        return .clone(
+            audio: recording.audio, text: cloning.requiresText == true ? recording.text : nil)
+    }
+
+    /// The voices with a preset rendering on a model, for the model listing.
+    func presetVoices(on id: String) -> [TtsVoice] {
+        voices.filter { voice in
+            voice.renderings.contains { $0.model == id && $0.method == "preset" }
+        }
+    }
 
     func model(id: String) -> ValidatedTtsModel? {
         models.first { $0.id == id }
@@ -161,20 +242,27 @@ struct TtsRoster: Sendable {
         models.first { $0.key == key }?.id
     }
 
-    static func validate(_ entries: [TtsRosterEntry]) throws -> TtsRoster {
-        guard !entries.isEmpty else { throw TtsRosterError.empty }
+    /// The models this provider serves, each by its serving's key.
+    static func validate(
+        models: [TtsRosterEntry], serves: [TtsServing], voices: [TtsVoice] = [],
+        provider: String = ""
+    ) throws -> TtsRoster {
+        guard !serves.isEmpty else { throw TtsRosterError.empty }
         var seen = Set<String>()
         var validated: [ValidatedTtsModel] = []
-        for entry in entries {
+        for serving in serves {
+            guard let entry = models.first(where: { $0.id == serving.model }) else {
+                throw TtsRosterError.undeclaredModel(serving.model)
+            }
             guard seen.insert(entry.id).inserted else {
                 throw TtsRosterError.duplicateId(entry.id)
             }
-            guard driverKeys.contains(entry.key) else {
-                throw TtsRosterError.unknownKey(id: entry.id, key: entry.key)
+            guard driverKeys.contains(serving.key) else {
+                throw TtsRosterError.unknownKey(id: entry.id, key: serving.key)
             }
-            validated.append(ValidatedTtsModel(entry: entry))
+            validated.append(ValidatedTtsModel(entry: entry, key: serving.key))
         }
-        return TtsRoster(models: validated)
+        return TtsRoster(models: validated, voices: voices, provider: provider)
     }
 
     /// Read this server's models from the roster section of the node's
@@ -200,19 +288,24 @@ struct TtsRoster: Sendable {
         guard let entry = roster.providers[provider] else {
             throw TtsRosterError.noSuchProvider(id: provider, path: file.path)
         }
-        return try validate(entry.ttsModels ?? [])
+        return try validate(
+            models: roster.ttsModels ?? [], serves: entry.serves ?? [],
+            voices: roster.voices ?? [], provider: provider)
     }
 }
 
-/// Just enough of the node's registry to find this server's own models.
+/// Just enough of the node's registry to find this server's own servings, the
+/// models they name and the voices those render.
 private struct TtsNodeRegistry: Decodable {
     let roster: TtsNodeRoster?
 }
 
 private struct TtsNodeRoster: Decodable {
+    let ttsModels: [TtsRosterEntry]?
     let providers: [String: TtsProviderEntry]
+    let voices: [TtsVoice]?
 }
 
 private struct TtsProviderEntry: Decodable {
-    let ttsModels: [TtsRosterEntry]?
+    let serves: [TtsServing]?
 }

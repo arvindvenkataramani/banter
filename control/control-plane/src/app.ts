@@ -2,9 +2,10 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { loadRegistry } from "../../shared/src/registry";
 import { emptyRoster } from "../../shared/src/roster";
+import { buildSpeechRequest } from "../../shared/src/speech-request";
 import { createApp } from "../../shared/src/api";
 import { startShardPollLoop } from "./shard-poller";
-import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardInfo, proxyShardPing, fetchShardService, reloadShard } from "./shard-client";
+import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardInfo, proxyShardPing, fetchShardService, reloadShard, resolveVoiceOnShard } from "./shard-client";
 import { registerGatewayConfig, registerVoiceConfig, registerVoiceDebug, registerConfigReload } from "./gateway-config";
 import { assembleRoster, type AssembledRoster } from "./roster-assembly";
 import * as cpRoutes from "./routes";
@@ -100,6 +101,25 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       })),
       nameFor,
     });
+  }
+
+  // A selection is resolved on its runtime's host: by the shard there, or here,
+  // from this node's own roster, when the runtime runs on the control plane's host.
+  async function resolveSelection(selection: { voice: string; model: string; serviceId: string }) {
+    // The runtime's host comes from the roster, or from the service entries when
+    // the roster is unknown (a shard not polled yet). The poller's cached
+    // reachability is not consulted: it can be a poll interval stale, so the shard is asked.
+    const hostId =
+      buildAssembly().providers.find((p) => p.serviceId === selection.serviceId)?.hostId ??
+      [...registry.services, ...allShardServices()].find((s) => s.id === selection.serviceId)?.hostId;
+    if (!hostId) return { ok: false as const, error: `no runtime "${selection.serviceId}" is known` };
+    if (hostId === controlHostId) {
+      const built = buildSpeechRequest(registry.roster ?? emptyRoster(), selection.serviceId, selection.model, selection.voice);
+      return built.ok ? { ok: true as const, request: built.request as Record<string, unknown> } : { ok: false as const, error: built.error };
+    }
+    const endpoint = shardEndpointFor(hostId);
+    if (!endpoint) return { ok: false as const, error: `no shard on host "${hostId}" to resolve for "${selection.serviceId}"` };
+    return resolveVoiceOnShard(endpoint, selection, 3_000);
   }
 
   // Host ids never successfully polled — a roster the assembler could not
@@ -342,6 +362,7 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       () => [...registry.services, ...allShardServices()],
       buildAssembly,
       neverPolledHosts,
+      resolveSelection,
     )
     registerConfigReload(app, {
       config,

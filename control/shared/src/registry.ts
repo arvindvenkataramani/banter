@@ -4,7 +4,7 @@ import { withFileLock, writeFileAtomic, writeFileAtomicUnlocked } from "./atomic
 import { syncDocument } from "./live-config/sync";
 import { registrySpec } from "./live-config/schemas";
 import { validateRoster, emptyRoster } from "./roster";
-import type { Registry, Service, ReloadWarning, Provider } from "../../../shared/types";
+import type { Registry, Service, ReloadWarning, Provider, NodeRoster } from "../../../shared/types";
 
 // ── Patch allowlists ──────────────────────────────────────────────────────────
 
@@ -526,6 +526,28 @@ export async function reloadRegistry(
       }
     }
 
+    // A server handed the registry reads the models and voices at startup too.
+    // The shard and the control plane resolve from `live`, so a change reaches
+    // them with this reload; a handed-the-registry server needs a restart.
+    const modelsById = (roster: NodeRoster) => new Map([...(roster.ttsModels ?? []), ...(roster.sttModels ?? [])].map(m => [m.id, JSON.stringify(m)]));
+    const liveModels = modelsById(liveRoster);
+    const freshModels = modelsById(freshRoster);
+    const changedModels = new Set([...liveModels.keys(), ...freshModels.keys()].filter(id => liveModels.get(id) !== freshModels.get(id)));
+    const voicesChanged = JSON.stringify(liveRoster.voices) !== JSON.stringify(freshRoster.voices);
+    for (const svc of fresh.services) {
+      const runner = svc.runner as { main?: string } | undefined;
+      if (!runner?.main?.includes("{registry}")) continue;
+      const servesChanged = [liveRoster, freshRoster].some(r => r.providers[svc.id]?.serves.some(s => changedModels.has(s.model)));
+      const voicesReachIt = voicesChanged && svc.capabilityId === "tts" && freshRoster.providers[svc.id] !== undefined;
+      if (!servesChanged && !voicesReachIt) continue;
+      if (warnings.some(w => w.kind === "provider-changed" && w.serviceId === svc.id)) continue;
+      warnings.push({
+        kind: "provider-changed",
+        serviceId: svc.id,
+        message: `the roster's ${servesChanged ? "models" : "voices"} changed — restart "${svc.id}" to pick up the edit`,
+      });
+    }
+
     // The shard poller builds its cache at startup; a changed list is only
     // reported, never applied — live.shards is not touched below.
     if (shardsChanged(live.shards, fresh.shards)) {
@@ -560,6 +582,8 @@ export async function reloadRegistry(
     for (const key of Object.keys(live.roster.providers)) delete live.roster.providers[key];
     Object.assign(live.roster.providers, freshRoster.providers as Record<string, Provider>);
     live.roster.voices.splice(0, live.roster.voices.length, ...freshRoster.voices);
+    live.roster.ttsModels = freshRoster.ttsModels;
+    live.roster.sttModels = freshRoster.sttModels;
 
     live.version = fresh.version;
     live.type = fresh.type;

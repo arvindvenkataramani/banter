@@ -1,57 +1,50 @@
 import { describe, it, expect } from 'vitest'
-import { resolveVoiceSelection, type VoiceConfig } from './voice-config'
+import { loadVoiceSelection, type VoiceConfig } from './voice-config'
 
-const CONFIG: VoiceConfig = {
-  tts: {
-    providers: [
-      {
-        serviceId: 'tts-mlx-audio',
-        responseFormat: 'mp3',
-        models: [
-          {
-            id: 'kokoro-82m',
-            key: 'prince-canuma/Kokoro-82M',
-            voices: [{ id: 'priya', name: 'Priya', key: 'bf_priya' }],
-          },
-          {
-            id: 'pocket-tts-mlx',
-            key: 'mlx-community/pocket-tts',
-            requestParams: { streaming_interval: 0.5 },
-            voices: [{ id: 'priya', name: 'Priya', key: 'priya', ref_audio: '/refs/priya.wav' }],
-          },
-        ],
-      },
-      {
-        serviceId: 'fluid-tts',
-        responseFormat: 'aac',
-        models: [{ id: 'pocket-tts', key: 'pocket-tts', voices: [] }],
-      },
-    ],
-  },
+// The engine takes the selection as GET /api/voice serves it. `selection.request`
+// is the shard's resolution, which goes into the speech request unchanged; the
+// engine looks up no key, recording or voice (docs/reference/design/model-roster.md,
+// "Reaching a resolution"). Assumed: `tts.providers[].serves`, `selection.serviceId`,
+// `selection.request`, `selection.requestError`, and `loadVoiceSelection(config)`
+// returning a selection whose `request` is the served one, or null with no request.
+
+const SERVED_REQUEST = {
+  model: 'mlx-community/pocket-tts',
+  ref_audio: '/refs/priya.wav',
+  streaming_interval: 4,
 }
 
-describe('resolveVoiceSelection: roster ids in, runtime keys out', () => {
-  it('sends the model and voice by their runtime keys', () => {
-    const sel = resolveVoiceSelection(CONFIG, { serviceId: 'tts-mlx-audio', model: 'kokoro-82m', voice: 'priya', speed: 1 })
-    expect(sel.modelKey).toBe('prince-canuma/Kokoro-82M')
-    expect(sel.voiceKey).toBe('bf_priya')
-    expect(sel.model).toBe('kokoro-82m')
-    expect(sel.params).toBeUndefined()
-  })
+// The lists carry nothing that could produce SERVED_REQUEST, so anything the
+// engine put in it beyond what was served would have to have been looked up.
+const config = (selection: Record<string, unknown>): VoiceConfig => ({
+  tts: {
+    models: [],
+    voices: [],
+    providers: [
+      { serviceId: 'tts-mlx-audio', responseFormat: 'mp3', serves: [] },
+      { serviceId: 'fluid-tts', responseFormat: 'aac', serves: [] },
+    ],
+    selection: selection as unknown as VoiceConfig['tts']['selection'],
+  },
+})
 
-  it("carries the model's request params and a cloned voice's recording, never her key", () => {
-    const sel = resolveVoiceSelection(CONFIG, { serviceId: 'tts-mlx-audio', model: 'pocket-tts-mlx', voice: 'priya', speed: 1 })
-    expect(sel.params).toEqual({ streaming_interval: 0.5, ref_audio: '/refs/priya.wav' })
+describe('loadVoiceSelection: the served selection in, a speech request out', () => {
+  it('carries the served request exactly, and looks nothing up', () => {
+    const sel = loadVoiceSelection(config({ voice: 'priya', model: 'pocket-tts', serviceId: 'tts-mlx-audio', speed: 1, request: SERVED_REQUEST }))
+    expect(sel?.request).toEqual(SERVED_REQUEST)
+    expect(sel?.voice).toBe('priya')
+    expect(sel?.model).toBe('pocket-tts')
+    expect(sel?.serviceId).toBe('tts-mlx-audio')
   })
 
   it("takes the selected runtime's audio format", () => {
-    expect(resolveVoiceSelection(CONFIG, { serviceId: 'tts-mlx-audio', model: 'kokoro-82m', voice: 'priya', speed: 1 }).responseFormat).toBe('mp3')
-    expect(resolveVoiceSelection(CONFIG, { serviceId: 'fluid-tts', model: 'pocket-tts', voice: 'priya', speed: 1 }).responseFormat).toBe('aac')
+    const base = { voice: 'priya', model: 'pocket-tts', speed: 1, request: SERVED_REQUEST }
+    expect(loadVoiceSelection(config({ ...base, serviceId: 'tts-mlx-audio' }))?.responseFormat).toBe('mp3')
+    expect(loadVoiceSelection(config({ ...base, serviceId: 'fluid-tts' }))?.responseFormat).toBe('aac')
   })
 
-  it('sends an id the roster no longer offers as itself', () => {
-    const sel = resolveVoiceSelection(CONFIG, { serviceId: 'tts-mlx-audio', model: 'gone', voice: 'nobody', speed: 1 })
-    expect(sel.modelKey).toBe('gone')
-    expect(sel.voiceKey).toBe('nobody')
+  it('has no request to send when the control plane served none, so there is nothing to speak with', () => {
+    const sel = loadVoiceSelection(config({ voice: 'priya', model: 'pocket-tts', serviceId: 'fluid-tts', speed: 1, requestError: 'shard unreachable' }))
+    expect(sel?.request).toBeUndefined()
   })
 })

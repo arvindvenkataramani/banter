@@ -237,10 +237,10 @@ OpenClaw gateway URL and token
 
 ### `GET` /api/voice
 
-Voice configuration (TTS providers, models, voices, options)
+Voice configuration (TTS models, providers, voices, selection, options)
 
 **Responses:**
-- **200** — Voice configuration object
+- **200** — Voice configuration object; `tts.selection.request` is the shard's resolution of the stored selection → [VoiceConfig](#voiceconfig)
 - **503** — Voice not configured → [Error](#error)
 
 ---
@@ -283,7 +283,8 @@ Update the voice selection and tuning
 **Request body:** → [VoiceSelectionPatch](#voiceselectionpatch)
 
 **Responses:**
-- **200** — Updated voice configuration object
+- **200** — Updated voice configuration object; `tts.selection.request` is the shard's resolution of the new selection
+  - `tts`: object
 - **400** — Invalid JSON body, or the patch failed validation → [Error](#error)
 - **500** — Config path not set → [Error](#error)
 - **503** — Voice not configured, or a named serviceId cannot be checked because a shard has never been polled → [Error](#error)
@@ -436,6 +437,32 @@ Extends: [Service](#service)
 | `endpoint` | string | yes |  |
 | `online` | boolean | yes |  |
 | `lastPoll` | number | yes |  |
+
+### VoiceConfig
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tts` | → VoiceTts | yes |  |
+
+### VoiceTts
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `models` | object[] | yes |  |
+| `providers` | object[] | yes |  |
+| `voices` | object[] | yes |  |
+| `selection` | → VoiceSelection | yes |  |
+
+### VoiceSelection
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `serviceId` | string | no |  |
+| `model` | string | no |  |
+| `voice` | string | no |  |
+| `speed` | number | no |  |
+| `request` | object | no | The shard's resolution of this selection: the fields to put into a speech request sent to the runtime unchanged |
+| `requestError` | string | no | Why `request` is absent: the shard refused the selection or could not be reached |
 
 ### VoiceSelectionPatch
 

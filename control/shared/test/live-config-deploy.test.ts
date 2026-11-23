@@ -26,7 +26,7 @@ type Doc = Record<string, any>;
 
 function registry(edit: (doc: Doc) => void = () => {}): Doc {
   const doc: Doc = {
-    version: 3,
+    version: 4,
     type: "control",
     hosts: [{ id: "host1", name: "Host One", hostname: "host1.ts.net", role: "control" }],
     capabilities: [{ id: "cap1", name: "Capability One" }],
@@ -45,7 +45,7 @@ function registry(edit: (doc: Doc) => void = () => {}): Doc {
 }
 
 function config(edit: (doc: Doc) => void = () => {}): Doc {
-  const doc: Doc = { version: 3, timezone: "UTC", voice: { tts: { selection: { voice: "nicole" } } } };
+  const doc: Doc = { version: 4, timezone: "UTC", voice: { tts: { selection: { voice: "nicole" } } } };
   edit(doc);
   return doc;
 }

@@ -24,9 +24,25 @@ public enum AudioEncodingError: Error, CustomStringConvertible, Sendable {
 /// as long as it has existed. WAV is the floor beneath it — anything that
 /// cannot decode AAC can still play WAV, losing the MediaSource path but not
 /// the audio.
+///
+/// PCM is what a client written against OpenAI's speech API asks for when it
+/// wants to play audio as it arrives: 16-bit mono with no header, which by
+/// OpenAI's definition is 24 kHz. Nothing in the bytes says so, and such a
+/// client plays whatever it is sent at that rate, so PCM is delivered at 24 kHz
+/// whatever the model produces.
 public enum AudioFormat: String, Sendable {
     case aac
     case wav
+    case pcm
+
+    /// The only rate headerless PCM is delivered at.
+    public static let pcmSampleRate = 24000
+
+    /// The rate of the audio a caller receives from a model producing `source`.
+    /// A container states its rate and so carries the model's own.
+    public func deliveredSampleRate(source: Int) -> Int {
+        self == .pcm ? Self.pcmSampleRate : source
+    }
 
     /// Returns nil for a format the server cannot produce, so the route can
     /// refuse it. Serving WAV to a caller that asked for something else is
@@ -44,6 +60,7 @@ public enum AudioFormat: String, Sendable {
         switch self {
         case .aac: return "audio/aac"
         case .wav: return "audio/wav"
+        case .pcm: return "audio/pcm;rate=\(Self.pcmSampleRate)"
         }
     }
 }
@@ -64,6 +81,113 @@ public func makeEncoder(format: AudioFormat, sampleRate: Int) throws -> any Stre
     switch format {
     case .wav: return WavStreamEncoder(sampleRate: sampleRate)
     case .aac: return try AacStreamEncoder(sampleRate: sampleRate)
+    case .pcm: return try PcmStreamEncoder(sampleRate: sampleRate)
+    }
+}
+
+/// 16-bit PCM with no header, at `AudioFormat.pcmSampleRate`.
+///
+/// A model already at that rate has its samples written as they are. Any other
+/// is resampled by one converter held for the whole response: a converter per
+/// interval would restart its filter at every seam and click there.
+public final class PcmStreamEncoder: StreamingAudioEncoder {
+    private let converter: AVAudioConverter?
+    private let sourceFormat: AVAudioFormat?
+    private let targetFormat: AVAudioFormat?
+    private let ratio: Double
+
+    public init(sampleRate: Int) throws {
+        guard sampleRate != AudioFormat.pcmSampleRate else {
+            converter = nil
+            sourceFormat = nil
+            targetFormat = nil
+            ratio = 1
+            return
+        }
+        guard
+            let source = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: Double(sampleRate),
+                channels: 1, interleaved: false),
+            let target = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: Double(AudioFormat.pcmSampleRate),
+                channels: 1, interleaved: false),
+            let converter = AVAudioConverter(from: source, to: target)
+        else {
+            throw AudioEncodingError.unsupported(
+                "could not resample \(sampleRate) Hz to \(AudioFormat.pcmSampleRate) Hz")
+        }
+        self.converter = converter
+        sourceFormat = source
+        targetFormat = target
+        ratio = Double(AudioFormat.pcmSampleRate) / Double(sampleRate)
+    }
+
+    public func encode(_ samples: [Float]) throws -> Data {
+        guard converter != nil else { return WavStreamEncoder.pcm(samples) }
+        guard !samples.isEmpty else { return Data() }
+        return WavStreamEncoder.pcm(try resample(samples, ending: false))
+    }
+
+    /// Flushes what the resampler's filter is still holding: without it every
+    /// utterance from a resampled model loses its last few milliseconds.
+    public func finish() throws -> Data {
+        guard converter != nil else { return Data() }
+        return WavStreamEncoder.pcm(try resample([], ending: true))
+    }
+
+    /// Feeds `samples` to the converter and collects everything it yields.
+    ///
+    /// The input block hands the samples over once. After that it reports that
+    /// no more is available yet, or, when `ending`, that the stream is over,
+    /// which is what makes the converter release its tail.
+    private func resample(_ samples: [Float], ending: Bool) throws -> [Float] {
+        guard let converter, let sourceFormat, let targetFormat else { return samples }
+
+        var pending: AVAudioPCMBuffer?
+        if !samples.isEmpty {
+            guard
+                let buffer = AVAudioPCMBuffer(
+                    pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(samples.count))
+            else {
+                throw AudioEncodingError.unsupported("could not allocate a resampler input buffer")
+            }
+            buffer.frameLength = AVAudioFrameCount(samples.count)
+            samples.withUnsafeBufferPointer { source in
+                buffer.floatChannelData![0].update(from: source.baseAddress!, count: samples.count)
+            }
+            pending = buffer
+        }
+
+        let capacity = AVAudioFrameCount(Double(samples.count) * ratio) + 4096
+        var out: [Float] = []
+        while true {
+            guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity)
+            else {
+                throw AudioEncodingError.unsupported("could not allocate a resampler output buffer")
+            }
+            var failure: NSError?
+            let status = converter.convert(to: output, error: &failure) { _, inputStatus in
+                if let buffer = pending {
+                    pending = nil
+                    inputStatus.pointee = .haveData
+                    return buffer
+                }
+                inputStatus.pointee = ending ? .endOfStream : .noDataNow
+                return nil
+            }
+            if let failure {
+                throw AudioEncodingError.unsupported("resampling failed: \(failure.localizedDescription)")
+            }
+            let frames = Int(output.frameLength)
+            if frames > 0 {
+                out.append(
+                    contentsOf: UnsafeBufferPointer(start: output.floatChannelData![0], count: frames))
+            }
+            // A full buffer may leave more behind; anything else means the
+            // converter has given up everything it can for now.
+            if status != .haveData || frames < Int(capacity) { break }
+        }
+        return out
     }
 }
 

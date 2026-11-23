@@ -20,6 +20,7 @@ final class AudioFormatTests: XCTestCase {
     func testKnownFormatsResolveAndUnknownOnesDoNot() {
         XCTAssertEqual(AudioFormat(requested: "aac"), .aac)
         XCTAssertEqual(AudioFormat(requested: "wav"), .wav)
+        XCTAssertEqual(AudioFormat(requested: "pcm"), .pcm)
         // Absent means the default rather than an error: most callers do not
         // name a format and the server has to pick one.
         XCTAssertEqual(AudioFormat(requested: nil), .aac)
@@ -33,6 +34,101 @@ final class AudioFormatTests: XCTestCase {
     func testEachFormatCarriesItsOwnContentType() {
         XCTAssertEqual(AudioFormat.aac.contentType, "audio/aac")
         XCTAssertEqual(AudioFormat.wav.contentType, "audio/wav")
+        XCTAssertEqual(AudioFormat.pcm.contentType, "audio/pcm;rate=24000")
+    }
+
+    // MARK: - PCM: headerless, always 24 kHz
+
+    /// Raw PCM names no sample rate, so a client can only assume one. OpenAI's
+    /// `pcm` is 24 kHz 16-bit mono and clients written against it play
+    /// whatever arrives at that rate: audio delivered at a model's own 48 kHz
+    /// would play at half speed, an octave down.
+    func testPcmDeliversTwentyFourKilohertzWhateverTheModelProduces() {
+        XCTAssertEqual(AudioFormat.pcm.deliveredSampleRate(source: 24000), 24000)
+        XCTAssertEqual(AudioFormat.pcm.deliveredSampleRate(source: 48000), 24000)
+        XCTAssertEqual(AudioFormat.pcm.deliveredSampleRate(source: 44100), 24000)
+        // The containers state their rate, so they carry the model's own.
+        XCTAssertEqual(AudioFormat.wav.deliveredSampleRate(source: 48000), 48000)
+        XCTAssertEqual(AudioFormat.aac.deliveredSampleRate(source: 44100), 44100)
+    }
+
+    func testPcmAtTheModelRateIsTheWavBodyWithoutItsHeader() throws {
+        let samples = tone(seconds: 0.25, sampleRate: 24000)
+        let pcm = try makeEncoder(format: .pcm, sampleRate: 24000)
+        var raw = try pcm.encode(samples)
+        raw.append(try pcm.finish())
+
+        let wav = try makeEncoder(format: .wav, sampleRate: 24000)
+        let withHeader = try wav.encode(samples)
+
+        XCTAssertEqual(raw.count, samples.count * 2)
+        XCTAssertNotEqual(raw.prefix(4).map { $0 }, Array("RIFF".utf8))
+        XCTAssertEqual(raw, withHeader.dropFirst(44))
+    }
+
+    private func pcmSamples(_ data: Data) -> [Int16] {
+        data.withUnsafeBytes { raw in
+            (0..<(data.count / 2)).map {
+                Int16(littleEndian: raw.loadUnaligned(fromByteOffset: $0 * 2, as: Int16.self))
+            }
+        }
+    }
+
+    /// Encodes `seconds` of a 220 Hz tone from a model at `sourceRate`, in
+    /// half-second intervals as a streamed response arrives.
+    private func resampledTone(seconds: Double, sourceRate: Int) throws -> [Int16] {
+        let encoder = try makeEncoder(format: .pcm, sampleRate: sourceRate)
+        let whole = tone(seconds: seconds, sampleRate: sourceRate)
+        let interval = sourceRate / 2
+        var out = Data()
+        var start = 0
+        while start < whole.count {
+            let end = min(start + interval, whole.count)
+            out.append(try encoder.encode(Array(whole[start..<end])))
+            start = end
+        }
+        out.append(try encoder.finish())
+        XCTAssertEqual(out.count % 2, 0, "a 16-bit stream cannot end on half a sample")
+        return pcmSamples(out)
+    }
+
+    func testPcmFromAFasterModelKeepsItsDuration() throws {
+        // LuxTTS produces 48 kHz and Supertonic 44.1 kHz. Duration is what a
+        // dropped tail or a per-interval restart of the resampler would change.
+        for sourceRate in [48000, 44100] {
+            let samples = try resampledTone(seconds: 3.0, sourceRate: sourceRate)
+            XCTAssertEqual(
+                Double(samples.count) / 24000.0, 3.0, accuracy: 0.02,
+                "\(sourceRate) Hz in, \(samples.count) samples out")
+        }
+    }
+
+    func testPcmFromAFasterModelKeepsItsPitch() throws {
+        // Passing a model's samples through unconverted keeps every byte and
+        // halves the pitch. A 220 Hz tone crosses zero 440 times a second.
+        for sourceRate in [48000, 44100] {
+            let samples = try resampledTone(seconds: 2.0, sourceRate: sourceRate)
+            // Skip the resampler's settling at each end.
+            let body = samples[2400..<(samples.count - 2400)]
+            var crossings = 0
+            var previous = body.first ?? 0
+            for sample in body.dropFirst() {
+                if (previous < 0) != (sample < 0) { crossings += 1 }
+                previous = sample
+            }
+            let hertz = Double(crossings) / 2.0 / (Double(body.count) / 24000.0)
+            XCTAssertEqual(hertz, 220.0, accuracy: 3.0, "\(sourceRate) Hz in")
+            // And it is still a tone at its own level, not silence or clipping.
+            let peak = body.map { abs(Int($0)) }.max() ?? 0
+            XCTAssertEqual(Double(peak) / 32767.0, 0.3, accuracy: 0.03, "\(sourceRate) Hz in")
+        }
+    }
+
+    func testPcmFinishIsSafeWhenNothingWasEncoded() throws {
+        for sourceRate in [24000, 48000] {
+            let encoder = try makeEncoder(format: .pcm, sampleRate: sourceRate)
+            XCTAssertEqual(try encoder.finish(), Data())
+        }
     }
 
     // MARK: - WAV: one header per response

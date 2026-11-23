@@ -7,9 +7,36 @@
 // dispatcher.
 
 import { describe, it, expect } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { isPlatformPath, routesToShardApp } from "../control-shard/src/routing";
+import { createShardApp } from "../control-shard/src/shard-api";
+import type { Registry } from "../../shared/types";
+
+// Every path the shard app registers, with each `:param` filled in.
+function shardAppPaths(): string[] {
+  const app = createShardApp({
+    registryState: { services: [] } as unknown as Registry,
+    eventsPath: join(tmpdir(), "shard-routing-events.jsonl"),
+    getFreeMem: async () => 4096,
+    loadService: async () => ({ ok: true }),
+    unloadService: async () => ({ ok: true }),
+    sharedLifecycle: async () => Response.json({ success: true }),
+  });
+  const paths = app.routes
+    .map((r) => r.path)
+    .filter((p) => !p.includes("*"))
+    .map((p) => p.replace(/:[A-Za-z]+/g, "x"));
+  return [...new Set(paths)];
+}
 
 describe("the shard's request dispatcher", () => {
+  it("sends every route the shard app registers to the shard app", () => {
+    const paths = shardAppPaths();
+    expect(paths).toContain("/api/voices/resolve");
+    expect(paths.filter((p) => !routesToShardApp(p))).toEqual([]);
+  });
+
   it("sends every shard-only route to the shard app", () => {
     // Each of these exists ONLY on shardApp. Reaching sharedApp is a 404.
     expect(routesToShardApp("/status")).toBe(true);

@@ -60,7 +60,7 @@ struct APIHandlers: APIProtocol {
                 // accepted needs every term the roster states.
                 cloning: model.cloning.map {
                     .init(
-                        available: $0.available,
+                        available: true,
                         requiresText: $0.requiresText,
                         minDurationS: $0.minDurationS,
                         maxDurationS: $0.maxDurationS,
@@ -69,7 +69,8 @@ struct APIHandlers: APIProtocol {
                 chunkProfile: model.chunkProfile.map {
                     .init(words: $0.words, chars: $0.chars)
                 },
-                presetVoices: model.presetVoices.map {
+                // Derived from the voices that have a preset rendering on this model.
+                presetVoices: ctx.roster.presetVoices(on: model.id).map {
                     .init(id: $0.id, name: $0.name)
                 }
             )

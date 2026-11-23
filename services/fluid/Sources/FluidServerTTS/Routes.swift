@@ -54,12 +54,66 @@ extension TtsError: FluidServerKit.FluidServerError {
     /// other must not find them disagreeing.
     public var status: HTTPResponse.Status {
         switch self {
-        case .unknownModel, .unknownFormat: return .badRequest
+        case .unknownModel, .unknownFormat, .voiceNotOffered, .noModelNamed: return .badRequest
         case .busy, .notLoaded, .modelMismatch: return .conflict
-        case .missingReference, .unsupported: return .internalServerError
+        case .missingReference, .unsupported, .noUsableReference: return .internalServerError
         }
     }
 
+}
+
+/// What a driver is told about who speaks: a name, or a recording to clone.
+struct VoiceTerms: Sendable {
+    let voice: String?
+    let refAudio: URL?
+    let refText: String?
+}
+
+extension TtsAppContext {
+    /// The one place a request's voice becomes what a driver is given, for the
+    /// HTTP route and the socket alike.
+    ///
+    /// A request carrying a recording has chosen it: nothing is looked up and
+    /// the voice name, which names no recording, is not passed on. A request
+    /// naming only a voice is resolved through the roster for the model that
+    /// will render it: `model` where the request names one, otherwise
+    /// whichever is resident, and with neither it is refused.
+    func voiceTerms(voice: String?, refAudio: String?, refText: String?, model: String?) async throws
+        -> VoiceTerms
+    {
+        if let refAudio {
+            return VoiceTerms(
+                voice: nil, refAudio: Self.fileURL(refAudio), refText: Self.transcript(refText))
+        }
+        guard let voice else { return VoiceTerms(voice: nil, refAudio: nil, refText: nil) }
+
+        var modelId = model
+        if modelId == nil, let key = await resident.currentModel { modelId = roster.id(forKey: key) }
+        guard let modelId else { throw TtsError.noModelNamed(voice: voice) }
+
+        switch try roster.resolve(voice: voice, model: modelId) {
+        case .preset(let name):
+            return VoiceTerms(voice: name, refAudio: nil, refText: nil)
+        case .clone(let audio, let text):
+            return VoiceTerms(
+                voice: voice, refAudio: Self.fileURL(audio), refText: Self.transcript(text))
+        }
+    }
+
+    /// Reference paths arrive as `~`-relative strings from a harness.
+    private static func fileURL(_ path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+
+    /// A transcript is a path in the roster and in `bench.yaml` for some
+    /// engines, and literal text in a hand-written request; a path is read.
+    private static func transcript(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let expanded = (value as NSString).expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: expanded) else { return value }
+        return (try? String(contentsOfFile: expanded, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? value
+    }
 }
 
 func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
@@ -83,34 +137,21 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
         // Through the roster, as the load endpoint does: a caller names the
         // platform's id and the driver wants the runtime's key, and a model
         // the roster omits is unknown here too.
-        if let model = body.model {
-            guard let key = ctx.roster.key(for: model) else {
-                throw TtsError.unknownModel(model)
-            }
-            try await ctx.resident.ensureLoaded(key)
+        let key = try body.model.map { model -> String in
+            guard let key = ctx.roster.key(for: model) else { throw TtsError.unknownModel(model) }
+            return key
         }
-
-        // Reference paths arrive as the harness's own `~`-relative strings.
-        let refURL = body.ref_audio.map { path -> URL in
-            URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        }
-        // `ref_text` is a path in bench.yaml for some engines and literal text
-        // for others; the mlx-audio adapter resolves files before sending, but
-        // accept both so a hand-written request works too.
-        var refText = body.ref_text
-        if let t = refText {
-            let expanded = (t as NSString).expandingTildeInPath
-            if FileManager.default.fileExists(atPath: expanded) {
-                refText = (try? String(contentsOfFile: expanded, encoding: .utf8))?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? t
-            }
-        }
+        // Before the load: a voice the named model does not offer is refused
+        // without evicting whatever is resident to find that out.
+        let who = try await ctx.voiceTerms(
+            voice: body.voice, refAudio: body.ref_audio, refText: body.ref_text, model: body.model)
+        if let key { try await ctx.resident.ensureLoaded(key) }
 
         let synthesisRequest = SynthesisRequest(
             text: body.input,
-            voice: body.voice,
-            refAudio: refURL,
-            refText: refText,
+            voice: who.voice,
+            refAudio: who.refAudio,
+            refText: who.refText,
             language: body.language,
             speed: body.speed,
             temperature: body.temperature,

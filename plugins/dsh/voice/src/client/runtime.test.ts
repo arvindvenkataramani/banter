@@ -38,15 +38,20 @@ function observable<T>(initial: T): DshObservable<T> & { set(next: T): void } {
 
 const config = (ttsModel: string, sttServiceId = 'stt-a'): VoiceConfig => ({
   tts: {
+    models: [
+      { id: 'model-1', name: 'Model 1', canClone: false },
+      { id: 'model-2', name: 'Model 2', canClone: false },
+    ],
     providers: [{
       serviceId: 'tts-b',
       responseFormat: 'mp3',
-      models: [
-        { id: 'model-1', key: 'model-1', realtime: true, voices: [{ id: 'voice-1', name: 'One', key: 'voice-1' }] },
-        { id: 'model-2', key: 'model-2', realtime: true, voices: [{ id: 'voice-1', name: 'One', key: 'voice-1' }] },
+      serves: [
+        { model: 'model-1', key: 'model-1', realtime: true },
+        { model: 'model-2', key: 'model-2', realtime: true },
       ],
     }],
-    selection: { serviceId: 'tts-b', model: ttsModel, voice: 'voice-1', speed: 1 },
+    voices: [{ id: 'voice-1', name: 'One', renderings: [{ model: 'model-1', method: 'preset' }, { model: 'model-2', method: 'preset' }] }],
+    selection: { serviceId: 'tts-b', model: ttsModel, voice: 'voice-1', speed: 1, request: { model: ttsModel, voice: 'voice-1' } },
   },
   stt: { serviceId: sttServiceId },
 })

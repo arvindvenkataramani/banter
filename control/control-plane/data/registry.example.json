@@ -1,6 +1,6 @@
 {
   "_comment": "Single-machine starting registry: this machine, the control plane, and two cross-platform speech servers, stt-faster-whisper for transcription and tts-kokoro for synthesis, from services/stt/faster-whisper and services/tts/kokoro. Both are process runners that the control plane starts on first use. Banter does not install them: each runs from a Python venv you create in its ops.env.workingDirectory, following the README in its services folder. The roster section declares what each server offers — its models and the stock voices that need no reference recording — and is what voice mode's choices are built from. Fluid, the Apple Silicon speech servers, is an option: scripts/fluid-build.sh builds it, and services/fluid/README.md covers registering it. Add more hosts, capabilities, services and shards as you need them; docs/reference/configuration.md covers every field.",
-  "version": 3,
+  "version": 4,
   "type": "control",
   "hosts": [
     {
@@ -130,108 +130,37 @@
     "shardPollMs": 900000
   },
   "roster": {
+    "ttsModels": [
+      {
+        "id": "kokoro-82m",
+        "name": "Kokoro 82M"
+      }
+    ],
+    "sttModels": [
+      {
+        "id": "faster-whisper",
+        "name": "Whisper (faster-whisper)",
+        "kind": "batch"
+      }
+    ],
     "providers": {
       "tts-kokoro": {
+        "resolvesVoices": false,
         "responseFormat": "wav",
-        "ttsModels": [
+        "serves": [
           {
-            "id": "kokoro-82m",
-            "name": "Kokoro 82M",
+            "model": "kokoro-82m",
             "key": "kokoro-82m",
-            "presetVoices": [
-              {
-                "id": "af_alloy",
-                "name": "Alloy"
-              },
-              {
-                "id": "af_aoede",
-                "name": "Aoede"
-              },
-              {
-                "id": "af_bella",
-                "name": "Bella"
-              },
-              {
-                "id": "af_heart",
-                "name": "Heart"
-              },
-              {
-                "id": "af_jessica",
-                "name": "Jessica"
-              },
-              {
-                "id": "af_kore",
-                "name": "Kore"
-              },
-              {
-                "id": "af_nicole",
-                "name": "Nicole"
-              },
-              {
-                "id": "af_nova",
-                "name": "Nova"
-              },
-              {
-                "id": "af_river",
-                "name": "River"
-              },
-              {
-                "id": "af_sarah",
-                "name": "Sarah"
-              },
-              {
-                "id": "af_sky",
-                "name": "Sky"
-              },
-              {
-                "id": "am_adam",
-                "name": "Adam"
-              },
-              {
-                "id": "am_echo",
-                "name": "Echo"
-              },
-              {
-                "id": "am_eric",
-                "name": "Eric"
-              },
-              {
-                "id": "am_fenrir",
-                "name": "Fenrir"
-              },
-              {
-                "id": "am_liam",
-                "name": "Liam"
-              },
-              {
-                "id": "am_michael",
-                "name": "Michael"
-              },
-              {
-                "id": "am_onyx",
-                "name": "Onyx"
-              },
-              {
-                "id": "am_puck",
-                "name": "Puck"
-              },
-              {
-                "id": "am_santa",
-                "name": "Santa"
-              }
-            ],
             "realtime": false,
             "streaming": false
           }
         ]
       },
       "stt-faster-whisper": {
-        "sttModels": [
+        "serves": [
           {
-            "id": "faster-whisper",
-            "name": "Whisper (faster-whisper)",
-            "key": "faster-whisper",
-            "kind": "batch"
+            "model": "faster-whisper",
+            "key": "faster-whisper"
           }
         ]
       }
@@ -240,10 +169,10 @@
       {
         "id": "alloy",
         "name": "Alloy",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_alloy"
           }
         ]
@@ -251,10 +180,10 @@
       {
         "id": "aoede",
         "name": "Aoede",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_aoede"
           }
         ]
@@ -262,10 +191,10 @@
       {
         "id": "bella",
         "name": "Bella",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_bella"
           }
         ]
@@ -273,10 +202,10 @@
       {
         "id": "heart",
         "name": "Heart",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_heart"
           }
         ]
@@ -284,10 +213,10 @@
       {
         "id": "jessica",
         "name": "Jessica",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_jessica"
           }
         ]
@@ -295,10 +224,10 @@
       {
         "id": "kore",
         "name": "Kore",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_kore"
           }
         ]
@@ -306,10 +235,10 @@
       {
         "id": "nicole",
         "name": "Nicole",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_nicole"
           }
         ]
@@ -317,10 +246,10 @@
       {
         "id": "nova",
         "name": "Nova",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_nova"
           }
         ]
@@ -328,10 +257,10 @@
       {
         "id": "river",
         "name": "River",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_river"
           }
         ]
@@ -339,10 +268,10 @@
       {
         "id": "sarah",
         "name": "Sarah",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_sarah"
           }
         ]
@@ -350,10 +279,10 @@
       {
         "id": "sky",
         "name": "Sky",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_sky"
           }
         ]
@@ -361,10 +290,10 @@
       {
         "id": "adam",
         "name": "Adam",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_adam"
           }
         ]
@@ -372,10 +301,10 @@
       {
         "id": "echo",
         "name": "Echo",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_echo"
           }
         ]
@@ -383,10 +312,10 @@
       {
         "id": "eric",
         "name": "Eric",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_eric"
           }
         ]
@@ -394,10 +323,10 @@
       {
         "id": "fenrir",
         "name": "Fenrir",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_fenrir"
           }
         ]
@@ -405,10 +334,10 @@
       {
         "id": "liam",
         "name": "Liam",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_liam"
           }
         ]
@@ -416,10 +345,10 @@
       {
         "id": "michael",
         "name": "Michael",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_michael"
           }
         ]
@@ -427,10 +356,10 @@
       {
         "id": "onyx",
         "name": "Onyx",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_onyx"
           }
         ]
@@ -438,10 +367,10 @@
       {
         "id": "puck",
         "name": "Puck",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_puck"
           }
         ]
@@ -449,10 +378,10 @@
       {
         "id": "santa",
         "name": "Santa",
-        "models": [
+        "renderings": [
           {
-            "serviceId": "tts-kokoro",
             "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_santa"
           }
         ]

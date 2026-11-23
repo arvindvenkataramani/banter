@@ -377,14 +377,58 @@ export const getGateway = createRoute({
   },
 });
 
+const VoiceSelectionSchema = z.object({
+  serviceId: z.string().optional(),
+  model: z.string().optional(),
+  voice: z.string().optional(),
+  speed: z.number().optional(),
+  request: z.record(z.string(), z.unknown()).optional().openapi({ description: "The shard's resolution of this selection: the fields to put into a speech request sent to the runtime unchanged" }),
+  requestError: z.string().optional().openapi({ description: "Why `request` is absent: the shard refused the selection or could not be reached" }),
+}).openapi("VoiceSelection");
+
+const VoiceTtsSchema = z.object({
+  models: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    canClone: z.boolean(),
+    chunking: z.object({ mode: z.string().optional(), minWords: z.number().optional(), maxWords: z.number().optional() }).optional(),
+  })),
+  providers: z.array(z.object({
+    serviceId: z.string(),
+    hostId: z.string(),
+    reachable: z.boolean(),
+    name: z.string(),
+    responseFormat: z.enum(["mp3", "aac", "wav"]),
+    resolvesVoices: z.boolean().optional(),
+    sessions: z.boolean().optional(),
+    serves: z.array(z.object({
+      model: z.string(),
+      key: z.string(),
+      streaming: z.boolean().optional(),
+      realtime: z.boolean().optional(),
+      concurrency: z.number().optional(),
+      requestParams: z.record(z.string(), z.unknown()).optional(),
+    })),
+  })),
+  voices: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    renderings: z.array(z.object({ model: z.string(), method: z.enum(["preset", "clone"]) })),
+  })),
+  selection: VoiceSelectionSchema,
+}).passthrough().openapi("VoiceTts");
+
+const VoiceConfigSchema = z.object({ tts: VoiceTtsSchema }).passthrough().openapi("VoiceConfig");
+
 export const getVoice = createRoute({
   method: "get",
   path: "/api/voice",
   tags: ["Config"],
-  summary: "Voice configuration (TTS providers, models, voices, options)",
+  summary: "Voice configuration (TTS models, providers, voices, selection, options)",
   responses: {
     200: {
-      description: "Voice configuration object",
+      content: { "application/json": { schema: VoiceConfigSchema } },
+      description: "Voice configuration object; `tts.selection.request` is the shard's resolution of the stored selection",
     },
     503: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -512,7 +556,8 @@ export const patchVoiceSelection = createRoute({
   },
   responses: {
     200: {
-      description: "Updated voice configuration object",
+      content: { "application/json": { schema: z.object({ tts: z.object({ selection: VoiceSelectionSchema }).passthrough() }).passthrough() } },
+      description: "Updated voice configuration object; `tts.selection.request` is the shard's resolution of the new selection",
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },

@@ -14,12 +14,11 @@ const TONE_TIMEOUT_MS = 3000
 export interface SpeakRequest {
   endpoint: string
   text: string
-  modelId: string
-  voiceId: string
+  /** The speech-request fields the control plane served for the selection, sent as they came. */
+  request: Record<string, unknown>
   /** The runtime's own format, requested and decoded as such. */
   format: AudioFormat
   speed: number
-  params?: Record<string, unknown>
 }
 
 /** What the agent side plays and stops speech through — nothing about the
@@ -798,13 +797,11 @@ export class PlaybackEngine implements SpeechPlayer, TonePlayer {
 
     const url = `${req.endpoint.replace(/\/$/, '')}/v1/audio/speech`
     const body = {
-      model: req.modelId,
+      ...req.request,
       input: req.text,
-      voice: req.voiceId,
       speed: req.speed,
       stream: STREAMING_BACKEND !== 'blob',
-      ...req.params,
-      // After the params: the bytes are decoded as the runtime's format, so
+      // After the request: the bytes are decoded as the runtime's format, so
       // nothing may ask for another.
       response_format: req.format,
     }

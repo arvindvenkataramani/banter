@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from 'zustand'
 import { toast } from 'sonner'
-import { fetchVoiceConfig, loadVoiceSelection, unloadTtsModel, setSaveMicSamples, resolveVoiceSelection } from '@/lib/voice'
+import { fetchVoiceConfig, loadVoiceSelection, unloadTtsModel, setSaveMicSamples } from '@/lib/voice'
 import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from '@platform/voice-engine/voice-session-store'
 import { applySavedVoiceSettings } from '@/lib/voice/apply-voice-settings'
 import { updateVoiceSelection } from '@/lib/api'
@@ -75,8 +75,9 @@ export function useVoiceSettings(open: boolean): VoiceSettingsTabs {
     const patch = buildPatch(draft)
     if (patch === null) return true
 
-    if (endpoint && selection.model !== draft.ttsModel) {
-      unloadTtsModel(endpoint, selection.modelKey)
+    const loadedModel = selection.request?.model
+    if (endpoint && typeof loadedModel === 'string' && selection.model !== draft.ttsModel) {
+      unloadTtsModel(endpoint, loadedModel)
     }
     let updated: VoiceUpdateResult
     try {
@@ -86,7 +87,9 @@ export function useVoiceSettings(open: boolean): VoiceSettingsTabs {
       toast.error(`Voice settings not saved: ${message}`)
       return false
     }
-    const sel = resolveVoiceSelection(draft.config, { serviceId: draft.ttsServiceId, model: draft.ttsModel, voice: draft.ttsVoice, speed: draft.ttsSpeed })
+    // The PATCH answers with the new selection and the shard's resolution of it.
+    const served = updated.tts?.selection ?? { serviceId: draft.ttsServiceId, model: draft.ttsModel, voice: draft.ttsVoice, speed: draft.ttsSpeed }
+    const sel = loadVoiceSelection({ ...draft.config, tts: { ...draft.config.tts, selection: served } })!
     setSaveMicSamples(draft.saveMicSamples)
     applySavedVoiceSettings(sel, patch.sttServiceId, updated)
     return true

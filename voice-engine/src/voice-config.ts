@@ -34,38 +34,38 @@ export type VoiceUpdateResult = {
   debug?: VoiceConfig['debug']
 }
 
-/** A voice as voice mode offers it. `id` is what a selection stores; `key` is
- *  what the TTS runtime is sent. Other fields go into the request verbatim. */
-export interface TtsVoice {
-  id: string
-  name: string
-  key: string
-  /** The recording a cloning model renders her from. */
-  ref_audio?: string
-  [field: string]: unknown
-}
-
 export interface TtsModelChunking {
   mode?: ChunkStrategy | null
   minWords?: number | null
   maxWords?: number | null
 }
 
-/** A model from the shard roster. `id` is its roster id, which selections and
- *  modelPrefs store; `key` is what its runtime calls it. */
+/** A synthesis model. `id` is its roster id, which selections and modelPrefs store. */
 export interface TtsModel {
   id: string
-  name?: string
-  key: string
-  voices: TtsVoice[]
+  name: string
+  canClone: boolean
   chunking?: TtsModelChunking | null
-  /** Max concurrent TTS fetches for this model. Unset = unlimited. */
-  concurrency?: number
-  /** If true, model is eligible for the realtime voice loop. Non-realtime models remain available to async consumers and agents. */
-  realtime?: boolean
-  /** The provider streams this model's audio as it synthesises. */
+}
+
+/** A voice, and the models that produce her. Offered on a model when she has a rendering on it. */
+export interface TtsVoice {
+  id: string
+  name: string
+  renderings: { model: string; method: 'preset' | 'clone' }[]
+}
+
+/** One model a runtime serves. */
+export interface TtsServing {
+  model: string
+  /** What the runtime calls the model. */
+  key?: string
+  /** The runtime streams this model's audio as it synthesises. */
   streaming?: boolean
-  /** Extra fields passed verbatim into the TTS request body. Use for backend-specific tuning that's per-model rather than per-voice (e.g. streaming_interval for MLX-Audio Chatterbox to flush smaller frames). Voice-level params take precedence on key conflicts. */
+  /** Eligible for the realtime voice loop. Other models stay available to async consumers and agents. */
+  realtime?: boolean
+  /** Max concurrent TTS fetches for this model on this runtime. Unset = unlimited. */
+  concurrency?: number
   requestParams?: Record<string, unknown>
 }
 
@@ -82,7 +82,8 @@ export interface TtsProvider {
   reachable?: boolean
   /** The runtime's own format: speech is requested and decoded as this. */
   responseFormat: AudioFormat
-  models: TtsModel[]
+  resolvesVoices?: boolean
+  serves: TtsServing[]
   /** Whether this runtime's streaming socket understands session ids and
    *  take-over, the way it carries responseFormat. Absent means no. */
   sessions?: boolean
@@ -96,20 +97,21 @@ export interface SttOption {
   sessions?: boolean
 }
 
-/** What config.json stores: roster ids. */
+/** What config.json stores (roster ids), as `GET /api/voice` serves it. */
 export interface StoredVoiceSelection {
   serviceId: string
   model: string
   voice: string
   speed: number
-  params?: Record<string, unknown>
+  /** The shard's resolution of the selection: the fields of a speech request,
+   *  sent to the runtime as they came. */
+  request?: Record<string, unknown>
+  /** Why `request` is absent. */
+  requestError?: string
 }
 
-/** A stored selection resolved against the roster: what the TTS runtime is
- *  sent for the model and voice, and the request params they carry. */
+/** The selection with its runtime's audio format. */
 export interface VoiceSelection extends StoredVoiceSelection {
-  modelKey: string
-  voiceKey: string
   /** The selected runtime's format. */
   responseFormat: AudioFormat
 }
@@ -124,8 +126,10 @@ export interface VoiceConfig {
    */
   takeover?: 'ask' | 'always'
   tts: {
-    /** Built from the shard roster; empty when it cannot be read. */
+    /** The assembled roster, as declared: empty when it cannot be read. */
+    models: TtsModel[]
     providers: TtsProvider[]
+    voices: TtsVoice[]
     selection?: StoredVoiceSelection
     options?: {
       chunkStrategy?: ChunkStrategy | null
@@ -222,32 +226,12 @@ export async function fetchVoiceConfig(): Promise<VoiceConfig | null> {
   }
 }
 
-/** Resolve roster ids to what the TTS runtime is sent. An id the roster no
- *  longer offers is sent as itself, so the server names what it refused. */
-export function resolveVoiceSelection(config: VoiceConfig, sel: StoredVoiceSelection): VoiceSelection {
-  const provider = config.tts.providers.find(p => p.serviceId === sel.serviceId)
-  const modelObj = provider?.models.find(m => m.id === sel.model)
-  const voiceObj = modelObj?.voices.find(v => v.id === sel.voice)
-  // Merge order: persisted sel.params → model.requestParams → voice fields.
-  // Later writes win, so voice-level fields override model-level tuning.
-  const params: Record<string, unknown> = { ...sel.params, ...(modelObj?.requestParams ?? {}) }
-  if (voiceObj) {
-    for (const [k, v] of Object.entries(voiceObj)) {
-      if (k !== 'id' && k !== 'name' && k !== 'key') params[k] = v
-    }
-  }
-  return {
-    ...sel,
-    speed: sel.speed ?? 1.0,
-    params: Object.keys(params).length ? params : undefined,
-    modelKey: modelObj?.key ?? sel.model,
-    voiceKey: voiceObj?.key ?? sel.voice,
-    responseFormat: provider?.responseFormat ?? 'mp3',
-  }
-}
-
+/** The served selection with its runtime's audio format. Its `request` is the
+ *  shard's resolution, carried as served; nothing is looked up here. */
 export function loadVoiceSelection(config: VoiceConfig): VoiceSelection | null {
   const sel = config.tts.selection
-  return sel ? resolveVoiceSelection(config, sel) : null
+  if (!sel) return null
+  const provider = config.tts.providers.find(p => p.serviceId === sel.serviceId)
+  return { ...sel, speed: sel.speed ?? 1.0, responseFormat: provider?.responseFormat ?? 'mp3' }
 }
 

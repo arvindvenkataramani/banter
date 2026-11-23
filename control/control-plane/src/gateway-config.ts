@@ -10,8 +10,8 @@ import { dirname, join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { CHUNK_STRATEGIES } from '../../../shared/types'
 import type { Service, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
-import type { AssembledRoster } from './roster-assembly'
-import { voiceModeProviders, type VoiceModeProvider } from './voice-roster'
+import { emptyAssembly, type AssembledRoster } from './roster-assembly'
+import { ttsRosterView, type TtsRosterView } from './voice-roster'
 
 export interface ModelChunkingPref {
   chunking?: { mode?: string; minWords?: number; maxWords?: number }
@@ -197,7 +197,7 @@ export async function updateVoiceSelection(
   config: PlatformConfig,
   patch: VoiceSelectionPatch,
   getServices?: ServiceLookup,
-  getProviders?: () => VoiceModeProvider[],
+  getView?: () => TtsRosterView,
   /** A named service resolving to no provider is a 503 only while some
    *  shard here has never been polled; otherwise it's an ordinary 400. */
   neverPolledHosts?: () => string[],
@@ -206,7 +206,8 @@ export async function updateVoiceSelection(
     throw new Error('Voice not configured')
   }
 
-  const providers = getProviders ? getProviders() : []
+  const view: TtsRosterView = getView ? getView() : { models: [], providers: [], voices: [] }
+  const providers = view.providers
 
   // Validate serviceId/model/voice if provided
   if (patch.serviceId !== undefined || patch.model !== undefined || patch.voice !== undefined) {
@@ -223,12 +224,11 @@ export async function updateVoiceSelection(
         throw new ValidationError(`unknown serviceId "${serviceId}"`)
       }
       if (model !== undefined) {
-        const modelEntry = provider.models.find(m => m.id === model)
-        if (!modelEntry) {
+        if (!provider.serves.some(s => s.model === model)) {
           throw new ValidationError(`unknown model "${model}" for serviceId "${serviceId}"`)
         }
         if (voice !== undefined) {
-          const voiceEntry = modelEntry.voices.find(v => v.id === voice)
+          const voiceEntry = view.voices.find(v => v.id === voice && v.renderings.some(r => r.model === model))
           if (!voiceEntry) {
             throw new ValidationError(`unknown voice "${voice}" for model "${model}"`)
           }
@@ -277,8 +277,7 @@ export async function updateVoiceSelection(
         throw new ValidationError(`unknown serviceId "${svcId}" in modelPrefs`)
       }
       for (const [modelId, entry] of Object.entries(models)) {
-        const modelEntry = provider.models.find(m => m.id === modelId)
-        if (!modelEntry) {
+        if (!provider.serves.some(s => s.model === modelId)) {
           throw new ValidationError(`unknown model "${modelId}" for serviceId "${svcId}" in modelPrefs`)
         }
         if (entry === null) continue
@@ -558,13 +557,26 @@ export function registerVoiceConfig(
    *  plane always has at least its own (possibly empty) roster. */
   getAssembly?: () => AssembledRoster,
   neverPolledHosts?: () => string[],
+  /** Asks the shard on the selection's runtime host to resolve it. */
+  resolveSelection?: (selection: { voice: string; model: string; serviceId: string }) => Promise<{ ok: true; request: Record<string, unknown> } | { ok: false; error: string }>,
 ) {
-  const getProviders = (): VoiceModeProvider[] => voiceModeProviders(getAssembly ? getAssembly() : { providers: [], voices: [], collisions: [] })
+  const getView = (): TtsRosterView => ttsRosterView(getAssembly ? getAssembly() : emptyAssembly())
+
+  // The stored selection with the shard's resolution of it: `request` when the
+  // shard answered, `requestError` otherwise. One resolution per call.
+  const withRequest = async (selection: Record<string, unknown> | undefined) => {
+    const { voice, model, serviceId } = (selection ?? {}) as { voice?: string; model?: string; serviceId?: string }
+    if (!voice || !model || !serviceId) return { ...selection, requestError: 'the selection names no voice, model and runtime' }
+    if (!resolveSelection) return { ...selection, requestError: 'no shard is configured to resolve voices' }
+    const result = await resolveSelection({ voice, model, serviceId })
+    return result.ok ? { ...selection, request: result.request } : { ...selection, requestError: result.error }
+  }
 
   app.get('/api/voice', async (c) => {
     if (!config.voice) {
       return c.json({ error: 'Voice not configured' }, 503)
     }
+    const view = getView()
     const assembledProviders = getAssembly ? getAssembly().providers : []
     const sttOptions = (getServices ? getServices() : [])
       .filter(s => s.capabilityId === 'stt')
@@ -576,7 +588,7 @@ export function registerVoiceConfig(
 
     return c.json({
       ...config.voice,
-      tts: { ...(config.voice.tts ?? {}), providers: getProviders() },
+      tts: { ...(config.voice.tts ?? {}), ...view, selection: await withRequest(config.voice.tts?.selection) },
       stt: { ...(config.voice.stt ?? {}), options: sttOptions },
     })
   })
@@ -597,8 +609,11 @@ export function registerVoiceConfig(
     }
 
     try {
-      const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices, getProviders, neverPolledHosts)
-      return c.json(updatedVoice)
+      const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices, getView, neverPolledHosts)
+      return c.json({
+        ...updatedVoice,
+        tts: { ...(updatedVoice?.tts ?? {}), selection: await withRequest(updatedVoice?.tts?.selection) },
+      })
     } catch (err) {
       if (err instanceof ValidationError) {
         return c.json({ error: err.message }, 400)

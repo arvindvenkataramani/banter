@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { Button, Input, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { STREAMING_BACKEND, getDetectedBackend, saveStreamingBackend } from '@platform/voice-engine/system/streaming-backend'
 import type { StreamingBackend } from '@platform/voice-engine/system/streaming-backend'
-import { resolveVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
+import { loadVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
 import { resolveChunkingFor } from '@platform/voice-engine/agent/chunking-setting'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import { describeSttInUse } from '@platform/voice-engine/stt-mode-text'
@@ -293,10 +293,10 @@ const MODE_NAMES: Record<string, string> = { 'two-chunk': '2-chunk', paragraph: 
 function summary(config: VoiceConfig): Array<[string, string]> {
   const sel = config.tts.selection
   const provider = config.tts.providers.find(p => p.serviceId === sel?.serviceId)
-  const model = provider?.models.find(m => m.id === sel?.model)
-  const voice = model?.voices.find(v => v.id === sel?.voice)
+  const model = config.tts.models.find(m => m.id === sel?.model)
+  const voice = config.tts.voices.find(v => v.id === sel?.voice)
   const stt = config.stt?.options?.find(o => o.serviceId === config.stt?.serviceId)
-  const resolved = sel ? resolveVoiceSelection(config, sel) : null
+  const resolved = loadVoiceSelection(config)
   const chunking = resolved ? resolveChunkingFor(config, resolved) : null
   return [
     ['Transcription', config.stt?.serviceId

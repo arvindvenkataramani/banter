@@ -55,7 +55,7 @@ describe("runtime state", () => {
   });
 
   it("PATCH /api/gateway/lastAgent and /lastSession write state.json and leave config.json as it was", async () => {
-    await writeFile(configPath, JSON.stringify({ version: 3, integrations: { openclaw: { gateway: { url: "wss://gw", token: "t" } } } }));
+    await writeFile(configPath, JSON.stringify({ version: 4, integrations: { openclaw: { gateway: { url: "wss://gw", token: "t" } } } }));
     const before = await readFile(configPath, "utf-8");
     const app = await appFor();
 
@@ -74,13 +74,13 @@ describe("runtime state", () => {
   });
 
   it("the old defaultAgent route is gone", async () => {
-    await writeFile(configPath, JSON.stringify({ version: 3, integrations: { openclaw: { gateway: { url: "wss://gw", token: "t" } } } }));
+    await writeFile(configPath, JSON.stringify({ version: 4, integrations: { openclaw: { gateway: { url: "wss://gw", token: "t" } } } }));
     const res = await patch(await appFor(), "/api/gateway/defaultAgent", { agentId: "alex" });
     expect(res.status).toBe(404);
   });
 
   it("a config that fails its schema is refused with the field named", async () => {
-    await writeFile(configPath, JSON.stringify({ version: 3, voice: { enabled: "yes" } }));
+    await writeFile(configPath, JSON.stringify({ version: 4, voice: { enabled: "yes" } }));
     await expect(loadConfig(configPath)).rejects.toThrow(/voice\.enabled/);
   });
 });

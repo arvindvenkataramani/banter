@@ -27,8 +27,19 @@ info:
 
     What /v1/audio/speech returns: one container per response, whether or not
     `stream` is set. `response_format` selects `aac` (the default, AAC-LC in
-    ADTS) or `wav`, and anything else is refused rather than silently
-    substituted. With `stream: true` the body arrives in pieces as synthesis
+    ADTS), `wav`, or `pcm`, and anything else is refused rather than silently
+    substituted. `pcm` is headerless 16-bit mono at 24 kHz, as OpenAI defines
+    it, whatever rate the model produces: a client cannot be told the rate of
+    raw samples, so a 44.1 or 48 kHz model is resampled.
+
+    Who speaks: `voice` names a voice from the roster of the registry this
+    server was started with, and the server finds what the model needs for her,
+    whether that is the model's own name or a recording to clone from. A roster
+    voice the model does not offer is refused with a 400 naming both. A name
+    the roster does not hold is passed to the model as its own. A request that
+    sends `ref_audio` has chosen its recording and nothing is looked up. The
+    socket's `speak` frame follows the same rule. The rule is stated in
+    docs/reference/design/model-roster.md, "Resolving a voice". With `stream: true` the body arrives in pieces as synthesis
     produces them; without it, in one piece. A backend that cannot stream is
     served whole either way, so a client never branches on which model it is
     talking to.

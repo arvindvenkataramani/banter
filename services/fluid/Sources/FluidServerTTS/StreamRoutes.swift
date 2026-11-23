@@ -193,7 +193,7 @@ actor SynthesisQueue {
     private let format: AudioFormat
     private let sink: any SocketSink
     /// Spans waiting to be synthesised.
-    private var pending: [(id: UInt64, request: SynthesisRequest)] = []
+    private var pending: [(id: UInt64, text: String, voice: String?, refAudio: String?)] = []
     private var counter: UInt64 = 0
     /// The utterance being synthesised, and the task doing it.
     private var running: (id: UInt64, task: Task<Void, Never>)?
@@ -215,18 +215,10 @@ actor SynthesisQueue {
                 code: .busy, message: "queue is full at \(Self.depthCap) spans; slow down or cancel")
             return
         }
+        // The voice is resolved when the span is synthesised, not here: the
+        // model resident now may not be the one that renders it.
         counter += 1
-        let refURL = refAudio.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
-        pending.append(
-            (
-                id: counter,
-                request: SynthesisRequest(
-                    text: text, voice: voice, refAudio: refURL, refText: nil, language: nil,
-                    speed: nil, temperature: nil, seed: nil, cfgWeight: nil,
-                    repetitionPenalty: nil, minP: nil, topP: nil, topK: nil, emotion: nil,
-                    deEss: nil, maxTokensPerChunk: nil, alpha: nil, beta: nil, noiseScale: nil,
-                    totalSteps: nil, silenceDuration: nil)
-            ))
+        pending.append((id: counter, text: text, voice: voice, refAudio: refAudio))
         pump()
     }
 
@@ -234,13 +226,28 @@ actor SynthesisQueue {
     private func pump() {
         guard running == nil, !pending.isEmpty else { return }
         let next = pending.removeFirst()
-        let task = Task { await self.synthesise(id: next.id, request: next.request) }
+        let task = Task {
+            await self.synthesise(
+                id: next.id, text: next.text, voice: next.voice, refAudio: next.refAudio)
+        }
         running = (id: next.id, task: task)
     }
 
-    private func synthesise(id: UInt64, request: SynthesisRequest) async {
+    private func synthesise(id: UInt64, text: String, voice: String?, refAudio: String?) async {
         defer { finished(id: id) }
         do {
+            // Resolved as the HTTP route resolves it, against the model resident
+            // as this span starts, so a voice named on the socket reaches the
+            // driver exactly as the same name posted would.
+            let who = try await ctx.voiceTerms(
+                voice: voice, refAudio: refAudio, refText: nil, model: nil)
+            let request = SynthesisRequest(
+                text: text, voice: who.voice, refAudio: who.refAudio, refText: who.refText,
+                language: nil,
+                speed: nil, temperature: nil, seed: nil, cfgWeight: nil,
+                repetitionPenalty: nil, minP: nil, topP: nil, topK: nil, emotion: nil,
+                deEss: nil, maxTokensPerChunk: nil, alpha: nil, beta: nil, noiseScale: nil,
+                totalSteps: nil, silenceDuration: nil)
             let begun = try await ctx.resident.beginStream(request)
             defer { Task { await ctx.resident.endStream(token: begun.token) } }
 
@@ -248,7 +255,8 @@ actor SynthesisQueue {
             await sink.send(
                 TtsServerFrame(
                     type: "utterance.start", format: format.rawValue,
-                    sample_rate: begun.sampleRate, utterance: id))
+                    sample_rate: format.deliveredSampleRate(source: begun.sampleRate),
+                    utterance: id))
 
             for try await chunk in bufferedChunks(
                 begun.stream, interval: defaultStreamingInterval, sampleRate: begun.sampleRate)

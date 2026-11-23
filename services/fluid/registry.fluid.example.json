@@ -1,10 +1,10 @@
 {
-  "_comment": "The fluid speech servers (Apple Silicon), as registry entries to add to your registry.json. Append the two services to services, the two providers to roster.providers, and the voices to roster.voices; nothing in it collides with the example registries, because the voice ids carry a fluid- prefix and the model ids (kokoro-ane, pocket-tts, luxtts) differ from theirs. Set each service's hostId to a host in your registry (this-machine in the control-plane example). Build with scripts/fluid-build.sh, install with ops/control-install-services.sh, and set FLUID_CORS_ORIGINS to your dashboard origins. scripts/fluid-smoke.sh reads this file.",
+  "_comment": "The fluid speech servers (Apple Silicon), as registry entries to add to your registry.json. Merge it by id, as services/fluid/README.md shows: append the two services, add the two providers, and add each model and voice whose id your registry does not already declare. Kokoro is the model kokoro-82m, which fluid-tts serves under its own key kokoro-ane, and the voices are the same voices the example registries declare, so a voice you already have is offered on fluid-tts too. Set each service's hostId to a host in your registry (this-machine in the control-plane example). Build with scripts/fluid-build.sh, install with ops/control-install-services.sh, and set FLUID_CORS_ORIGINS to your dashboard origins. scripts/fluid-smoke.sh reads this file.",
   "services": [
     {
       "id": "fluid-stt",
       "name": "Fluid STT",
-      "notes": "Transcription from the services/fluid package. Shares FluidServerKit with fluid-tts and pins the patched FluidAudio fork.",
+      "notes": "Transcription from the services/fluid package. Shares FluidServerKit with fluid-tts and pins an exact FluidAudio release.",
       "capabilityId": "stt",
       "hostId": "this-machine",
       "permissions": {
@@ -93,155 +93,108 @@
     }
   ],
   "roster": {
+    "ttsModels": [
+      {
+        "id": "kokoro-82m",
+        "name": "Kokoro 82M"
+      },
+      {
+        "id": "luxtts",
+        "name": "LuxTTS",
+        "cloning": {
+          "requiresText": true,
+          "maxDurationS": 5
+        }
+      },
+      {
+        "id": "pocket-tts",
+        "name": "Pocket-TTS",
+        "cloning": {
+          "requiresText": false
+        },
+        "chunkProfile": {
+          "words": 75,
+          "chars": 400
+        }
+      }
+    ],
+    "sttModels": [
+      {
+        "id": "parakeet-tdt-v3",
+        "name": "Parakeet TDT v3",
+        "kind": "batch"
+      },
+      {
+        "id": "parakeet-unified-0.6b",
+        "name": "Parakeet Unified 0.6B",
+        "kind": "both"
+      },
+      {
+        "id": "nemotron-streaming-en-0.6b",
+        "name": "Nemotron Streaming EN 0.6B",
+        "kind": "streaming",
+        "params": [
+          {
+            "name": "chunkMs",
+            "values": [
+              560,
+              1120,
+              2240
+            ]
+          }
+        ],
+        "variants": [
+          {
+            "id": "560ms",
+            "params": [
+              {
+                "name": "chunkMs",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "id": "1120ms",
+            "params": [
+              {
+                "name": "chunkMs",
+                "value": 1120
+              }
+            ]
+          },
+          {
+            "id": "2240ms",
+            "params": [
+              {
+                "name": "chunkMs",
+                "value": 2240
+              }
+            ]
+          }
+        ]
+      }
+    ],
     "providers": {
       "fluid-tts": {
+        "resolvesVoices": true,
         "responseFormat": "aac",
         "sessions": true,
-        "ttsModels": [
+        "serves": [
           {
-            "id": "pocket-tts",
-            "name": "Pocket-TTS",
+            "model": "pocket-tts",
             "key": "pocket-tts",
-            "cloning": {
-              "available": true,
-              "requiresText": false
-            },
-            "chunkProfile": {
-              "words": 75,
-              "chars": 400
-            },
             "realtime": true,
             "streaming": true
           },
           {
-            "id": "kokoro-ane",
-            "name": "Kokoro 82M (ANE)",
+            "model": "kokoro-82m",
             "key": "kokoro-ane",
-            "presetVoices": [
-              {
-                "id": "af_alloy",
-                "name": "Alloy"
-              },
-              {
-                "id": "af_aoede",
-                "name": "Aoede"
-              },
-              {
-                "id": "af_bella",
-                "name": "Bella"
-              },
-              {
-                "id": "af_heart",
-                "name": "Heart"
-              },
-              {
-                "id": "af_jessica",
-                "name": "Jessica"
-              },
-              {
-                "id": "af_kore",
-                "name": "Kore"
-              },
-              {
-                "id": "af_nicole",
-                "name": "Nicole"
-              },
-              {
-                "id": "af_nova",
-                "name": "Nova"
-              },
-              {
-                "id": "af_river",
-                "name": "River"
-              },
-              {
-                "id": "af_sarah",
-                "name": "Sarah"
-              },
-              {
-                "id": "af_sky",
-                "name": "Sky"
-              },
-              {
-                "id": "am_adam",
-                "name": "Adam"
-              },
-              {
-                "id": "am_echo",
-                "name": "Echo"
-              },
-              {
-                "id": "am_eric",
-                "name": "Eric"
-              },
-              {
-                "id": "am_fenrir",
-                "name": "Fenrir"
-              },
-              {
-                "id": "am_liam",
-                "name": "Liam"
-              },
-              {
-                "id": "am_michael",
-                "name": "Michael"
-              },
-              {
-                "id": "am_onyx",
-                "name": "Onyx"
-              },
-              {
-                "id": "am_puck",
-                "name": "Puck"
-              },
-              {
-                "id": "am_santa",
-                "name": "Santa"
-              },
-              {
-                "id": "bf_alice",
-                "name": "Alice"
-              },
-              {
-                "id": "bf_emma",
-                "name": "Emma"
-              },
-              {
-                "id": "bf_isabella",
-                "name": "Isabella"
-              },
-              {
-                "id": "bf_lily",
-                "name": "Lily"
-              },
-              {
-                "id": "bm_daniel",
-                "name": "Daniel"
-              },
-              {
-                "id": "bm_fable",
-                "name": "Fable"
-              },
-              {
-                "id": "bm_george",
-                "name": "George"
-              },
-              {
-                "id": "bm_lewis",
-                "name": "Lewis"
-              }
-            ],
             "realtime": true,
             "streaming": false
           },
           {
-            "id": "luxtts",
-            "name": "LuxTTS",
+            "model": "luxtts",
             "key": "luxtts",
-            "cloning": {
-              "available": true,
-              "requiresText": true
-            },
             "realtime": true,
             "streaming": false
           }
@@ -251,373 +204,416 @@
         "sessions": true,
         "defaultModel": "parakeet-unified-0.6b",
         "idleUnloadMs": 1800000,
-        "sttModels": [
+        "serves": [
           {
-            "id": "parakeet-tdt-v3",
-            "name": "Parakeet TDT v3",
-            "key": "parakeet-tdt-v3",
-            "kind": "batch"
+            "model": "parakeet-tdt-v3",
+            "key": "parakeet-tdt-v3"
           },
           {
-            "id": "parakeet-unified-0.6b",
-            "name": "Parakeet Unified 0.6B",
-            "key": "parakeet-unified-0.6b",
-            "kind": "both"
+            "model": "parakeet-unified-0.6b",
+            "key": "parakeet-unified-0.6b"
           },
           {
-            "id": "nemotron-streaming-en-0.6b",
-            "name": "Nemotron Streaming EN 0.6B",
-            "key": "nemotron-streaming-en-0.6b",
-            "kind": "streaming",
-            "params": [
-              {
-                "name": "chunkMs",
-                "values": [
-                  560,
-                  1120,
-                  2240
-                ]
-              }
-            ],
-            "variants": [
-              {
-                "id": "560ms",
-                "params": [
-                  {
-                    "name": "chunkMs",
-                    "value": 560
-                  }
-                ]
-              },
-              {
-                "id": "1120ms",
-                "params": [
-                  {
-                    "name": "chunkMs",
-                    "value": 1120
-                  }
-                ]
-              },
-              {
-                "id": "2240ms",
-                "params": [
-                  {
-                    "name": "chunkMs",
-                    "value": 2240
-                  }
-                ]
-              }
-            ]
+            "model": "nemotron-streaming-en-0.6b",
+            "key": "nemotron-streaming-en-0.6b"
           }
         ]
       }
     },
     "voices": [
       {
-        "id": "fluid-alloy",
-        "name": "Alloy (Fluid)",
-        "models": [
+        "id": "heart",
+        "name": "Heart",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "af_alloy"
-          }
-        ]
-      },
-      {
-        "id": "fluid-aoede",
-        "name": "Aoede (Fluid)",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "af_aoede"
-          }
-        ]
-      },
-      {
-        "id": "fluid-bella",
-        "name": "Bella (Fluid)",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
-            "key": "af_bella"
-          }
-        ]
-      },
-      {
-        "id": "fluid-heart",
-        "name": "Heart (Fluid)",
-        "models": [
-          {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_heart"
           }
         ]
       },
       {
-        "id": "fluid-jessica",
-        "name": "Jessica (Fluid)",
-        "models": [
+        "id": "alloy",
+        "name": "Alloy",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
+            "key": "af_alloy"
+          }
+        ]
+      },
+      {
+        "id": "aoede",
+        "name": "Aoede",
+        "renderings": [
+          {
+            "model": "kokoro-82m",
+            "method": "preset",
+            "key": "af_aoede"
+          }
+        ]
+      },
+      {
+        "id": "bella",
+        "name": "Bella",
+        "renderings": [
+          {
+            "model": "kokoro-82m",
+            "method": "preset",
+            "key": "af_bella"
+          }
+        ]
+      },
+      {
+        "id": "jessica",
+        "name": "Jessica",
+        "renderings": [
+          {
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_jessica"
           }
         ]
       },
       {
-        "id": "fluid-kore",
-        "name": "Kore (Fluid)",
-        "models": [
+        "id": "kore",
+        "name": "Kore",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_kore"
           }
         ]
       },
       {
-        "id": "fluid-nicole",
-        "name": "Nicole (Fluid)",
-        "models": [
+        "id": "nicole",
+        "name": "Nicole",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_nicole"
           }
         ]
       },
       {
-        "id": "fluid-nova",
-        "name": "Nova (Fluid)",
-        "models": [
+        "id": "nova",
+        "name": "Nova",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_nova"
           }
         ]
       },
       {
-        "id": "fluid-river",
-        "name": "River (Fluid)",
-        "models": [
+        "id": "river",
+        "name": "River",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_river"
           }
         ]
       },
       {
-        "id": "fluid-sarah",
-        "name": "Sarah (Fluid)",
-        "models": [
+        "id": "sarah",
+        "name": "Sarah",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_sarah"
           }
         ]
       },
       {
-        "id": "fluid-sky",
-        "name": "Sky (Fluid)",
-        "models": [
+        "id": "sky",
+        "name": "Sky",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "af_sky"
           }
         ]
       },
       {
-        "id": "fluid-adam",
-        "name": "Adam (Fluid)",
-        "models": [
+        "id": "adam",
+        "name": "Adam",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_adam"
           }
         ]
       },
       {
-        "id": "fluid-echo",
-        "name": "Echo (Fluid)",
-        "models": [
+        "id": "echo",
+        "name": "Echo",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_echo"
           }
         ]
       },
       {
-        "id": "fluid-eric",
-        "name": "Eric (Fluid)",
-        "models": [
+        "id": "eric",
+        "name": "Eric",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_eric"
           }
         ]
       },
       {
-        "id": "fluid-fenrir",
-        "name": "Fenrir (Fluid)",
-        "models": [
+        "id": "fenrir",
+        "name": "Fenrir",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_fenrir"
           }
         ]
       },
       {
-        "id": "fluid-liam",
-        "name": "Liam (Fluid)",
-        "models": [
+        "id": "liam",
+        "name": "Liam",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_liam"
           }
         ]
       },
       {
-        "id": "fluid-michael",
-        "name": "Michael (Fluid)",
-        "models": [
+        "id": "michael",
+        "name": "Michael",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_michael"
           }
         ]
       },
       {
-        "id": "fluid-onyx",
-        "name": "Onyx (Fluid)",
-        "models": [
+        "id": "onyx",
+        "name": "Onyx",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_onyx"
           }
         ]
       },
       {
-        "id": "fluid-puck",
-        "name": "Puck (Fluid)",
-        "models": [
+        "id": "puck",
+        "name": "Puck",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_puck"
           }
         ]
       },
       {
-        "id": "fluid-santa",
-        "name": "Santa (Fluid)",
-        "models": [
+        "id": "santa",
+        "name": "Santa",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "am_santa"
           }
         ]
       },
       {
-        "id": "fluid-alice",
-        "name": "Alice (Fluid)",
-        "models": [
+        "id": "alice",
+        "name": "Alice",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bf_alice"
           }
         ]
       },
       {
-        "id": "fluid-emma",
-        "name": "Emma (Fluid)",
-        "models": [
+        "id": "emma",
+        "name": "Emma",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bf_emma"
           }
         ]
       },
       {
-        "id": "fluid-isabella",
-        "name": "Isabella (Fluid)",
-        "models": [
+        "id": "isabella",
+        "name": "Isabella",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bf_isabella"
           }
         ]
       },
       {
-        "id": "fluid-lily",
-        "name": "Lily (Fluid)",
-        "models": [
+        "id": "lily",
+        "name": "Lily",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bf_lily"
           }
         ]
       },
       {
-        "id": "fluid-daniel",
-        "name": "Daniel (Fluid)",
-        "models": [
+        "id": "daniel",
+        "name": "Daniel",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bm_daniel"
           }
         ]
       },
       {
-        "id": "fluid-fable",
-        "name": "Fable (Fluid)",
-        "models": [
+        "id": "fable",
+        "name": "Fable",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bm_fable"
           }
         ]
       },
       {
-        "id": "fluid-george",
-        "name": "George (Fluid)",
-        "models": [
+        "id": "george",
+        "name": "George",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bm_george"
           }
         ]
       },
       {
-        "id": "fluid-lewis",
-        "name": "Lewis (Fluid)",
-        "models": [
+        "id": "lewis",
+        "name": "Lewis",
+        "renderings": [
           {
-            "serviceId": "fluid-tts",
-            "model": "kokoro-ane",
+            "model": "kokoro-82m",
+            "method": "preset",
             "key": "bm_lewis"
+          }
+        ]
+      },
+      {
+        "id": "alba",
+        "name": "Alba",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "alba"
+          }
+        ]
+      },
+      {
+        "id": "marius",
+        "name": "Marius",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "marius"
+          }
+        ]
+      },
+      {
+        "id": "javert",
+        "name": "Javert",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "javert"
+          }
+        ]
+      },
+      {
+        "id": "jean",
+        "name": "Jean",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "jean"
+          }
+        ]
+      },
+      {
+        "id": "fantine",
+        "name": "Fantine",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "fantine"
+          }
+        ]
+      },
+      {
+        "id": "cosette",
+        "name": "Cosette",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "cosette"
+          }
+        ]
+      },
+      {
+        "id": "eponine",
+        "name": "Eponine",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "eponine"
+          }
+        ]
+      },
+      {
+        "id": "azelma",
+        "name": "Azelma",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "azelma"
           }
         ]
       }

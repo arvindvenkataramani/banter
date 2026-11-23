@@ -139,17 +139,21 @@ describe("POST /api/config/reload: registry", () => {
   })
 
   it("editing a roster section and reloading shows the change in GET /api/voice, with a warning naming that provider", async () => {
-    const before: NodeRoster = {
-      providers: { "tts-a": { ttsModels: [{ id: "model-a", name: "Model A", key: "model-a" }] } },
+    const before = {
+      ttsModels: [{ id: "model-a", name: "Model A" }],
+      sttModels: [],
+      providers: { "tts-a": { resolvesVoices: false, serves: [{ model: "model-a", key: "model-a" }] } },
       voices: [],
-    }
+    } as unknown as NodeRoster
     const registry = makeRegistry({ roster: before })
     const app = await makeApp({ ...BASE_CONFIG, voice: { enabled: true, tts: {} } } as PlatformConfig, registry)
 
-    const after: NodeRoster = {
-      providers: { "tts-a": { ttsModels: [{ id: "model-a", name: "Model A v2", key: "model-a" }] } },
+    const after = {
+      ttsModels: [{ id: "model-a", name: "Model A" }],
+      sttModels: [],
+      providers: { "tts-a": { resolvesVoices: false, serves: [{ model: "model-a", key: "model-a-v2" }] } },
       voices: [],
-    }
+    } as unknown as NodeRoster
     await writeFile(registryPath, JSON.stringify({ ...registry, roster: after }, null, 2))
 
     const res = await app.fetch(new Request("http://localhost/api/config/reload", { method: "POST" }))
@@ -162,7 +166,7 @@ describe("POST /api/config/reload: registry", () => {
     const voiceRes = await app.fetch(new Request("http://localhost/api/voice"))
     const voice = await voiceRes.json()
     const provider = voice.tts.providers.find((p: any) => p.serviceId === "tts-a")
-    expect(provider.models[0].name).toBe("Model A v2")
+    expect(provider.serves[0].model).toBe("model-a")
   })
 
   it("answers with the error for registry while config still reloads, on a malformed registry", async () => {

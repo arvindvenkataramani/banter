@@ -27,6 +27,9 @@ export class AgentVoice {
    * chunk without reattaching. */
   ttsEndpoint: string | null = null
   ttsSelection: VoiceSelection | null = null
+  /** Told once per unresolved selection that there is nothing to speak with. */
+  onCannotSpeak: ((reason: string) => void) | undefined
+  private reportedUnresolved: VoiceSelection | null = null
 
   constructor(player: SpeechPlayer) {
     // Local "silence now" precedes ground truth — stop() halts audio
@@ -40,15 +43,17 @@ export class AgentVoice {
       enqueueChat: async (text) => {
         const sel = this.ttsSelection
         const endpoint = this.ttsEndpoint
-        if (!sel || !endpoint) return
+        if (sel && !sel.request && this.reportedUnresolved !== sel) {
+          this.reportedUnresolved = sel
+          this.onCannotSpeak?.(sel.requestError ?? 'the selection was not resolved')
+        }
+        if (!sel?.request || !endpoint) return
         await player.enqueueChat({
           endpoint,
           text,
-          modelId: sel.modelKey,
-          voiceId: sel.voiceKey,
+          request: sel.request,
           format: sel.responseFormat,
           speed: sel.speed ?? 1.0,
-          params: sel.params,
         })
       },
       beginRun: (runId) => player.beginRun(runId),

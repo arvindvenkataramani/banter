@@ -4,7 +4,7 @@ Registry and config snippets for each text-to-speech model in [models.md](models
 
 Every snippet assumes the service has already been installed, following its adapter's README: [`tts/kokoro`](../../services/tts/kokoro/README.md) and [`tts/neutts-air`](../../services/tts/neutts-air/README.md) (this repo's Python adapters), `pip install mlx-audio` (Pocket TTS), or `scripts/fluid-build.sh` (fluid). See [configuration.md](../reference/configuration.md) for what each registry field means, and [voices-and-models.md](voices-and-models.md) for what a roster provider, model and voice are and how `voice.tts.selection` refers to them.
 
-Each `roster.providers` snippet below is a new key to add to that object — a new key in that object, not replacing the providers already there.
+Each `roster` snippet below adds entries to what is already there: a new key in `providers`, new items in `ttsModels` and `voices`. None of it replaces the existing entries.
 
 ---
 
@@ -38,25 +38,29 @@ Install it by following the adapter's README: copy `server.py` and `requirements
 
 `KOKORO_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. `startupTime` covers importing PyTorch, which happens before the server listens.
 
-The server always answers `audio/wav`, so the roster provider sets `"responseFormat": "wav"`. Left absent it defaults to `mp3`, and Banter would try to decode wav bytes as mp3. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. A `roster.providers` entry, as in the example registry, trimmed:
+The server always answers `audio/wav`, so the roster provider sets `"responseFormat": "wav"`. Left absent it defaults to `mp3`, and Banter would try to decode wav bytes as mp3. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. The roster declares the model once, the provider that serves it, and each voice as a rendering on the model, as in the example registry, trimmed:
 
 ```json
 "roster": {
+  "ttsModels": [{ "id": "kokoro-82m", "name": "Kokoro 82M" }],
   "providers": {
     "tts-kokoro": {
+      "resolvesVoices": false,
       "responseFormat": "wav",
-      "ttsModels": [
-        {
-          "id": "kokoro-82m",
-          "name": "Kokoro 82M",
-          "key": "kokoro-82m",
-          "presetVoices": [{ "id": "af_heart", "name": "Heart" }]
-        }
-      ]
+      "serves": [{ "model": "kokoro-82m", "key": "kokoro-82m" }]
     }
-  }
+  },
+  "voices": [
+    {
+      "id": "heart",
+      "name": "Heart",
+      "renderings": [{ "model": "kokoro-82m", "method": "preset", "key": "af_heart" }]
+    }
+  ]
 }
 ```
+
+`resolvesVoices` is `false` because the adapter does not read the registry, so the shard on its machine turns the selected voice into the `af_heart` the server expects.
 
 Point `voice.tts.selection` at it in `config.json`:
 
@@ -68,7 +72,7 @@ Point `voice.tts.selection` at it in `config.json`:
 }
 ```
 
-The weights download to `~/.cache/huggingface` the first time the pipeline loads. [voices-and-models.md](voices-and-models.md) shows how to add more presets as roster voices.
+The weights download to `~/.cache/huggingface` the first time the pipeline loads. [voices-and-models.md](voices-and-models.md) shows how to add more voices.
 
 ---
 
@@ -100,27 +104,29 @@ Add this entry to `registry.json`'s `services`:
 }
 ```
 
-Then add a `roster.providers` entry for it in `registry.json`:
+Then add its model, provider and a voice to the `roster` in `registry.json`:
 
 ```json
 "roster": {
+  "ttsModels": [{ "id": "neuphonic/neutts-air", "name": "NeuTTS Air" }],
   "providers": {
     "tts-neutts-air": {
+      "resolvesVoices": false,
       "responseFormat": "wav",
-      "ttsModels": [
-        {
-          "id": "neuphonic/neutts-air",
-          "name": "NeuTTS Air",
-          "key": "neuphonic/neutts-air",
-          "presetVoices": [{ "id": "example", "name": "Example" }]
-        }
-      ]
+      "serves": [{ "model": "neuphonic/neutts-air", "key": "neuphonic/neutts-air" }]
     }
-  }
+  },
+  "voices": [
+    {
+      "id": "example",
+      "name": "Example",
+      "renderings": [{ "model": "neuphonic/neutts-air", "method": "preset", "key": "example" }]
+    }
+  ]
 }
 ```
 
-The voice ID above (`example`) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice ID here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. Banter sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
+The rendering's `key` (`example` above) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. Banter sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
 
 Point `voice.tts.selection` at it in `config.json`:
 
@@ -164,53 +170,45 @@ Add this entry to `registry.json`'s `services`:
 }
 ```
 
-Then add a `roster.providers` entry for it in `registry.json`:
+Then add its model, provider and voices to the `roster` in `registry.json`. The model id is Banter's own (`pocket-tts`); the runtime's name for it, `mlx-community/pocket-tts`, is the serving's `key`. Voices are shown trimmed to two of the eight presets (`alba`, `marius`, `javert`, `jean`, `fantine`, `cosette`, `eponine`, `azelma`), each declared the same way:
 
 ```json
 "roster": {
+  "ttsModels": [{ "id": "pocket-tts", "name": "Pocket-TTS" }],
   "providers": {
     "tts-mlx-audio": {
-      "ttsModels": [
-        {
-          "id": "mlx-community/pocket-tts",
-          "name": "Pocket TTS",
-          "key": "mlx-community/pocket-tts",
-          "presetVoices": [
-            { "id": "alba", "name": "Alba" },
-            { "id": "marius", "name": "Marius" },
-            { "id": "javert", "name": "Javert" },
-            { "id": "jean", "name": "Jean" },
-            { "id": "fantine", "name": "Fantine" },
-            { "id": "cosette", "name": "Cosette" },
-            { "id": "eponine", "name": "Eponine" },
-            { "id": "azelma", "name": "Azelma" }
-          ]
-        }
-      ]
+      "resolvesVoices": false,
+      "serves": [{ "model": "pocket-tts", "key": "mlx-community/pocket-tts" }]
     }
-  }
+  },
+  "voices": [
+    { "id": "alba", "name": "Alba", "renderings": [{ "model": "pocket-tts", "method": "preset", "key": "alba" }] },
+    { "id": "marius", "name": "Marius", "renderings": [{ "model": "pocket-tts", "method": "preset", "key": "marius" }] }
+  ]
 }
 ```
+
+If `pocket-tts` is already declared in the registry (as it is when the fluid servers are merged in), do not declare it again: add only the provider, and any voice not yet declared. A voice that is already declared gains this runtime without any edit, since a voice is available wherever some runtime serves a model that renders her.
 
 Point `voice.tts.selection` at whichever preset you want by default:
 
 ```json
 "voice": {
   "tts": {
-    "selection": { "serviceId": "tts-mlx-audio", "model": "mlx-community/pocket-tts", "voice": "alba" }
+    "selection": { "serviceId": "tts-mlx-audio", "model": "pocket-tts", "voice": "alba" }
   }
 }
 ```
 
-`mlx-audio` has no dedicated health endpoint; `GET /v1/models` doubles as one, returning 2xx once it's actually ready to serve. `--allowed-origins` is `mlx-audio`'s own CORS flag — pass Banter's origin the same as any other service. Any other model `mlx-audio` supports can be added as another entry in the same provider's `ttsModels` array; no second registry entry or process needed.
+`mlx-audio` has no dedicated health endpoint; `GET /v1/models` doubles as one, returning 2xx once it's actually ready to serve. `--allowed-origins` is `mlx-audio`'s own CORS flag — pass Banter's origin the same as any other service. Any other model `mlx-audio` supports can be added as another entry in the same provider's `serves` list, after declaring it in `ttsModels`; no second registry entry or process needed.
 
-`responseFormat` in the roster entry above is left unset, defaulting to `mp3` — Banter sends that as the request's `response_format` and decodes the response as that format, so this only works if `mlx-audio` honors the field. Set `responseFormat` explicitly to `"wav"` if you'd rather it request wav.
+`responseFormat` in the provider above is left unset, defaulting to `mp3` — Banter sends that as the request's `response_format` and decodes the response as that format, so this only works if `mlx-audio` honors the field. Set `responseFormat` explicitly to `"wav"` if you'd rather it request wav.
 
 ---
 
 ## fluid-tts
 
-An Apple Silicon option: Pocket TTS, Kokoro on the Neural Engine, and LuxTTS through `services/fluid`, with streaming audio. Its entry and roster are in `services/fluid/registry.fluid.example.json`, which merges into your registry by appending ([speech-servers.md](speech-servers.md#fluid-an-apple-silicon-option)). [`services/fluid`](../../services/fluid/README.md) covers what the server offers, including voices built from reference audio.
+An Apple Silicon option: Pocket TTS, Kokoro on the Neural Engine, and LuxTTS through `services/fluid`, with streaming audio. Its entry and roster are in `services/fluid/registry.fluid.example.json`, which merges into your registry by union ([speech-servers.md](speech-servers.md#fluid-an-apple-silicon-option)). [`services/fluid`](../../services/fluid/README.md) covers what the server offers, including voices built from reference audio.
 
 ---
 
@@ -241,22 +239,24 @@ Any server exposing `POST /v1/audio/speech` and a health endpoint can be registe
 }
 ```
 
-Fill in `port` with whatever the server listens on, and confirm its CORS configuration allows Banter's origin — the browser calls this server directly. Then add a `roster.providers` entry for it in `registry.json`:
+Fill in `port` with whatever the server listens on, and confirm its CORS configuration allows Banter's origin — the browser calls this server directly. Then add its model, provider and a voice to the `roster` in `registry.json`:
 
 ```json
 "roster": {
+  "ttsModels": [{ "id": "vendor/model-name", "name": "Model Name" }],
   "providers": {
     "tts-yourservice": {
-      "ttsModels": [
-        {
-          "id": "vendor/model-name",
-          "name": "Model Name",
-          "key": "vendor/model-name",
-          "presetVoices": [{ "id": "voice-id", "name": "Voice Name" }]
-        }
-      ]
+      "resolvesVoices": false,
+      "serves": [{ "model": "vendor/model-name", "key": "vendor/model-name" }]
     }
-  }
+  },
+  "voices": [
+    {
+      "id": "voice-id",
+      "name": "Voice Name",
+      "renderings": [{ "model": "vendor/model-name", "method": "preset", "key": "voice-id" }]
+    }
+  ]
 }
 ```
 
@@ -270,6 +270,6 @@ And point `voice.tts.selection` at it in `config.json`:
 }
 ```
 
-A wrong model id or voice key fails at the request, not at load — the roster is Banter's claim about what a third-party server will accept, not something checked against it. See [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) for the full shape, including voices built from reference audio.
+A wrong serving `key` or rendering `key` fails at the request, not at load — the roster is Banter's claim about what a third-party server will accept, not something checked against it. See [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) for the full shape, including voices built from reference audio.
 
 Set the provider's `responseFormat` to `mp3`, `aac`, or `wav` — Banter sends this as the request's `response_format` and decodes the response as that format, so it needs to match what the server actually returns for that value. Absent means `mp3`.

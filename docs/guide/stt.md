@@ -2,7 +2,7 @@
 
 Registry and config snippets for each speech-to-text model in [models.md](models.md#speech-to-text-models). `parakeet-mlx-fastapi` is covered in that page's [Quick start](models.md#quick-start) instead of here.
 
-Every snippet assumes the service has already been installed, following its adapter's README: [`stt/faster-whisper`](../../services/stt/faster-whisper/README.md) and [`stt/whisper`](../../services/stt/whisper/server.py) are Python (`requirements.txt` in a virtual environment); fluid is built with `scripts/fluid-build.sh`. See [configuration.md](../reference/configuration.md) for what each registry field means. `voice.stt.serviceId` is validated against the registry directly and needs no roster entry; a roster `sttModels` list is only how a server that reads one, such as `fluid-stt`, declares what it can load. See [voices-and-models.md](voices-and-models.md) if you are adding a model there.
+Every snippet assumes the service has already been installed, following its adapter's README: [`stt/faster-whisper`](../../services/stt/faster-whisper/README.md) and [`stt/whisper`](../../services/stt/whisper/server.py) are Python (`requirements.txt` in a virtual environment); fluid is built with `scripts/fluid-build.sh`. See [configuration.md](../reference/configuration.md) for what each registry field means. `voice.stt.serviceId` is validated against the registry directly and needs no roster entry; a roster `sttModels` entry, with the provider's `serves` list, is only how a server that reads the roster, such as `fluid-stt`, declares what it can load. See [voices-and-models.md](voices-and-models.md) if you are adding a model there.
 
 ---
 
@@ -114,7 +114,7 @@ Swap `--model` for a smaller Whisper checkpoint to trade accuracy for speed and 
 
 An Apple Silicon option: Parakeet and Nemotron through `services/fluid`'s CoreML adapter, with streaming (an alternative to the Quick Start's MLX-served `parakeet-mlx-fastapi`). Build first with `scripts/fluid-build.sh`; see [`services/fluid`](../../services/fluid/README.md) for what the server offers and how to install it.
 
-Its entry is in `services/fluid/registry.fluid.example.json`, which merges into your live `registry.json` by appending ([speech-servers.md](speech-servers.md#fluid-an-apple-silicon-option)). It has this shape; the merge command in [`services/fluid/README.md`](../../services/fluid/README.md#registering-them) sets `hostId` and expands the `~/` in `workingDirectory`, and you edit the rest in the merged entry:
+Its entry is in `services/fluid/registry.fluid.example.json`, which merges into your live `registry.json` by union ([speech-servers.md](speech-servers.md#fluid-an-apple-silicon-option)). It has this shape; the merge command in [`services/fluid/README.md`](../../services/fluid/README.md#registering-them) sets `hostId` and expands the `~/` in `workingDirectory`, and you edit the rest in the merged entry:
 
 ```json
 {
@@ -141,7 +141,7 @@ Its entry is in `services/fluid/registry.fluid.example.json`, which merges into 
 }
 ```
 
-`--registry` and `--provider` are required — `fluid-stt` reads the `fluid-stt` provider's `sttModels` from the registry's `roster` section rather than taking a model on the command line. The fluid example declares `parakeet-tdt-v3` (batch), `parakeet-unified-0.6b` (both batch and streaming), and `nemotron-streaming-en-0.6b` (streaming, at three chunk sizes) — see [voices-and-models.md](voices-and-models.md) for what a roster `sttModels` entry looks like and how to add or change one. The same provider block's `defaultModel` is what a request naming no model loads into an empty server, and `idleUnloadMs` (30 minutes when absent) is how long the model stays resident without work.
+`--registry` and `--provider` are required — `fluid-stt` reads the models the `fluid-stt` provider `serves` from the registry's `roster` section rather than taking a model on the command line. The fluid example declares `parakeet-tdt-v3` (batch), `parakeet-unified-0.6b` (both batch and streaming), and `nemotron-streaming-en-0.6b` (streaming, at three chunk sizes) — see [voices-and-models.md](voices-and-models.md) for what an `sttModels` entry and a `serves` entry look like and how to add or change one. The same provider block's `defaultModel` is what a request naming no model loads into an empty server, and `idleUnloadMs` (30 minutes when absent) is how long the model stays resident without work.
 
 `config.json`'s `voice.stt` selects it by service id and model:
 

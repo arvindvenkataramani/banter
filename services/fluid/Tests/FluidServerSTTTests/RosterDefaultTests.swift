@@ -56,10 +56,12 @@ final class RosterDefaultTests: XCTestCase {
         let file = directory.appendingPathComponent("registry.json")
         try Data(
             """
-            {"version": 2, "services": [], "roster": {"providers": {"fluid-stt": {
-              "idleUnloadMs": "30m",
-              "sttModels": [{"id": "unified", "name": "Unified", "key": "parakeet-unified-0.6b", "kind": "both"}]
-            }}, "voices": {}}}
+            {"version": 4, "services": [], "roster": {
+              "sttModels": [{"id": "unified", "name": "Unified", "kind": "both"}],
+              "providers": {"fluid-stt": {
+                "idleUnloadMs": "30m",
+                "serves": [{"model": "unified", "key": "parakeet-unified-0.6b"}]
+              }}, "voices": []}}
             """.utf8
         ).write(to: file)
 
@@ -81,11 +83,13 @@ final class RosterDefaultTests: XCTestCase {
         let file = directory.appendingPathComponent("registry.json")
         try Data(
             """
-            {"version": 2, "services": [], "roster": {"providers": {"fluid-stt": {
-              "defaultModel": "unified",
-              "idleUnloadMs": 90000,
-              "sttModels": [{"id": "unified", "name": "Unified", "key": "parakeet-unified-0.6b", "kind": "both"}]
-            }}, "voices": {}}}
+            {"version": 4, "services": [], "roster": {
+              "sttModels": [{"id": "unified", "name": "Unified", "kind": "both"}],
+              "providers": {"fluid-stt": {
+                "defaultModel": "unified",
+                "idleUnloadMs": 90000,
+                "serves": [{"model": "unified", "key": "parakeet-unified-0.6b"}]
+              }}, "voices": []}}
             """.utf8
         ).write(to: file)
 

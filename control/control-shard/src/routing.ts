@@ -19,6 +19,7 @@ export function routesToShardApp(pathname: string): boolean {
     pathname.startsWith("/ping/") ||
     (pathname.startsWith("/api/services/") && (pathname.endsWith("/start") || pathname.endsWith("/stop"))) ||
     pathname === "/api/roster" ||
+    pathname === "/api/voices/resolve" ||
     pathname === "/api/config/reload"
   );
 }

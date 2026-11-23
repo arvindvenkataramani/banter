@@ -6,7 +6,9 @@ import { createVoiceConfigSource } from './voice-config'
 const config = (sttServiceId: string, ttsServiceId: string): VoiceConfig => ({
   enabled: true,
   tts: {
-    providers: [{ serviceId: ttsServiceId, responseFormat: 'mp3', models: [] }],
+    models: [],
+    providers: [{ serviceId: ttsServiceId, responseFormat: 'mp3', serves: [] }],
+    voices: [],
     selection: { serviceId: ttsServiceId, model: 'model-1', voice: 'voice-1', speed: 1 },
   },
   stt: { serviceId: sttServiceId },

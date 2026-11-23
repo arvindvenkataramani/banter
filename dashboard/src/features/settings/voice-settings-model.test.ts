@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveVoiceSelection, type StoredVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
+import { loadVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
 import {
   buildPatch, chunkingView, editChunking, resetChunking, resetTuning, roster, seedDraft, setModel, setPreferStreaming, setProvider, setSaveMicSamples, setScope,
   setSpeed, setSttService, setTakeover, setTuning, setVoice, TUNING_FIELDS, type Draft,
@@ -11,31 +11,37 @@ const CONFIG: VoiceConfig = {
   enabled: true,
   takeover: 'ask',
   tts: {
+    models: [
+      { id: 'a-one', name: 'A One', canClone: false, chunking: { mode: 'greedy', minWords: 4, maxWords: 50 } },
+      { id: 'a-two', name: 'A Two', canClone: false },
+      { id: 'a-batch', name: 'A Batch', canClone: false },
+      { id: 'b-batch', name: 'B Batch', canClone: false },
+      { id: 'b-live', name: 'B Live', canClone: false },
+    ],
     providers: [
       {
         serviceId: 'tts-a',
         name: 'Provider A',
         responseFormat: 'mp3',
         sessions: true,
-        models: [
-          {
-            id: 'a-one', key: 'a-one-key', realtime: true, chunking: { mode: 'greedy', minWords: 4, maxWords: 50 },
-            voices: [{ id: 'a1', name: 'A1', key: 'a1-key' }, { id: 'a2', name: 'A2', key: 'a2-key' }],
-          },
-          { id: 'a-two', key: 'a-two-key', realtime: true, voices: [{ id: 'b1', name: 'B1', key: 'b1-key' }] },
-          { id: 'a-batch', key: 'a-batch-key', voices: [{ id: 'c1', name: 'C1', key: 'c1-key' }] },
-        ],
+        serves: [{ model: 'a-one', realtime: true }, { model: 'a-two', realtime: true }, { model: 'a-batch' }],
       },
       {
         serviceId: 'tts-b',
         responseFormat: 'aac',
-        models: [
-          { id: 'b-batch', key: 'b-batch-key', voices: [{ id: 'd1', name: 'D1', key: 'd1-key' }] },
-          { id: 'b-live', key: 'b-live-key', realtime: true, voices: [{ id: 'e1', name: 'E1', key: 'e1-key' }, { id: 'e2', name: 'E2', key: 'e2-key' }] },
-        ],
+        serves: [{ model: 'b-batch' }, { model: 'b-live', realtime: true }],
       },
     ],
-    selection: { serviceId: 'tts-a', model: 'a-one', voice: 'a1', speed: 1.2 },
+    voices: [
+      { id: 'a1', name: 'A1', renderings: [{ model: 'a-one', method: 'preset' }] },
+      { id: 'a2', name: 'A2', renderings: [{ model: 'a-one', method: 'preset' }] },
+      { id: 'b1', name: 'B1', renderings: [{ model: 'a-two', method: 'preset' }] },
+      { id: 'c1', name: 'C1', renderings: [{ model: 'a-batch', method: 'preset' }] },
+      { id: 'd1', name: 'D1', renderings: [{ model: 'b-batch', method: 'preset' }] },
+      { id: 'e1', name: 'E1', renderings: [{ model: 'b-live', method: 'preset' }] },
+      { id: 'e2', name: 'E2', renderings: [{ model: 'b-live', method: 'preset' }] },
+    ],
+    selection: { serviceId: 'tts-a', model: 'a-one', voice: 'a1', speed: 1.2, request: { model: 'a-one', voice: 'a1' } },
     options: { chunkStrategy: 'sentence', minChunkWords: 3, maxChunkWords: 40 },
     modelPrefs: { 'tts-a': { 'a-two': { chunking: { mode: 'paragraph' } } } },
     settingsScope: 'per-model',
@@ -51,7 +57,7 @@ const CONFIG: VoiceConfig = {
 }
 
 const draftOf = (config: VoiceConfig = CONFIG): Draft =>
-  seedDraft(config, resolveVoiceSelection(config, config.tts.selection as StoredVoiceSelection))
+  seedDraft(config, loadVoiceSelection(config)!)
 
 const SELECTION = { serviceId: 'tts-a', model: 'a-one', voice: 'a1', speed: 1.2 }
 

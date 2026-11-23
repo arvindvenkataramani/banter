@@ -223,93 +223,98 @@ export interface ChunkProfile {
   chars: number;
 }
 
-// Compatibility with a VoiceReference is computed at validation, not written
-// per voice. Absent means the model cannot clone at all.
+// What a synthesis model demands of a recording, if it can clone at all.
+// Whether a recording satisfies it is computed at validation, not written per voice.
 export interface Cloning {
-  available: boolean;
   requiresText?: boolean;
   minDurationS?: number;
   maxDurationS?: number;
   sampleRate?: number;
 }
 
-// A voice rendered under a second model must use that model's own
-// chunkProfile, or one model's constraint silently degrades another's audio.
+// A synthesis model: the weights, whichever runtime serves them.
 export interface TtsModel {
   id: string;
   name: string;
-  /** What this provider's runtime calls the model — the same model can have
-   *  a different key under a different runtime. */
-  key: string;
   cloning?: Cloning;
   chunkProfile?: ChunkProfile;
-  /** Fast enough for the realtime voice loop. Absent means it is not. */
-  realtime?: boolean;
-  /** The provider's runtime can stream this model's audio as it renders. */
-  streaming?: boolean;
   /** How the realtime voice loop splits text for this model. Distinct from
    *  `chunkProfile`, which bounds the generation pipeline's own chunks. */
   chunking?: { mode?: ChunkStrategy; minWords?: number; maxWords?: number };
-  /** Most requests the realtime voice loop sends this model at once. */
-  concurrency?: number;
-  /** Fields passed verbatim into every synthesis request for this model. */
-  requestParams?: Record<string, unknown>;
-  presetVoices?: { id: string; name: string }[];
 }
 
 export interface SttModel {
   id: string;
   name: string;
-  key: string;
   kind: "batch" | "streaming" | "both";
   params?: { name: string; values: number[] }[];
   variants?: { id: string; params: { name: string; value: number }[] }[];
 }
 
+// One model run by one runtime, with the facts true of this runtime rather than the weights.
+export interface Serving {
+  model: string;
+  /** What this runtime calls the model. */
+  key: string;
+  /** The runtime can stream this model's audio as it renders. Absent means no. */
+  streaming?: boolean;
+  /** Fast enough for the realtime voice loop. Absent means no. */
+  realtime?: boolean;
+  /** Most requests the realtime voice loop sends this model at once. */
+  concurrency?: number;
+  /** Fields passed verbatim into every synthesis request for this model. */
+  requestParams?: Record<string, unknown>;
+}
+
 export interface Provider {
+  /** Required on a synthesis runtime: whether it resolves voices itself rather than having the shard do it. */
+  resolvesVoices?: boolean;
   /** The audio format this runtime returns from /v1/audio/speech. Absent means mp3. */
   responseFormat?: ResponseFormat;
-  ttsModels?: TtsModel[];
-  sttModels?: SttModel[];
   /** Whether this runtime's streaming socket understands session ids and take-over. Absent means no. */
   sessions?: boolean;
   /** The STT model a request naming none loads into an empty slot. Validated by the runtime, not here. */
   defaultModel?: string;
   /** How long an STT runtime's model may go without work before it is unloaded. Absent means 30 minutes. */
   idleUnloadMs?: number;
+  serves: Serving[];
 }
 
 export const RESPONSE_FORMATS = ["mp3", "aac", "wav"] as const;
 export type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
 
 /** Declared, not probed from the file — a stale value here is taken as fact. */
-export interface VoiceReference {
+export interface Recording {
+  /** Absolute path to the audio, on the declaring node. */
   audio: string;
-  text?: string;
+  /** Absolute path to the transcript. */
+  text: string;
   durationS: number;
   sampleRate: number;
 }
 
-export interface VoiceModel {
-  serviceId: string;
+/** A voice as produced by one model: the model's own name for her (`preset`), or imitated from a recording (`clone`). */
+export interface Rendering {
   model: string;
-  key: string;
+  method: "preset" | "clone";
+  /** The model's name for the voice. Present exactly when `method` is `preset`. */
+  key?: string;
 }
 
-export interface VoiceDefinition {
+export interface Voice {
   id: string;
   name: string;
-  references?: VoiceReference[];
-  models: VoiceModel[];
+  recordings?: Recording[];
+  renderings: Rendering[];
 }
 
-/** What `clone` means in a VoiceModel's `key`: render from a reference
- *  rather than ask the model for a name it already knows. */
-export const CLONE_KEY = "clone";
-
 export interface NodeRoster {
+  /** Absent means none. */
+  ttsModels?: TtsModel[];
+  /** Absent means none. */
+  sttModels?: SttModel[];
   providers: Record<string, Provider>;
-  voices: VoiceDefinition[];
+  voices: Voice[];
 }
 
 /** One reload response reports one PartResult per part. */

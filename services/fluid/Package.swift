@@ -29,19 +29,12 @@ let package = Package(
         .library(name: "FluidServerKit", targets: ["FluidServerKit"]),
     ],
     dependencies: [
-        // Pinned to a fork, not upstream: unpatched FluidAudio garbles any text
-        // containing ( ) / … or an emoji and cuts sentences mid-phrase. This
-        // branch carries the three fixes in patches/, plus upstream #942 (the
-        // LuxTTS mid-phrase pause fix) cherry-picked on top. Read `patches/README.md`
-        // before changing this pin: a bump that drops them fails silently, in
-        // the audio.
-        //
-        // A revision, not a tag, because Chatterbox landed on upstream main
-        // after v0.15.7 and is in no release.
-        .package(
-            url: "https://github.com/arvindvenkataramani/FluidAudio.git",
-            revision: "568fef9fe97d684ab54d0eadd4338e7e57964351"
-        ),
+        // An exact release: a FluidAudio regression in Pocket-TTS fails
+        // silently, in the audio, and a new release can rename a model file
+        // the library then downloads. Read `verification/README.md` and run
+        // `scripts/fluid-smoke.sh` before changing it. Nothing below 0.18.1
+        // will do.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.4"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
         .package(
             url: "https://github.com/hummingbird-project/hummingbird-websocket.git",

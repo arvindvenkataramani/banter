@@ -24,16 +24,24 @@ final class RegistryRosterTests: XCTestCase {
         return file
     }
 
-    private let services = #""version": 2, "services": [{"id": "fluid-stt"}]"#
+    private let services = #""version": 4, "services": [{"id": "fluid-stt"}]"#
 
     func testLoadsTheProvidersModelsFromTheRosterSection() throws {
         let file = try registry(
             """
-            {\(services), "roster": {"providers": {"fluid-stt": {"responseFormat": "json", "sttModels": [
-              {"id": "parakeet-tdt-v3", "name": "Parakeet TDT v3", "key": "parakeet-tdt-v3", "kind": "batch"}
-            ]}}, "voices": {}}}
+            {\(services), "roster": {
+              "sttModels": [
+                {"id": "parakeet-tdt-v3", "name": "Parakeet TDT v3", "kind": "batch"},
+                {"id": "whisper-large-v3-turbo", "name": "Whisper", "kind": "batch"}
+              ],
+              "providers": {
+                "fluid-stt": {"serves": [{"model": "parakeet-tdt-v3", "key": "parakeet-tdt-v3"}]},
+                "stt-whisper": {"serves": [{"model": "whisper-large-v3-turbo", "key": "mlx-community/whisper-large-v3-turbo"}]}
+              },
+              "voices": []}}
             """)
         let roster = try Roster.load(registry: file, provider: "fluid-stt")
+        // Top-level models, narrowed to the ones this provider serves.
         XCTAssertEqual(roster.models.map(\.id), ["parakeet-tdt-v3"])
     }
 
@@ -49,7 +57,7 @@ final class RegistryRosterTests: XCTestCase {
     }
 
     func testAMissingProviderFailsNamingThePathAndProvider() throws {
-        let file = try registry(#"{\#(services), "roster": {"providers": {}, "voices": {}}}"#)
+        let file = try registry(#"{\#(services), "roster": {"sttModels": [], "providers": {}, "voices": []}}"#)
         XCTAssertThrowsError(try Roster.load(registry: file, provider: "fluid-stt")) { error in
             guard case RosterError.noSuchProvider(let id, let path) = error else {
                 return XCTFail("expected noSuchProvider, got \(error)")
@@ -59,17 +67,14 @@ final class RegistryRosterTests: XCTestCase {
         }
     }
 
-    /// An install copies one of the shipped examples to the registry this server
-    /// is launched with, so each has to load.
-    func testTheShippedExampleRegistriesLoad() throws {
-        let repo = URL(fileURLWithPath: #filePath)
+    /// The fluid entries an install merges into the registry this server is
+    /// launched with come from the fluid example, so it has to load.
+    func testTheFluidExampleRegistryLoads() throws {
+        let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("../..")
-        for node in ["control-plane", "control-shard"] {
-            let file = repo.appendingPathComponent("control/\(node)/data/registry.example.json")
-                .standardizedFileURL
-            let roster = try Roster.load(registry: file, provider: "fluid-stt")
-            XCTAssertFalse(roster.models.isEmpty, node)
-        }
+            .appendingPathComponent("registry.fluid.example.json")
+            .standardizedFileURL
+        let roster = try Roster.load(registry: file, provider: "fluid-stt")
+        XCTAssertFalse(roster.models.isEmpty)
     }
 }

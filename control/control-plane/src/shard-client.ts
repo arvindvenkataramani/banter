@@ -299,7 +299,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Null only for a 404 (shard older than this route) or a malformed body.
+/** Null only for a 404 (shard older than this route), a malformed body, or a
+ *  roster in the older format (providers listing `ttsModels`/`sttModels`, voices listing `models`).
  *  Any other failure throws — the poller keeps the last cached roster
  *  rather than clearing it. */
 export async function fetchShardRoster(endpoint: string): Promise<NodeRoster | null> {
@@ -313,7 +314,43 @@ export async function fetchShardRoster(endpoint: string): Promise<NodeRoster | n
     if (!res.ok) throw await shardResponseError(endpoint, res);
     const body = await res.json();
     if (!isRecord(body) || !isRecord(body.providers) || !Array.isArray(body.voices)) return null;
+    // A shard still on the older roster format is unusable here, the same as one with no roster route.
+    const oldProvider = Object.values(body.providers).some((p) => isRecord(p) && (Array.isArray(p.ttsModels) || Array.isArray(p.sttModels)));
+    const oldVoice = body.voices.some((v) => isRecord(v) && Array.isArray(v.models));
+    if (oldProvider || oldVoice) return null;
     return body as unknown as NodeRoster;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Asks a shard to resolve a voice for a runtime on its machine. The answer is
+ *  the speech-request fields a caller sends to the runtime unchanged, passed on
+ *  verbatim. Never throws: a refusal or an unreachable shard is `ok: false`
+ *  with the reason. */
+export async function resolveVoiceOnShard(
+  endpoint: string,
+  selection: { voice: string; model: string; serviceId: string },
+  timeoutMs: number = FETCH_TIMEOUT_MS,
+): Promise<{ ok: true; request: Record<string, unknown> } | { ok: false; error: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${endpoint}/api/voices/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(selection),
+      signal: controller.signal,
+    });
+    const body: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const reason = isRecord(body) && typeof body.error === "string" ? body.error : `shard returned ${res.status}`;
+      return { ok: false, error: reason };
+    }
+    if (!isRecord(body)) return { ok: false, error: "shard returned a malformed resolution" };
+    return { ok: true, request: body };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {
     clearTimeout(timeout);
   }

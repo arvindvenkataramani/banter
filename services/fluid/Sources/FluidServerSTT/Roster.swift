@@ -323,6 +323,7 @@ enum RosterError: Error, CustomStringConvertible {
     case variantRequired(id: String, offered: [RosterVariant])
     case defaultUnknown(String)
     case defaultNeedsParameter(String)
+    case undeclaredModel(String)
 
     var description: String {
         switch self {
@@ -386,8 +387,10 @@ enum RosterError: Error, CustomStringConvertible {
         case .variantRequired(let id, let offered):
             return
                 "\(id) offers variants \(offered.map(Self.describe).joined(separator: ", ")); say which with \"variant\" or its parameters"
+        case .undeclaredModel(let id):
+            return "roster serves model \(id), which sttModels does not declare"
         case .defaultUnknown(let id):
-            return "roster defaultModel \(id) is not one of the provider's sttModels"
+            return "roster defaultModel \(id) is not one of the models the provider serves"
         case .defaultNeedsParameter(let id):
             return
                 "roster defaultModel \(id) needs a load parameter, which a request cannot supply; name a model that needs none"
@@ -553,37 +556,61 @@ struct Roster: Sendable {
         guard let entry = roster.providers[provider] else {
             throw RosterError.noSuchProvider(id: provider, path: file.path)
         }
-        // A provider with no transcription models is a misconfiguration rather
-        // than an empty server: something named this service as an STT
+        // A provider serving no transcription models is a misconfiguration
+        // rather than an empty server: something named this service as an STT
         // provider and gave it nothing to serve.
+        var entries: [RosterEntry] = []
+        for serving in entry.serves ?? [] {
+            guard let model = (roster.sttModels ?? []).first(where: { $0.id == serving.model })
+            else { throw RosterError.undeclaredModel(serving.model) }
+            entries.append(
+                RosterEntry(
+                    id: model.id, name: model.name, key: serving.key, kind: model.kind,
+                    params: model.params, variants: model.variants))
+        }
         return try validate(
-            entry.sttModels ?? [], defaultModel: entry.defaultModel, idleUnloadMs: entry.idleUnloadMs)
+            entries, defaultModel: entry.defaultModel, idleUnloadMs: entry.idleUnloadMs)
     }
 }
 
-/// Just enough of the node's registry to find this server's own models.
-/// Everything else in the file — services, voices, other providers, synthesis
-/// models — is read by whoever needs it, and ignored here.
+/// Just enough of the node's registry to find this server's own servings and
+/// the models they name. Everything else in the file — services, voices, other
+/// providers, synthesis models — is read by whoever needs it, and ignored here.
 private struct NodeRegistry: Decodable {
     let roster: NodeRoster?
 }
 
 private struct NodeRoster: Decodable {
+    let sttModels: [SttModelDeclaration]?
     let providers: [String: ProviderEntry]
 }
 
+/// A speech-to-text model as declared once per node; the key is the serving's.
+private struct SttModelDeclaration: Decodable {
+    let id: String
+    let name: String
+    let kind: ModelKind
+    let params: [RosterParam]?
+    let variants: [RosterVariant]?
+}
+
+private struct Serving: Decodable {
+    let model: String
+    let key: String
+}
+
 private struct ProviderEntry: Decodable {
-    let sttModels: [RosterEntry]?
+    let serves: [Serving]?
     let defaultModel: String?
     /// Zero when declared but not an integer, so validation falls back to the
     /// default and warns rather than failing the whole roster.
     let idleUnloadMs: Int?
 
-    private enum CodingKeys: String, CodingKey { case sttModels, defaultModel, idleUnloadMs }
+    private enum CodingKeys: String, CodingKey { case serves, defaultModel, idleUnloadMs }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        sttModels = try c.decodeIfPresent([RosterEntry].self, forKey: .sttModels)
+        serves = try c.decodeIfPresent([Serving].self, forKey: .serves)
         defaultModel = try c.decodeIfPresent(String.self, forKey: .defaultModel)
         idleUnloadMs =
             c.contains(.idleUnloadMs)

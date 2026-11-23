@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { deriveHealthMap, deriveHealth, deriveServiceHealth } from "../../shared/src/events";
 import { emptyRoster } from "../../shared/src/roster";
+import { buildSpeechRequest } from "../../shared/src/speech-request";
 import { reloadRegistry } from "../../shared/src/registry";
 import * as shardRoutes from "./routes";
 import type { Registry, Service } from "../../../shared/types";
@@ -101,6 +102,25 @@ export function createShardApp(deps: ShardAppDeps) {
   // factory time, so a reload is reflected without a restart.
   app.get("/api/roster", (c) => {
     return c.json(registryState.roster ?? emptyRoster());
+  });
+
+  // POST /api/voices/resolve — resolves a voice for a runtime that cannot read
+  // the registry. The answer is the speech-request fields to send the runtime
+  // unchanged; a refusal is a 400 naming the voice and the model.
+  app.post("/api/voices/resolve", async (c) => {
+    let body: { voice?: unknown; model?: unknown; serviceId?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+    const { voice, model, serviceId } = body;
+    if (typeof voice !== "string" || typeof model !== "string" || typeof serviceId !== "string" || !voice || !model || !serviceId) {
+      return c.json({ error: "voice, model and serviceId are required" }, 400);
+    }
+    const built = buildSpeechRequest(registryState.roster ?? emptyRoster(), serviceId, model, voice);
+    if (!built.ok) return c.json({ error: built.error }, 400);
+    return c.json(built.request);
   });
 
   app.post("/api/config/reload", async (c) => {

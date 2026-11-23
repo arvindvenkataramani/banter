@@ -6,7 +6,7 @@ Adapter code and install docs for the STT/TTS model servers this repo ships. Ban
 
 Two kinds of entries here:
 
-- **Ours** — adapter server code committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server, which you copy into its working directory and install into a virtual environment there; `services/fluid` is Swift and you build it yourself: a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/README.md`](fluid/README.md) and, for the vendored FluidAudio patches it pins, [`services/fluid/patches/README.md`](fluid/patches/README.md).
+- **Ours** — adapter server code committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server, which you copy into its working directory and install into a virtual environment there; `services/fluid` is Swift and you build it yourself: a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/README.md`](fluid/README.md) and, for what to check before changing the FluidAudio release it pins, [`services/fluid/verification/README.md`](fluid/verification/README.md).
 - **Third-party, pip-installable** — servers we don't vendor at all, just document how to wire in.
 
 ## Ours
@@ -33,7 +33,7 @@ Registry `runner.main` forms. Python adapters run under the venv's interpreter d
 .venv/bin/python server.py --model mlx-community/whisper-large-v3-turbo --port {port}   # whisper
 ```
 
-`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags: what it serves comes from the `fluid-stt`/`fluid-tts` provider in the registry's `roster` section, not the command line (see [docs/guide/voices-and-models.md](../docs/guide/voices-and-models.md)). `services/fluid/registry.fluid.example.json` registers them as:
+`services/fluid` builds with `scripts/fluid-build.sh`, which produces both `fluid-stt.app` and `fluid-tts.app` from the one package at `services/fluid/.build/release/`. Each takes `--registry <path> --provider <id>` rather than model flags: what it serves comes from what the `fluid-stt`/`fluid-tts` provider serves in the registry's `roster` section, not the command line (see [docs/guide/voices-and-models.md](../docs/guide/voices-and-models.md)). `services/fluid/registry.fluid.example.json` registers them as:
 
 ```
 fluid-stt.app/Contents/MacOS/fluid-stt --port {port} --registry {registry} --provider fluid-stt

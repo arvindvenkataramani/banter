@@ -83,7 +83,7 @@ export type PlatformConfig = z.infer<typeof configSchema>;
 export const configSpec: FileSpec<PlatformConfig> = {
   name: "config.json",
   schema: configSchema,
-  version: 3,
+  version: 4,
   rules: [],
 };
 
@@ -144,34 +144,28 @@ const serviceSchema = z.object({
   }).optional(),
 });
 
+const cloning = z.object({
+  requiresText: z.boolean().optional(),
+  minDurationS: z.number().optional(),
+  maxDurationS: z.number().optional(),
+  sampleRate: z.number().optional(),
+});
+
 const ttsModel = z.object({
   id: z.string(),
   name: z.string(),
-  key: z.string(),
-  cloning: z.object({
-    available: z.boolean(),
-    requiresText: z.boolean().optional(),
-    minDurationS: z.number().optional(),
-    maxDurationS: z.number().optional(),
-    sampleRate: z.number().optional(),
-  }).optional(),
+  cloning: cloning.optional(),
   chunkProfile: z.object({ words: z.number(), chars: z.number() }).optional(),
-  realtime: z.boolean().optional(),
-  streaming: z.boolean().optional(),
   chunking: z.object({
     mode: z.enum(["two-chunk", "paragraph", "sentence", "greedy"]).optional(),
     minWords: z.number().optional(),
     maxWords: z.number().optional(),
   }).optional(),
-  concurrency: z.number().optional(),
-  requestParams: z.record(z.string(), z.unknown()).optional(),
-  presetVoices: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
 });
 
 const sttModel = z.object({
   id: z.string(),
   name: z.string(),
-  key: z.string(),
   kind: z.enum(["batch", "streaming", "both"]),
   params: z.array(z.object({ name: z.string(), values: z.array(z.number()) })).optional(),
   variants: z.array(z.object({
@@ -180,25 +174,42 @@ const sttModel = z.object({
   })).optional(),
 });
 
+const serving = z.object({
+  model: z.string(),
+  key: z.string(),
+  streaming: z.boolean().optional(),
+  realtime: z.boolean().optional(),
+  concurrency: z.number().optional(),
+  requestParams: z.record(z.string(), z.unknown()).optional(),
+});
+
 const provider = z.object({
+  resolvesVoices: z.boolean().optional(),
   responseFormat: z.enum(["mp3", "aac", "wav"]).optional(),
-  ttsModels: z.array(ttsModel).optional(),
-  sttModels: z.array(sttModel).optional(),
   sessions: z.boolean().optional(),
   defaultModel: z.string().optional(),
   idleUnloadMs: z.number().optional(),
+  serves: z.array(serving),
 });
 
-const voiceDefinition = z.object({
+const recording = z.object({
+  audio: z.string(),
+  text: z.string(),
+  durationS: z.number(),
+  sampleRate: z.number(),
+});
+
+const rendering = z.object({
+  model: z.string(),
+  method: z.enum(["preset", "clone"]),
+  key: z.string().optional(),
+});
+
+const voice = z.object({
   id: z.string(),
   name: z.string(),
-  references: z.array(z.object({
-    audio: z.string(),
-    text: z.string().optional(),
-    durationS: z.number(),
-    sampleRate: z.number(),
-  })).optional(),
-  models: z.array(z.object({ serviceId: z.string(), model: z.string(), key: z.string() })),
+  recordings: z.array(recording).optional(),
+  renderings: z.array(rendering),
 });
 
 const registrySchema = z.object({
@@ -236,8 +247,10 @@ const registrySchema = z.object({
   shards: z.array(z.object({ hostId: z.string(), port: z.number(), scheme: schemeEnum.optional() })).optional(),
   intervals: z.object({ healthMs: z.number().optional(), shardPollMs: z.number().optional() }).optional(),
   roster: z.object({
+    ttsModels: z.array(ttsModel).optional(),
+    sttModels: z.array(sttModel).optional(),
     providers: z.record(z.string(), provider),
-    voices: z.array(voiceDefinition),
+    voices: z.array(voice),
   }).optional(),
 });
 
@@ -246,7 +259,7 @@ export type RegistryDocument = z.infer<typeof registrySchema>;
 export const registrySpec: FileSpec<RegistryDocument> = {
   name: "registry.json",
   schema: registrySchema,
-  version: 3,
+  version: 4,
   rules: [literalPortRule, registryPathRule],
 };
 

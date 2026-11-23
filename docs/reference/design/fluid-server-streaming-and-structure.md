@@ -74,11 +74,11 @@ The slot is unchanged by any of this: one model, one operation, taken for the op
 
 ## Package structure
 
-One SwiftPM package holds both servers, because nothing requires different FluidAudio revisions or macOS minimums. Both build against the patched fork, so:
+One SwiftPM package holds both servers, because nothing requires different FluidAudio revisions or macOS minimums. Both build against one exact upstream FluidAudio release, so:
 
 ```
 services/fluid/
-  Package.swift          — FluidAudio (fork), Hummingbird; platforms: .v15
+  Package.swift          — FluidAudio (exact upstream release), Hummingbird; platforms: .v15
   Sources/
     FluidServerKit/      — shared
     FluidServerSTT/      — executable: fluid-stt
@@ -133,7 +133,7 @@ Streaming also makes the server one-stream-at-a-time, so overlapping work has to
 
 The server queues rather than the dashboard serialising. Synthesising the next span while the current one plays is what keeps the seams gapless, and the dashboard should not be modelling the fact that the server holds one model — that is a server fact, and it would have to change again if it stopped being true. The queue needs a depth cap so a runaway client is refused rather than hanging.
 
-**The dashboard does not consult which backends can stream.** The roster declares `streaming` per TTS model and the control plane carries it to the dashboard, but the dashboard sets `stream` from browser capability alone (`STREAMING_BACKEND !== 'blob'`, `playback-engine.ts`), so it asks every provider to stream whether or not that provider can. It survives because both servers accept the flag and this one serves a non-streaming backend as a single whole-utterance response. The `realtime` flag in `voice.tts` does not close this: it marks a model fast enough for the voice loop and is read only to filter the model picker. A model that cannot stream is therefore indistinguishable in the loop from one that can, and shows up as a long first-audio wait with nothing to attribute it to. Closing it is a client, config and `/v1/models` change, not a server one.
+**The dashboard does not consult which backends can stream.** The roster declares `streaming` per serving (a runtime's fact about a model) and the control plane carries it to the dashboard, but the dashboard sets `stream` from browser capability alone (`STREAMING_BACKEND !== 'blob'`, `playback-engine.ts`), so it asks every provider to stream whether or not that provider can. It survives because both servers accept the flag and this one serves a non-streaming backend as a single whole-utterance response. The `realtime` flag in `voice.tts` does not close this: it marks a model fast enough for the voice loop and is read only to filter the model picker. A model that cannot stream is therefore indistinguishable in the loop from one that can, and shows up as a long first-audio wait with nothing to attribute it to. Closing it is a client, config and `/v1/models` change, not a server one.
 
 STT already holds a socket for its streaming session. A WebSocket here is the consistent shape, not the exception.
 
@@ -151,13 +151,13 @@ This holds because these servers run under a supervisor that evicts them. A buil
 
 ## Open questions
 
-**Whether the upstream cross-manager crash was closed by a fix, and which.** The issue is closed. A shared serialiser landing does not change the decision — serialising across modalities is what barge-in cannot have — but it changes what a single process would have cost, and it is worth knowing before the fork's base moves.
+**Whether the upstream cross-manager crash was closed by a fix, and which.** The issue is closed. A shared serialiser landing does not change the decision — serialising across modalities is what barge-in cannot have — but it changes what a single process would have cost, and it is worth knowing before the FluidAudio version moves.
 
 **Whether mlx-audio needs a matching streaming run.** FluidAudio streams first audio at about 0.32 s whatever the length. mlx-audio's Pocket-TTS arm is measured batch at 0.21–2.6 s, which is the same length-dependent shape and so not comparable directly; its floor being near FluidAudio's constant is what makes the comparison uninteresting, since streaming there could only bring it to a similar place. Worth running if a reason to move off FluidAudio appears; it does not gate the voice loop.
 
 ## What remains
 
-Both servers build from `services/fluid/` against the fork, registered as `fluid-stt` and `fluid-tts`. Each generates its model-lifecycle routes from its own `openapi.yaml`; synthesis, transcription and the sockets stay hand-written.
+Both servers build from `services/fluid/` against the upstream FluidAudio release, registered as `fluid-stt` and `fluid-tts`. Each generates its model-lifecycle routes from its own `openapi.yaml`; synthesis, transcription and the sockets stay hand-written.
 
 **`/v1/models` convergence.** Both answer `GET /v1/models`, `DELETE /v1/models`, `POST /v1/models?model_name=` and `POST /v1/models/load`. The query form is mlx-audio's, and the dashboard sends it to every synthesis provider; it carries no mode or variant, so an STT model that needs one is refused there and loaded through `/v1/models/load`. Two differences remain: STT also answers `POST /v1/models/unload` naming a model, and its loads return a `ModelAction` body where TTS returns an empty 200. Closing them is a wire-shape change with the harness and the dashboard on it.
 

@@ -1,0 +1,346 @@
+{
+  "description": "Cases for the voice resolution rule in docs/reference/design/model-roster.md, read by the TypeScript and the Swift test suites so the two implementations cannot drift apart unnoticed. `roster` is a node roster as platform.schema.json defines one and `services` the registry entries its providers name. Each case resolves `voice` for `model` on `serviceId`. `expect` has exactly one of two shapes and no other keys. Refusal: { refused: true }. Resolution: `modelKey` (the serving key for the model on that runtime) plus either `presetKey` (a preset rendering) or `recordingAudio` (a clone: the chosen recording audio path), where `recordingText` (that recording transcript path) is present only if the model uses a transcript. An absent key means the value is not sent. The TypeScript suite runs every case. The Swift suite loads the registry as provider `swiftProvider` and runs the cases whose `serviceId` is that provider; the others are the shard resolver for runtimes that cannot read the registry.",
+  "swiftProvider": "fluid-tts",
+  "services": [
+    {
+      "id": "fluid-tts",
+      "capabilityId": "tts"
+    },
+    {
+      "id": "tts-mlx-audio",
+      "capabilityId": "tts"
+    },
+    {
+      "id": "fluid-stt",
+      "capabilityId": "stt"
+    }
+  ],
+  "roster": {
+    "ttsModels": [
+      {
+        "id": "pocket-tts",
+        "name": "Pocket-TTS",
+        "cloning": {
+          "requiresText": false
+        },
+        "chunking": {
+          "mode": "sentence"
+        }
+      },
+      {
+        "id": "luxtts",
+        "name": "LuxTTS",
+        "cloning": {
+          "requiresText": true,
+          "maxDurationS": 5
+        }
+      },
+      {
+        "id": "kokoro-82m",
+        "name": "Kokoro 82M"
+      },
+      {
+        "id": "chatterbox",
+        "name": "Chatterbox",
+        "cloning": {
+          "requiresText": false
+        }
+      }
+    ],
+    "sttModels": [
+      {
+        "id": "parakeet-tdt-v3",
+        "name": "Parakeet TDT v3",
+        "kind": "batch"
+      }
+    ],
+    "providers": {
+      "fluid-tts": {
+        "resolvesVoices": true,
+        "responseFormat": "aac",
+        "sessions": true,
+        "serves": [
+          {
+            "model": "pocket-tts",
+            "key": "pocket-tts",
+            "realtime": true,
+            "streaming": true
+          },
+          {
+            "model": "luxtts",
+            "key": "luxtts"
+          },
+          {
+            "model": "kokoro-82m",
+            "key": "kokoro-ane",
+            "realtime": true
+          }
+        ]
+      },
+      "tts-mlx-audio": {
+        "resolvesVoices": false,
+        "serves": [
+          {
+            "model": "pocket-tts",
+            "key": "mlx-community/pocket-tts",
+            "realtime": true,
+            "streaming": true,
+            "concurrency": 1,
+            "requestParams": {
+              "streaming_interval": 4
+            }
+          },
+          {
+            "model": "chatterbox",
+            "key": "mlx-community/chatterbox-turbo-fp16"
+          }
+        ]
+      },
+      "fluid-stt": {
+        "defaultModel": "parakeet-tdt-v3",
+        "serves": [
+          {
+            "model": "parakeet-tdt-v3",
+            "key": "parakeet-tdt-v3"
+          }
+        ]
+      }
+    },
+    "voices": [
+      {
+        "id": "alex",
+        "name": "Alex",
+        "recordings": [
+          {
+            "audio": "/refs/voices/alex.wav",
+            "text": "/refs/voices/alex.txt",
+            "durationS": 9.51,
+            "sampleRate": 24000
+          },
+          {
+            "audio": "/refs/voices-5s/alex.wav",
+            "text": "/refs/voices-5s/alex.txt",
+            "durationS": 4.05,
+            "sampleRate": 24000
+          }
+        ],
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "clone"
+          },
+          {
+            "model": "luxtts",
+            "method": "clone"
+          }
+        ]
+      },
+      {
+        "id": "sam",
+        "name": "Sam",
+        "recordings": [
+          {
+            "audio": "/refs/voices/sam.wav",
+            "text": "/refs/voices/sam.txt",
+            "durationS": 9.06,
+            "sampleRate": 24000
+          },
+          {
+            "audio": "/refs/voices-5s/sam.wav",
+            "text": "/refs/voices-5s/sam.txt",
+            "durationS": 5.0,
+            "sampleRate": 24000
+          }
+        ],
+        "renderings": [
+          {
+            "model": "luxtts",
+            "method": "clone"
+          }
+        ]
+      },
+      {
+        "id": "nicole",
+        "name": "Nicole",
+        "recordings": [
+          {
+            "audio": "/refs/voices/nicole.wav",
+            "text": "/refs/voices/nicole.txt",
+            "durationS": 9.15,
+            "sampleRate": 24000
+          },
+          {
+            "audio": "/refs/voices-5s/nicole.wav",
+            "text": "/refs/voices-5s/nicole.txt",
+            "durationS": 4.9,
+            "sampleRate": 24000
+          }
+        ],
+        "renderings": [
+          {
+            "model": "kokoro-82m",
+            "method": "preset",
+            "key": "af_nicole"
+          },
+          {
+            "model": "pocket-tts",
+            "method": "clone"
+          },
+          {
+            "model": "luxtts",
+            "method": "clone"
+          },
+          {
+            "model": "chatterbox",
+            "method": "clone"
+          }
+        ]
+      },
+      {
+        "id": "eponine",
+        "name": "Eponine",
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "eponine"
+          }
+        ]
+      },
+      {
+        "id": "dual",
+        "name": "Dual",
+        "recordings": [
+          {
+            "audio": "/refs/voices/dual.wav",
+            "text": "/refs/voices/dual.txt",
+            "durationS": 6.0,
+            "sampleRate": 24000
+          }
+        ],
+        "renderings": [
+          {
+            "model": "pocket-tts",
+            "method": "preset",
+            "key": "dual-preset"
+          },
+          {
+            "model": "pocket-tts",
+            "method": "clone"
+          }
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "a preset rendering sends the model's own name for the voice, and the model by the runtime's key",
+      "voice": "nicole",
+      "model": "kokoro-82m",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "kokoro-ane",
+        "presetKey": "af_nicole"
+      }
+    },
+    {
+      "name": "a preset-only voice resolves on the model that has her",
+      "voice": "eponine",
+      "model": "pocket-tts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "pocket-tts",
+        "presetKey": "eponine"
+      }
+    },
+    {
+      "name": "a clone uses the first recording in declared order when the model accepts it, and sends no transcript to a model that does not use one",
+      "voice": "nicole",
+      "model": "pocket-tts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "pocket-tts",
+        "recordingAudio": "/refs/voices/nicole.wav"
+      }
+    },
+    {
+      "name": "a recording over the model's maximum length is passed over for the next that fits, and a model that uses a transcript gets it",
+      "voice": "alex",
+      "model": "luxtts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "luxtts",
+        "recordingAudio": "/refs/voices-5s/alex.wav",
+        "recordingText": "/refs/voices-5s/alex.txt"
+      }
+    },
+    {
+      "name": "the same voice under a model that does not use a transcript gets the long recording and no transcript",
+      "voice": "alex",
+      "model": "pocket-tts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "pocket-tts",
+        "recordingAudio": "/refs/voices/alex.wav"
+      }
+    },
+    {
+      "name": "a recording exactly at the model's maximum length is accepted",
+      "voice": "sam",
+      "model": "luxtts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "luxtts",
+        "recordingAudio": "/refs/voices-5s/sam.wav",
+        "recordingText": "/refs/voices-5s/sam.txt"
+      }
+    },
+    {
+      "name": "the first rendering declared on a model wins when a voice has two",
+      "voice": "dual",
+      "model": "pocket-tts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "modelKey": "pocket-tts",
+        "presetKey": "dual-preset"
+      }
+    },
+    {
+      "name": "a voice id the roster does not declare is refused",
+      "voice": "am_tariq",
+      "model": "kokoro-82m",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "refused": true
+      }
+    },
+    {
+      "name": "a declared voice with no rendering on the model is refused",
+      "voice": "eponine",
+      "model": "luxtts",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "refused": true
+      }
+    },
+    {
+      "name": "a model the runtime does not serve is refused even when the voice has a rendering on it",
+      "voice": "nicole",
+      "model": "chatterbox",
+      "serviceId": "fluid-tts",
+      "expect": {
+        "refused": true
+      }
+    },
+    {
+      "name": "one model reached through a second runtime is named by that runtime's key",
+      "voice": "nicole",
+      "model": "pocket-tts",
+      "serviceId": "tts-mlx-audio",
+      "expect": {
+        "modelKey": "mlx-community/pocket-tts",
+        "recordingAudio": "/refs/voices/nicole.wav"
+      }
+    }
+  ]
+}

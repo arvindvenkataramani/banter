@@ -2,7 +2,7 @@
 
 Where Banter differs from platform (`~/Code/airavatha/sutradhara/platform`), why, and what should happen to each difference. Read this before porting anything from platform, and update it when a port lands or a decision is made. It describes the current state; the history is in git.
 
-Compared against platform `c02b137`, plus the voice engine package from platform's unmerged `voice-engine-package` branch (`d755b1b`, `9c279ff`). Start the next audit from `c02b137`, and treat the package as ported from that branch until it reaches platform's main line.
+Compared against platform `c440892`. Start the next audit from `c440892`.
 
 ## The rule
 
@@ -40,6 +40,7 @@ These hunks are removals and stay removed.
 - **Platform-only services and machines:** piper, embedding, searxng, openclaw-mcp, tts-mlx-audio, lm-studio, zotero-mcp, pdf-ocr; `services/tts/mlx-voxtral-swift`, `omnivoice`, `call-contracts`; the legacy `platform-control` and `platform-dashboard` units; platform's own `config.json` and `registry.json` values.
 - **Platform's branch flow:** the dev/main prompts in `deploy-source.sh` and `branch-status.sh`, the pre-commit refusal to commit on main, the Pi deploy hand-off in `post-merge`, and `session-start.sh`. Banter commits on main.
 - **Platform's personal docs:** `environments`, `infrastructure`, `setup-macbook`, `setup-pi`, `requirements`, `principles`, `roadmap`, `information-architecture`, `orchestrator-adoption.md`, the vault template, and the Pi/Mac sections of shared docs.
+- **Platform's live-file migrations:** the repair rules `roster-models-renderings` and `selection-runtime-ids`, with `roster-migration.test.ts` and its fixture `roster-before-renderings.json`. They rewrite platform's own live files from tables of its voice and runtime ids, and the fixture is platform's registry. Banter's templates are written in the version 4 shape directly. The tests that resolve a cloned voice from platform's shipped shard registry stay out with them: Banter ships no recordings, and the shared resolution cases cover the rule.
 - **Structure kept for a future player:** `lib/media-voice-mode.ts`, `lib/media-engine.ts` and `components/media/transport-atoms.tsx` stay, unused, so chat files match platform's.
 
 ## OpenClaw support stays
@@ -64,7 +65,8 @@ Banter changes that platform lacks. They stay.
 - **Scripts:**
   - the systemd unit rendered from a template, so an install at a non-default location gets a correct unit
   - `.build` pruned from the logs scan
-  - `fluid-smoke.sh`'s roster, `/listen` and idle-unload checks, with `fluid-smoke-listen.ts`
+  - `fluid-smoke.sh`'s `/listen`, `/listen` socket and idle-unload checks in `check_stt`, with `fluid-smoke-listen.ts`; the script reads `services/fluid/registry.fluid.example.json` where platform's reads its shipped shard registry
+  - `fluid-smoke.sh` speaks one voice per TTS model, the first the roster offers it, where platform's speaks every preset: the example declares presets whose voice files a machine may not have, and the servers run with the network denied
 - **Dashboard lint fixes:** `caughtErrorsIgnorePattern` in `eslint.config.js`, `gateway-context.tsx` deriving the connection with `useMemo`, the `use-session-manager.ts` effect dependencies, `use-wake-lock.ts`'s targeted exemption, `services/page.tsx` depending on `[load]`, and `service-history.tsx` deriving its loading state.
 - **`CONTRIBUTING.md`:** the testing table and the human-review list.
 - **Open-source files with no platform counterpart:** `LICENSE`, `NOTICE`, `SECURITY.md`, `.github/`, `.nvmrc`, `install.sh`, `render-plist.sh`, `dashboard/scripts/fetch-models.ts` and the `setup` script, the example registries and config, `services/README.md`, `services/fluid/README.md` and `DEVELOPING.md`.
@@ -72,9 +74,18 @@ Banter changes that platform lacks. They stay.
 - **Page security notice:** the settings dialog warns when the page is not a secure context, so voice can't reach the microphone, and notes when a secure page is not cross-origin isolated, so the voice models run on one thread (`features/settings/page-security-notice.tsx`, `voice-page-support.ts`). Platform is always served over https, so it never shows.
 - **Cross-platform example services:** the example registries register Banter's own `services/stt/faster-whisper` and `services/tts/kokoro` adapters; the fluid servers are an Apple Silicon option in `services/fluid/registry.fluid.example.json`. Every Python adapter reads its CORS allowlist from a `*_CORS_ORIGINS` variable and sends no CORS headers without one.
 
-## Ported ahead of platform's main line
+## Adapted in a port
 
-The browser voice engine is the workspace package `@platform/voice-engine` at `voice-engine/`, taken from platform's `voice-engine-package` branch, which platform has not merged. [voice-engine-package.md](voice-engine-package.md) records the boundary. The path map:
+Code taken from platform and changed to fit Banter. Each is a seam to check at the next port.
+
+- **`buildSpeechRequest`** lives in `control/shared/src/speech-request.ts`. Platform keeps it in `media-job.ts`, which Banter leaves out.
+- **The control plane resolves a selection whose runtime is on its own host**, from its own roster with `buildSpeechRequest` (`resolveSelection` in `control/control-plane/src/app.ts`). Platform always asks a shard, since it always runs one; a single-machine Banter install has none, and without this its voice could not speak.
+- **The example rosters:** the fluid example's voices are unprefixed, so they are the same voices the shard example declares, and merging it into a registry is a union by id. It declares Pocket-TTS's eight original preset voices (`alba` to `azelma`); LuxTTS ships with no voice. Tests that platform points at its shipped shard registry point at Banter's three example registries.
+- **Real people's voices and platform's machines** in the shared resolution cases (`schemas/voice-resolution-cases.json`) and the tests that read them are renamed to generic ids (`alex`, `sam`, `gpu-machine`, `home-server`).
+
+## The voice engine package
+
+The browser voice engine is the workspace package `@platform/voice-engine` at `voice-engine/`, as in platform. [voice-engine-package.md](voice-engine-package.md) records the boundary. The path map from the dashboard's former layout:
 
 | Was | Is |
 |---|---|
@@ -87,15 +98,18 @@ The browser voice engine is the workspace package `@platform/voice-engine` at `v
 | `VoiceSelectionPatch`, `VoiceUpdateResult` (`api.ts`) | `voice-engine/src/voice-config.ts`, re-exported from `api.ts` |
 | `SttModelKind` (`voice-service.ts`) | `voice-engine/src/human/stt-transport.ts` |
 
-Banter's copy differs from the branch only where Banter's voice code already differed: comment pointers to Banter's docs, and the CORS hint in `stt-client.ts`.
+Banter's copy differs from platform's only where Banter's voice code already differed: comment pointers to Banter's docs, and the CORS hint in `stt-client.ts`.
 
 ## Banter is behind: port from platform
 
-Against platform `c02b137`, every code change is ported apart from the items below.
+Against platform `c440892`, every code change is ported apart from the items below.
 
 ### Not taken yet
 
-Live config's git-backed history of the live files (`history.ts`).
+- Live config's git-backed history of the live files (`history.ts`).
+- The shard runner as an application bundle signed with a stable certificate (`shard-runner-build.sh`, `shard-signing-identity.sh`, the plist template's bundle name; platform `a86f1ea`, `487f28e`).
+- `scripts/service-smoke.sh`, which checks a node's live services through the shard's control API (platform `97b15dc`, `d93f3d9`, `a8cf44b`).
+- Moving `voice-engine-package.md` from `dev/design/` to `docs/reference/design/`, as platform did.
 
 ### Lint
 
@@ -122,5 +136,5 @@ Live config's git-backed history of the live files (`history.ts`).
 - **UI icons follow platform** (Phosphor).
 - **Dependencies are pinned only where a specific version is required**, with the reason recorded here, since `package.json` can't hold comments. Everything else takes a caret range (platform's where it has one), and `bun.lock` keeps installs reproducible. The required pins:
   - `onnxruntime-web` 1.31.1, in `voice-engine/package.json`: `loadOrt()` imports ORT's prebuilt `ort.wasm.bundle.min.mjs` and `ort-wasm-simd-threaded.wasm` by file name, so an upgrade must keep both files and their unbundled load. Check voice mode in a production build after any upgrade; [turn-taking.md](../../docs/reference/design/turn-taking.md#one-multi-threaded-ort-runtime-never-bundled) has the reasons.
-  - The FluidAudio fork, at a commit: Banter's patches depend on it.
+  - FluidAudio at an exact upstream release (0.18.4), in `services/fluid/Package.swift`: a regression in Pocket-TTS fails silently, in the audio, and a release can rename a model file the library then downloads. [services/fluid/verification/README.md](../../services/fluid/verification/README.md) says what to check before changing it.
 - **OpenClaw tools stay** (see above).

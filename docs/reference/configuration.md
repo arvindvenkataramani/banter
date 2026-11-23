@@ -95,7 +95,7 @@ A service entry answers four questions: what it is, where it runs, how to start 
 
 `capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and `voice.tts.selection.serviceId` both refer to these.
 
-A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry with at least one model and one voice able to reach it. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` list is still how a server that reads one declares what it can load (`fluid-stt`, for example). See [voices-and-models.md#adding-another-model-or-another-speech-server](../guide/voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
+A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry whose `serves` names at least one declared model, and at least one voice with a rendering on that model. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` entry served by the provider is still how a server that reads the roster declares what it can load (`fluid-stt`, for example). See [voices-and-models.md#adding-another-model-or-another-speech-server](../guide/voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
 
 ### Choosing a runner
 
@@ -196,9 +196,9 @@ Under `voice` in `config.json`. The pieces that matter (the service ids and mode
 }
 ```
 
-`serviceId` values must match registry entries. A batch-only STT server leaves `voice.stt.model` unset; a server with streaming or loadable models names one there, as in [stt.md](../guide/stt.md#fluid-stt). `selection.model` and `selection.voice` name a roster model and a roster voice (or a preset id nothing else claims) — the roster is what declares which ones exist, not `config.json`. See [voices-and-models.md](../guide/voices-and-models.md) for what a roster model and voice are, and how to add or change them.
+`serviceId` values must match registry entries. A batch-only STT server leaves `voice.stt.model` unset; a server with streaming or loadable models names one there, as in [stt.md](../guide/stt.md#fluid-stt). `selection.model` and `selection.voice` name a roster model id and a roster voice id, and `selection.serviceId` the runtime that serves the model — the roster is what declares which ones exist, not `config.json`. See [voices-and-models.md](../guide/voices-and-models.md) for what a roster model and voice are, and how to add or change them.
 
-Banter's settings dialog writes back to `selection` — the STT picker appears when the registry holds at least one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under that key for Banter to read, but nothing writes it back.
+Banter's settings dialog writes back to `selection` — the STT picker appears when the registry holds at least one STT service. `voice.tts.providers` does not exist in `config.json`; `GET /api/voice` returns the assembled roster under `tts.models`, `tts.providers` and `tts.voices` for Banter to read, but nothing writes it back.
 
 ### Settings scope
 
@@ -289,7 +289,7 @@ Nothing here declares what exists: models, voices, what each model calls them an
 
 | Field | Purpose |
 |---|---|
-| `selection.serviceId`, `.model`, `.voice` | The chosen service, roster model and roster voice (or a preset id of the model). The web app sends the TTS server each one's runtime key in their place. |
+| `selection.serviceId`, `.model`, `.voice` | The chosen runtime (a service id), roster model id and roster voice id. The control plane has the shard on the runtime's host resolve them, and serves the answer as `tts.selection.request` in `GET /api/voice`; the web app sends it to the TTS server unchanged, and `requestError` says why when they cannot be resolved. |
 | `selection.speed` | Between `0.5` and `2.0`; `1` when unset. |
 | `options.chunkStrategy` | `two-chunk`, `paragraph`, `sentence` or `greedy`. When nothing sets it, `two-chunk`. |
 | `options.minChunkWords` | The shortest piece spoken on its own. A sentence shorter than this is held and joined with what follows, so very short phrases do not reach the TTS service without context for natural prosody. |
@@ -352,4 +352,4 @@ Banter's settings menu has a **Reload config** action, which hits `POST /api/con
 
 The registry's `services`, `hosts`, `capabilities` and `defaults` all reload the same way — the in-memory copy is replaced from the file. A service already running keeps running as it was until you restart it; a service removed from the registry while still running is only reported, not stopped. The `shards` list is the one part reload never applies: a changed entry is reported but the running list is left as it was, so adding or removing a shard needs a restart of the control plane itself.
 
-A registry roster's `voices[]` — which voices exist and what they map to — takes effect on that reload alone, since the control plane assembles voices fresh on every request. A changed `providers` section — a new model, a changed preset list, and so on — does not: a server such as `fluid-stt` reads its provider's roster section once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. See [voices-and-models.md#applying-an-edit](../guide/voices-and-models.md#applying-an-edit).
+A registry roster's `voices[]` — which voices exist and how each model renders them — takes effect on that reload alone for a runtime the shard resolves for, since the control plane assembles voices fresh on every request. A runtime that reads the registry itself does not: a server such as `fluid-tts` reads its provider's roster section, its models and the voices once, at startup, so the reload only reports a `provider-changed` warning naming the service and you restart it yourself. A changed `providers` section, or a changed model a provider serves, is reported the same way. See [voices-and-models.md#applying-an-edit](../guide/voices-and-models.md#applying-an-edit).

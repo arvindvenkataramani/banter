@@ -30,8 +30,13 @@ function makeConfig(attempts = 3): VoiceConfig {
   return {
     tts: {
       providers: [
-        { serviceId: 'tts-1', responseFormat: 'mp3', models: [{ id: 'model-a', key: 'model-a-key', voices: [{ id: 'v1', name: 'Voice One', key: 'v1-key' }] }] },
-        { serviceId: 'tts-2', responseFormat: 'mp3', models: [{ id: 'model-b', key: 'model-b-key', voices: [{ id: 'v2', name: 'Voice Two', key: 'v2-key' }] }] },
+        { serviceId: 'tts-1', responseFormat: 'mp3', serves: [{ model: 'model-a' }] },
+        { serviceId: 'tts-2', responseFormat: 'mp3', serves: [{ model: 'model-b' }] },
+      ],
+      models: [{ id: 'model-a', name: 'Model A', canClone: false }, { id: 'model-b', name: 'Model B', canClone: false }],
+      voices: [
+        { id: 'v1', name: 'Voice One', renderings: [{ model: 'model-a', method: 'preset' }] },
+        { id: 'v2', name: 'Voice Two', renderings: [{ model: 'model-b', method: 'preset' }] },
       ],
     },
     stt: {
@@ -45,12 +50,12 @@ function makeConfig(attempts = 3): VoiceConfig {
 
 const selection: VoiceSelection = {
   serviceId: 'tts-1', model: 'model-a', voice: 'v1', speed: 1,
-  modelKey: 'model-a-key', voiceKey: 'v1-key', responseFormat: 'mp3',
+  request: { model: 'model-a-key', voice: 'v1-key' }, responseFormat: 'mp3',
 }
 
 const selection2: VoiceSelection = {
   serviceId: 'tts-2', model: 'model-b', voice: 'v2', speed: 1,
-  modelKey: 'model-b-key', voiceKey: 'v2-key', responseFormat: 'mp3',
+  request: { model: 'model-b-key', voice: 'v2-key' }, responseFormat: 'mp3',
 }
 
 function makeSession(): VoiceSession {
@@ -460,5 +465,16 @@ describe('VoiceSystem', () => {
     expect(state().sessionId).toBe('s1')
     expect(h.fakes.devices.acquire).toHaveBeenCalledTimes(1)
     expect(h.transports).toHaveLength(1)
+  })
+
+  it('reconfiguring to a selection the shard could not resolve reports that voice cannot speak, and loads nothing', async () => {
+    configure()
+    await goLive(h)
+    const loads = h.fakes.services.loadTtsModel.mock.calls.length
+    const { request: _none, ...unresolved } = selection2
+    h.sys.reconfigure({ ...unresolved, requestError: 'shard unreachable' }, 'stt-1')
+    await flush()
+    expect(h.fakes.notify).toHaveBeenCalledWith('Voice cannot speak: shard unreachable')
+    expect(h.fakes.services.loadTtsModel.mock.calls).toHaveLength(loads)
   })
 })

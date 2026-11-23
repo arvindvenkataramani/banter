@@ -116,10 +116,21 @@ export interface RosterView {
   declaresSessions: boolean
 }
 
+/** The synthesis models a runtime serves for the realtime voice loop, in the roster's order. */
+function realtimeModels(config: VoiceConfig, provider: TtsProvider | undefined): TtsModel[] {
+  const served = new Set((provider?.serves ?? []).filter(s => s.realtime === true).map(s => s.model))
+  return config.tts.models.filter(m => served.has(m.id))
+}
+
+/** The voices with a rendering on a model, in the roster's order. */
+function voicesOn(config: VoiceConfig, modelId: string): TtsVoice[] {
+  return config.tts.voices.filter(v => v.renderings.some(r => r.model === modelId))
+}
+
 export function roster(draft: Draft): RosterView {
   const providers = draft.config.tts.providers
   const currentProvider = providers.find(p => p.serviceId === draft.ttsServiceId)
-  const models = (currentProvider?.models ?? []).filter(m => m.realtime === true)
+  const models = realtimeModels(draft.config, currentProvider)
   const currentModel = models.find(m => m.id === draft.ttsModel)
   const sttOptions = draft.config.stt?.options ?? []
   const currentSttOption = sttOptions.find(o => o.serviceId === draft.sttServiceId)
@@ -128,7 +139,7 @@ export function roster(draft: Draft): RosterView {
     currentProvider,
     models,
     currentModel,
-    voices: currentModel?.voices ?? [],
+    voices: currentModel ? voicesOn(draft.config, currentModel.id) : [],
     sttOptions,
     declaresSessions: currentSttOption?.sessions === true || currentProvider?.sessions === true,
   }
@@ -138,14 +149,12 @@ export function roster(draft: Draft): RosterView {
 
 export function setProvider(draft: Draft, serviceId: string): Draft {
   const provider = draft.config.tts.providers.find(p => p.serviceId === serviceId)
-  const model = provider?.models.find(m => m.realtime === true)
-  return { ...draft, ttsServiceId: serviceId, ttsModel: model?.id ?? '', ttsVoice: model?.voices[0]?.id ?? '' }
+  const model = realtimeModels(draft.config, provider)[0]
+  return { ...draft, ttsServiceId: serviceId, ttsModel: model?.id ?? '', ttsVoice: model ? voicesOn(draft.config, model.id)[0]?.id ?? '' : '' }
 }
 
 export function setModel(draft: Draft, modelId: string): Draft {
-  const provider = draft.config.tts.providers.find(p => p.serviceId === draft.ttsServiceId)
-  const model = provider?.models.find(m => m.id === modelId)
-  return { ...draft, ttsModel: modelId, ttsVoice: model?.voices[0]?.id ?? '' }
+  return { ...draft, ttsModel: modelId, ttsVoice: voicesOn(draft.config, modelId)[0]?.id ?? '' }
 }
 
 export const setVoice = (draft: Draft, voice: string): Draft => ({ ...draft, ttsVoice: voice })

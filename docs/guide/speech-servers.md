@@ -63,7 +63,7 @@ The OpenClaw gateway checks browser origins too, separately from any speech serv
 Any server that answers the routes in [speech-server-api.md](../reference/speech-server-api.md) works: `POST /v1/audio/transcriptions` for STT, `POST /v1/audio/speech` plus `POST` and `DELETE /v1/models` for TTS, a health path, and CORS.
 
 1. Add a `services` entry to your registry: `capabilityId` `"stt"` or `"tts"`, its host, port and health path, and `"runner": { "type": "external" }` if Banter should not manage its process. A `process` runner marks its port as `{port}` in `runner.main` and writes the number only in `network.port`.
-2. Add a `roster.providers` entry keyed by the service id, naming at least one model. [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) has the exact shape.
+2. Declare the model in the roster's `ttsModels` or `sttModels`, add a `roster.providers` entry keyed by the service id that serves it, and for TTS give it a voice with a rendering on the model. [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) has the exact shape.
 3. Point `config.json` at it: `voice.stt.serviceId`, and `voice.tts.selection` for TTS.
 4. Reload and restart the affected provider; see [Applying an edit](voices-and-models.md#applying-an-edit):
 
@@ -77,13 +77,14 @@ A service whose `lifecycle` sets `loadStrategy: "demand"` shows as available rat
 
 ## Fluid, an Apple Silicon option
 
-[`services/fluid`](../../services/fluid/README.md) holds `fluid-stt` and `fluid-tts`, speech servers for macOS 15 or later on Apple Silicon. They are an option beside the Python adapters, not a replacement: they stream transcription and audio, and run on CoreML. Their entries are in `services/fluid/registry.fluid.example.json`, which merges into your registry by appending:
+[`services/fluid`](../../services/fluid/README.md) holds `fluid-stt` and `fluid-tts`, speech servers for macOS 15 or later on Apple Silicon. They are an option beside the Python adapters, not a replacement: they stream transcription and audio, and run on CoreML. Their entries are in `services/fluid/registry.fluid.example.json`, which merges into your registry by union on id:
 
-- its `services`, to your registry's `services`;
-- its `roster.providers`, to `roster.providers`;
-- its `fluid-` voices, to `roster.voices`.
+- its `services` are appended to your registry's `services`;
+- its `roster.providers` are added to `roster.providers`;
+- its `ttsModels` and `sttModels` are added when no model of that id is declared;
+- its `voices` are added when no voice of that id is declared.
 
-Set each appended service's `hostId` to a host in your registry, and expand the leading `~/` in each `ops.env.workingDirectory` to your home directory (nothing downstream expands it; the merge command in the fluid README does both). Its model ids and `fluid-` voice ids do not collide with the example registry's. Set `FLUID_CORS_ORIGINS` on both entries to the origins you open Banter at.
+Set each appended service's `hostId` to a host in your registry, and expand the leading `~/` in each `ops.env.workingDirectory` to your home directory (nothing downstream expands it; the merge command in the fluid README does both). A model or voice you already have, such as `kokoro-82m` or `alloy`, is kept as it is; `fluid-tts` serves `kokoro-82m` too, so those voices are available on it without an edit. Set `FLUID_CORS_ORIGINS` on both entries to the origins you open Banter at.
 
 Then build and install:
 
