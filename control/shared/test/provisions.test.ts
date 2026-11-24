@@ -1,5 +1,5 @@
-// Registry validation of provisions and model loading (dev/specs/service-apis.md,
-// sections 5, 10 and 12). The meaning checks run from validateRoster on parsed
+// Registry validation of provisions and model loading (docs/reference/design/service-apis.md,
+// "Provisions" and "Validation at registry load"). The meaning checks run from validateRoster on parsed
 // objects; the shape rules and the round trip of the new fields go through
 // loadRegistry, the path a node takes at startup.
 //

@@ -6,7 +6,7 @@ import { initialTurnManagerState, snapshot as buildSnapshot } from '../turn-mana
 import type { Snapshot } from '../turn-manager'
 
 // A speak request carries the resolution and the provision of the API that speaks
-// it (dev/specs/service-apis.md, section 11); these are the minimal ones.
+// it (docs/reference/design/service-apis.md, "Provisions"); these are the minimal ones.
 const RESOLUTION = { model: 'm', voice: { name: 'v' } } as never
 const SPEECH = { api: 'openai.audio.speech' } as never
 
@@ -248,8 +248,8 @@ describe('PlaybackEngine — the element survives a reset', () => {
     ).toBeGreaterThan(playCount)
   })
 
-  // Speech goes through the selected provision's adapter (dev/specs/service-apis.md,
-  // section 11). The resolution is the control plane's, encoded as the provision
+  // Speech goes through the selected provision's adapter (docs/reference/design/service-apis.md,
+  // "Provisions"). The resolution is the control plane's, encoded as the provision
   // allows: a recording goes as ref_audio only where the provision declares
   // cloning-reference, and the audio format is the adapter's choice from what the
   // provision restricts, never the engine's.

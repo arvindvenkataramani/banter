@@ -1,4 +1,4 @@
-// Whether a part of an API's spec is in play for a provision (dev/specs/service-apis.md, section 5).
+// Whether a part of an API's spec is in play for a provision (docs/reference/design/service-apis.md, "Provisions").
 
 import type { Provision } from "./types";
 

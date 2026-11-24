@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { loadVoiceSelection, type VoiceConfig } from './voice-config'
 
-// The engine takes the selection as GET /api/voice serves it (dev/specs/service-apis.md,
-// section 11). `selection.resolution` is the shard's resolution, which the speech
+// The engine takes the selection as GET /api/voice serves it (docs/reference/design/service-apis.md,
+// "Provisions"). `selection.resolution` is the shard's resolution, which the speech
 // adapter encodes unchanged; the engine looks up no key, recording or voice
 // (docs/reference/design/model-roster.md, "Reaching a resolution"). Assumed:
 // `tts.selection.resolution`, `tts.selection.resolutionError` and

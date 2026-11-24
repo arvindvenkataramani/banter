@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentVoice } from './agent-voice'
 import type { SpeechPlayer } from '../system/playback-engine'
 
-// An utterance with nothing to speak it through is reported, not dropped (dev/specs/service-apis.md, section 8, Failures).
+// An utterance with nothing to speak it through is reported, not dropped (docs/reference/design/service-apis.md, "Adapters").
 
 const player = (): SpeechPlayer => ({ enqueueChat: vi.fn(async () => {}), beginRun: vi.fn(), endRun: vi.fn(), cancel: vi.fn() })
 

@@ -1,4 +1,4 @@
-// When Banter makes an explicit load or unload call (dev/specs/service-apis.md, section 7).
+// When Banter makes an explicit load or unload call (docs/reference/design/service-apis.md, "Model loading").
 
 import { adapterFor } from "./index";
 import { capabilityHolds, type Selection } from "./select";

@@ -1,4 +1,4 @@
-// The openai.realtime adapter (dev/specs/service-apis.md, section 8), for
+// The openai.realtime adapter (docs/reference/design/service-apis.md, "Adapters"), for
 // `transcribeStream`: how it opens a transcription session and how it turns Realtime's
 // events into the guarantees of `transcribeStream`. The server here is a mock that
 // answers the way the pinned references say: `session.updated` after a

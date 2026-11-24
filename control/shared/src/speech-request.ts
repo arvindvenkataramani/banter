@@ -1,6 +1,6 @@
 // The resolution a node makes for a runtime on its own machine: the shard on
 // POST /api/voices/resolve, or the control plane for a runtime on its host.
-// The synthesis adapter encodes it for the wire (dev/specs/service-apis.md, section 11).
+// The synthesis adapter encodes it for the wire (docs/reference/design/service-apis.md, "Provisions").
 
 import { readFileSync } from "node:fs";
 import { resolveVoiceForModel } from "./roster";

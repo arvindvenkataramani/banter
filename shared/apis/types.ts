@@ -1,4 +1,4 @@
-// The vocabulary of declared service APIs (dev/specs/service-apis.md, section 5).
+// The vocabulary of declared service APIs (docs/reference/design/service-apis.md, "Provisions").
 
 export const API_IDS = [
   "openai.audio.speech",

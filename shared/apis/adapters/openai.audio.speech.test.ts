@@ -1,4 +1,4 @@
-// The openai.audio.speech adapter (dev/specs/service-apis.md, section 8): what it
+// The openai.audio.speech adapter (docs/reference/design/service-apis.md, "Adapters"): what it
 // sends for `synthesize`, read from the request a mock server received.
 //
 // INVENTED: the spec gives no call signature. An adapter module exports its

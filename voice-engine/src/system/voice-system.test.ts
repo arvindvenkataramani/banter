@@ -11,7 +11,7 @@ import type { VoiceSession } from '../session'
 // Design record: docs/reference/design/voice-system.md. The collaborators are fakes; the
 // turn manager's mode, the mutes and the session store are the real stores. Model
 // loads and unloads go through the shared adapters to `fetch`, which the harness
-// records. The served config follows dev/specs/service-apis.md, section 11: each TTS
+// records. The served config follows docs/reference/design/service-apis.md, "Provisions": each TTS
 // provider and STT option carries `provides` and `models`, an STT option lists what
 // it `serves` as `{ model, key }`, and `stt.models` holds the roster's models.
 
@@ -538,7 +538,7 @@ describe('VoiceSystem', () => {
 })
 
 // Loading and unloading follow what the services declare (decideLoad and decideUnload,
-// dev/specs/service-apis.md, section 7), performed through the adapters. The calls
+// docs/reference/design/service-apis.md, "Model loading"), performed through the adapters. The calls
 // recorded are the requests those adapters made. Generic paths stand in for any
 // declared call, and the repository route is recognised by its model segment.
 describe('VoiceSystem model loads', () => {

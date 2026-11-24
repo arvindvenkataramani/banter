@@ -3,7 +3,7 @@ import { select } from '@platform/shared/apis/select'
 import { StreamingSttTransport } from './stt-transport-streaming'
 
 // The streaming transport sends Opus only when the selected provision holds the opus
-// capability and the browser can encode it (dev/specs/service-apis.md, section 11).
+// capability and the browser can encode it (docs/reference/design/service-apis.md, "Provisions").
 // The Deepgram live provision holds it through `opus-packets`, so one that lacks the
 // extension is sent linear16 even from a browser that can encode Opus. The transport
 // takes the selection's `provision` and `adapter`, as stt-transport.test.ts has it.

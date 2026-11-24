@@ -1,4 +1,4 @@
-// The deepgram.listen.live adapter (dev/specs/service-apis.md, section 8): how it
+// The deepgram.listen.live adapter (docs/reference/design/service-apis.md, "Adapters"): how it
 // connects, what it sends, and how it turns Deepgram's results into the guarantees of
 // `transcribeStream`: the whole utterance in each partial, and exactly one final per
 // Finalize, an empty one included.

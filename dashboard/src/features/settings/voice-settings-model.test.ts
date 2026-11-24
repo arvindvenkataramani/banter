@@ -104,8 +104,8 @@ describe('rosters and cascades', () => {
   })
 
   // Take-over is a capability of the selected STT option's streaming provision, read
-  // from that option alone: the TTS provider has no say (dev/specs/service-apis.md,
-  // section 11). INVENTED: the roster view's flag is named `offersTakeover`.
+  // from that option alone: the TTS provider has no say (docs/reference/design/service-apis.md,
+  // "Provisions"). INVENTED: the roster view's flag is named `offersTakeover`.
   const offered = (draft: Draft): boolean => (roster(draft) as unknown as { offersTakeover: boolean }).offersTakeover
 
   it('[T2] take-over is offered when the selected STT option\'s stream provision holds it, and only then', () => {

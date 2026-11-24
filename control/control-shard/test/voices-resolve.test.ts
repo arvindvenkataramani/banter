@@ -1,6 +1,6 @@
 // POST /api/voices/resolve: the shard resolves a voice for a runtime that cannot
 // read the registry (docs/reference/design/model-roster.md, "Reaching a resolution").
-// The answer is a resolution (dev/specs/service-apis.md, section 11):
+// The answer is a resolution (docs/reference/design/service-apis.md, "Provisions"):
 // `{ model, voice: { name } | { recording, transcript? }, params? }`, which the
 // caller hands to the synthesis adapter unchanged. The resolution rule itself is
 // covered by the shared cases in control/test/voice-resolution.test.ts.

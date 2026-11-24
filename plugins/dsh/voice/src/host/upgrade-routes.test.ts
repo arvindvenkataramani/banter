@@ -14,7 +14,7 @@ import * as realtimeAdapter from '../../../../../shared/apis/adapters/openai.rea
 
 // The relay registers its WebSocket upgrade route at each path the selected STT service's
 // stream provisions use, and passes what the browser sends and the server answers through
-// untouched (dev/specs/service-apis.md, section 11). The host's own context is faked; the
+// untouched (docs/reference/design/service-apis.md, "Provisions"). The host's own context is faked; the
 // upstream and the browser are real loopback sockets speaking the WebSocket handshake.
 //
 // INVENTED: GET /api/voice carries the selected STT option as `stt.options[]`, with its

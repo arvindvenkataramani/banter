@@ -1,4 +1,4 @@
-// The fluid.stt.stream adapter (dev/specs/service-apis.md, section 8): the stream
+// The fluid.stt.stream adapter (docs/reference/design/service-apis.md, "Adapters"): the stream
 // socket client moved from voice-engine, its behaviour unchanged. The first four
 // describe blocks are the moved tests, with the call shape below; the last two are
 // what the move adds.

@@ -1,4 +1,4 @@
-// The triton.model-repository adapter (dev/specs/service-apis.md, section 8): the
+// The triton.model-repository adapter (docs/reference/design/service-apis.md, "Adapters"): the
 // requests `loadModel` and `unloadModel` send, and how a failure reads.
 //
 // INVENTED: `loadModel` takes `{ endpoint, provision, model, mode?, variant? }` and

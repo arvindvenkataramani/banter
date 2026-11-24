@@ -1,4 +1,4 @@
-// Candidate selection (dev/specs/service-apis.md, section 6): which provision of a
+// Candidate selection (docs/reference/design/service-apis.md, "Provisions"): which provision of a
 // service performs an operation, from what the provisions declare and nothing else.
 //
 // The cases use the adapters of openai.audio.transcriptions, fluid.stt.stream and

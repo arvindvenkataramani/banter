@@ -1,4 +1,4 @@
-// Typed access to the API catalog and the part indexes (dev/specs/service-apis.md, sections 3 and 4).
+// Typed access to the API catalog and the part indexes (docs/reference/design/service-apis.md, "The API catalog").
 
 import catalogData from "./catalog.json";
 import speech from "./parts/openai.audio.speech.json";

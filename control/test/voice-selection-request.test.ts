@@ -1,6 +1,6 @@
 // GET /api/voice and the selection it serves (docs/reference/design/model-roster.md,
-// "What the control plane serves" and "Reaching a resolution"; dev/specs/service-apis.md,
-// section 11). For a runtime on a shard host the control plane asks that shard and serves
+// "What the control plane serves" and "Reaching a resolution"; docs/reference/design/service-apis.md,
+// "Provisions"). For a runtime on a shard host the control plane asks that shard and serves
 // its answer as `selection.resolution`; for one on its own host it resolves from its own
 // roster. The roster is the one the shared resolution cases use, held by a fake shard on
 // the worker host. The shard reports each service with the provisions and model loading

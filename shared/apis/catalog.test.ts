@@ -1,4 +1,4 @@
-// The API catalog and its part indexes (dev/specs/service-apis.md, sections 1, 3 and 4).
+// The API catalog and its part indexes (docs/reference/design/service-apis.md, "The API catalog").
 // The catalog is data: these tests hold it to the spec's list, its pins and the rule
 // that every API Banter can be pointed at has an index to check deviations against.
 

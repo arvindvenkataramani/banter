@@ -1,5 +1,5 @@
 // Load-time checks on the APIs a service provides and how its models load
-// (dev/specs/service-apis.md, section 10). They run on parsed objects, so they also
+// (docs/reference/design/service-apis.md, "Validation at registry load"). They run on parsed objects, so they also
 // catch the unknown keys the non-strict schema sync would pass with a warning.
 // A failure is fatal at startup and refused at reload.
 

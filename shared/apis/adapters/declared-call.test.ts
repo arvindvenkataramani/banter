@@ -1,4 +1,4 @@
-// The declared-call adapter (dev/specs/service-apis.md, section 8): the generic
+// The declared-call adapter (docs/reference/design/service-apis.md, "Adapters"): the generic
 // `loadModel` and `unloadModel` for a service that declares its calls under
 // `models.load` and `models.unload`.
 //

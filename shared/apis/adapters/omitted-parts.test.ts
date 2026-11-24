@@ -1,4 +1,4 @@
-// What the adapters send and accept when a provision omits parts (dev/specs/service-apis.md, section 8):
+// What the adapters send and accept when a provision omits parts (docs/reference/design/service-apis.md, "Adapters"):
 // optional parameters it omits are not sent, and an omitted value or parameter accepts no values.
 
 import { afterEach, describe, expect, it, jest, mock } from 'bun:test'

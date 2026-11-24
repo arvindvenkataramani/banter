@@ -1,4 +1,4 @@
-// When Banter makes an explicit load or unload call (dev/specs/service-apis.md, section 7),
+// When Banter makes an explicit load or unload call (docs/reference/design/service-apis.md, "Model loading"),
 // decided from the service's declarations, the roster's model and the selected adapter.
 
 import { describe, it, expect } from "bun:test";

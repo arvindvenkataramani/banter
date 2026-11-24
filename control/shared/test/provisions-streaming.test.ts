@@ -1,5 +1,5 @@
 // Check 9 asks for the candidate the engine would select: a streaming speech-to-text model needs a
-// provision whose client decides where an utterance ends (dev/specs/service-apis.md, section 10).
+// provision whose client decides where an utterance ends (docs/reference/design/service-apis.md, "Validation at registry load").
 
 import { describe, it, expect } from "bun:test";
 import { validateRoster } from "../src/roster";

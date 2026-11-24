@@ -3,7 +3,7 @@ import { resolveSttMode, resolveChunkMs, sttModeSource } from './voice-session-s
 
 // Which way a model is brought up, from what the roster declares about the model
 // (`stt.models[].kind`, as GET /api/voice serves it) and what the selected service's
-// provisions offer (dev/specs/service-apis.md, sections 6 and 11). Nothing is read
+// provisions offer (docs/reference/design/service-apis.md, "Provisions"). Nothing is read
 // from the server.
 //
 // INVENTED: the functions keep their names and module. `resolveSttMode(option, model,

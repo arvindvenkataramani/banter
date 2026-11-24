@@ -1,5 +1,5 @@
 // How the engine calls a service: which of its declared APIs performs an operation, and the
-// loads and unloads the declarations call for (dev/specs/service-apis.md, sections 6, 7 and 11).
+// loads and unloads the declarations call for (docs/reference/design/service-apis.md, "Provisions" and "Model loading").
 // Every request goes through an adapter in shared/apis; nothing here knows a path.
 
 import { adapterFor } from '@platform/shared/apis'

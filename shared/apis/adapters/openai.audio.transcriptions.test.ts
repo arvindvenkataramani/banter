@@ -1,4 +1,4 @@
-// The openai.audio.transcriptions adapter (dev/specs/service-apis.md, section 8).
+// The openai.audio.transcriptions adapter (docs/reference/design/service-apis.md, "Adapters").
 //
 // INVENTED: `transcribe` takes `{ endpoint, provision, audio, model? }`, where `audio`
 // is the recording's bytes, and resolves to the transcript text.

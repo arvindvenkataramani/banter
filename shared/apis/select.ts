@@ -1,4 +1,4 @@
-// Candidate selection (dev/specs/service-apis.md, section 6): which provision of a
+// Candidate selection (docs/reference/design/service-apis.md, "Provisions"): which provision of a
 // service performs an operation, read from the declarations alone.
 
 import { adapterFor, type Adapter } from "./index";
