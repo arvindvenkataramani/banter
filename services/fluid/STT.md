@@ -48,7 +48,7 @@ Each server also logs through unified logging with its bundle identifier as the 
 
 `--registry` and `--provider` are required; a server started without both, or pointed at a registry it cannot read or a roster it cannot validate, fails at startup rather than serving an empty listing. The roster is the `roster` section of the node's registry — the same file the control plane or shard loads — naming which models exist under a set of provider ids; this server reads what the `fluid-stt` provider `serves`, takes each served model's declaration from the roster's `sttModels`, and validates that it can build a manager for each. A registry with no `roster` section, no such provider, or nothing served under it is a startup failure naming the path and the provider.
 
-The server starts holding no model. The first request that needs one loads it — the model it names, or the roster's `defaultModel` when it names none — and waits for the load; the load endpoints bring one up ahead of time. After the roster's `idleUnloadMs` without work (30 minutes when absent), the model is unloaded.
+The server starts holding no model. The first request that needs one loads it — the model it names, or the roster's `defaultModel` when it names none — and waits for the load; a model repository load brings one up ahead of time. After the roster's `idleUnloadMs` without work (30 minutes when absent), the model is unloaded.
 
 `--bind local` (the default) listens on `127.0.0.1` only, which is what a local proxy such as Tailscale Serve forwards to: the proxy sits in front, registered for the service by the node that runs it, and the process itself binds no public interface. `--bind all` listens on every interface, the Tailscale one included, over plain HTTP, which is what a LAN setup uses. Any other value fails at startup.
 
@@ -88,27 +88,22 @@ Health and model lifecycle are generated from `openapi.yaml`, which is their sou
 
 OpenAI-compatible listing. Each entry carries `id`, `name`, `object`, `created`, `owned_by`, `loaded`, `loadable`, `kind`, `transport`, `present`, and, where the roster declares them, `params` and `variants`. The loaded entry also carries `variant` (its resident variant) and `modes` (which halves of a `both` model are currently up — a boolean cannot say which, since Unified can be resident in one mode or both). `loadable` is always true here; it is kept because OpenAI-compatible clients read it, not because anything in this roster is unloadable in the sense it implies. `transport` lists `http`, `websocket`, or both, separately from `kind`: `kind` says what the model is, `transport` says how it is reached, and the two are not asserted to coincide.
 
-### `POST /v1/models/load`
+### Model repository: `POST /v2/repository/...`
 
-Body: `{"model": "<id>", "mode"?, "variant"?, "chunkMs"?}`. `mode` is required for a model of kind `both` and refused for one that does not serve what it names. `variant` names one of the model's variants directly; `chunkMs` (or any other declared parameter) selects the variant that binds it. Naming a variant together with a parameter that would select a different one is refused.
+Explicit loading is Triton's model repository extension, with the departures `resident-slot` declares. A model is named by its serving's key.
+
+`POST /v2/repository/models/{name}/load`, with an optional body `{"parameters": {"mode"?, "variant"?}}`. Empty `parameters` load a single-mode model in its one mode; a model of kind `both` needs `mode` (`batch`, `streaming` or `both`), and a model with variants needs `variant`. A load of the resident model, with the same variant and a mode already up, changes nothing. Any other parameter is refused.
+
+`POST /v2/repository/models/{name}/unload` drops the model if it is the resident one; naming another is a no-op.
+
+`POST /v2/repository/index`, with an optional `{"ready": true}`, lists every roster model as `{name, state, reason}`: `READY` for the resident one and `UNAVAILABLE` for the rest.
 
 | Status | When |
 |---|---|
-| 200 | `{"object": "model.load", "loaded": "<id>"}`, with `variant` added for a model that has several |
-| 400 | no `model` in the body, the id is unknown, or the roster refuses the request (no mode named for a `both` model, an unoffered parameter value, and so on) |
-| 409 | the slot is busy with other work, past the two-second wait |
-
-### `POST /v1/models?model_name=<id>`
-
-The spelling `mlx-audio` answers and `fluid-tts` shares, so a client written against either reads this one too. It carries no mode, variant, or parameters: a model that needs any of them is refused here, and `POST /v1/models/load` is the form that can state them.
-
-### `POST /v1/models/unload`
-
-Body: `{"model": "<id>"}`. Drops the model if it is the resident one. Unloading something that is not loaded is a no-op, not an error.
-
-### `DELETE /v1/models`
-
-Drops whatever is resident, without naming it — the spelling OpenAI-compatible clients use, and what `fluid-tts` answers on the same path. A no-op when nothing is loaded. Unlike every other endpoint here, this one refuses immediately rather than waiting out the slot's deadline when work is in flight: waiting would hide a caller's mistake behind a stall.
+| 200 | loaded, unloaded, or already as asked |
+| 400 | the name is no serving's key, or the parameters do not choose what the model offers |
+| 409 | a streaming session holds the server and the load would change the model, or the call is an unload; or work in flight outlasted the wait |
+| 503 | building the model failed; nothing is resident |
 
 ### `POST /v1/audio/transcriptions` and `POST /audio/transcriptions`
 
@@ -183,13 +178,13 @@ A dropped connection is not resumed: reconnecting starts a new session, and the 
 
 ### A session end to end
 
-Load the model first; the socket will not load it. Unified needs `mode` because it serves both batch and streaming.
+Loading first is optional, since the socket loads the model it names; a load ahead of time keeps the load out of the first utterance. Unified needs `mode` because it serves both batch and streaming.
 
 ```js
-await fetch(`${endpoint}/v1/models/load`, {
+await fetch(`${endpoint}/v2/repository/models/parakeet-unified-0.6b/load`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ model: 'parakeet-unified-0.6b', mode: 'streaming' }),
+  body: JSON.stringify({ parameters: { mode: 'streaming' } }),
 })
 
 const ws = new WebSocket(

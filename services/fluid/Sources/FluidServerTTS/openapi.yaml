@@ -80,77 +80,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelList"
-    delete:
-      operationId: unloadModel
-      summary: Drop the resident model.
-      description: |
-        Unloading when nothing is loaded is a no-op rather than an error: the
-        caller wanted it gone, and it is. Refused while work is in flight —
-        waiting out the slot's deadline would hide a caller's mistake behind a
-        stall.
-      responses:
-        "200":
-          description: Nothing is resident.
-        "409":
-          description: Work is in flight against the model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    post:
-      operationId: loadModelByName
-      summary: Make a model resident, naming it in the query.
-      description: |
-        The spelling mlx-audio answers, and so the one the dashboard sends to
-        every synthesis provider. Identical to `POST /v1/models/load` with the
-        id in the body; the transcription server answers it the same way.
-      parameters:
-        - $ref: "#/components/parameters/ModelName"
-      responses:
-        "200":
-          description: The model is loaded and ready.
-        "400":
-          description: No such model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Work is in flight against the model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /v1/models/load:
-    post:
-      operationId: loadModel
-      summary: Make a model resident.
-      description: |
-        Returns when the model is ready to serve. Loading the model already
-        loaded is a no-op rather than an error. A failed load leaves nothing
-        resident, which is the honest state.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ModelRequest"
-      responses:
-        "200":
-          description: The model is loaded and ready.
-        "400":
-          description: No such model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Work is in flight against the model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
 
   /v2/repository/index:
     post:
@@ -252,13 +181,6 @@ components:
       schema:
         type: string
       description: A roster model id.
-    ModelName:
-      name: model_name
-      in: query
-      required: true
-      schema:
-        type: string
-      description: A model id, as listed by /v1/models.
 
   schemas:
     Health:
@@ -314,7 +236,7 @@ components:
         loadable:
           type: boolean
           description: |
-            Whether this model can be made resident over /v1/models/load. Every
+            Whether this model can be made resident over the repository load. Every
             model in the roster is, so this is constant — it is kept because
             OpenAI-compatible clients read it, not because it discriminates.
         kind:
@@ -407,14 +329,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Model"
-
-    ModelRequest:
-      type: object
-      required: [model]
-      properties:
-        model:
-          type: string
-          description: A model id, as listed by /v1/models.
 
     RepositoryIndexRequest:
       type: object

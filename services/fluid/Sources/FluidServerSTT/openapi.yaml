@@ -51,23 +51,6 @@ paths:
                 $ref: "#/components/schemas/Health"
 
   /v1/models:
-    delete:
-      operationId: dropResidentModel
-      summary: Drop whatever model is resident.
-      description: |
-        The spelling OpenAI-compatible clients use, and what the synthesis
-        server answers on the same path. Dropping when nothing is loaded is a
-        no-op. Refused while work is in flight — waiting out the slot's deadline
-        would hide a caller's mistake behind a stall.
-      responses:
-        "200":
-          description: Nothing is resident.
-        "409":
-          description: Work is in flight against the model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
     get:
       operationId: listModels
       summary: Every model this server can load, and which one is loaded.
@@ -78,122 +61,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelList"
-    post:
-      operationId: loadModelByName
-      summary: Make a model resident, naming it in the query.
-      description: |
-        The spelling mlx-audio answers and the synthesis server shares, so a
-        client written against either reads this one. It carries no mode,
-        variant or parameters: a model that needs any of them is refused, and
-        `POST /v1/models/load` is the form that states them.
-      parameters:
-        - $ref: "#/components/parameters/ModelName"
-      responses:
-        "200":
-          description: The model is loaded and ready.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ModelAction"
-        "400":
-          description: The id is unknown, or the model needs a mode or variant.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Work is in flight against the model, or a streaming session holds the service.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "503":
-          description: Building the model failed; nothing is resident.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /v1/models/load:
-    post:
-      operationId: loadModel
-      summary: Make a model resident.
-      description: |
-        Unloads whatever is resident, loads the requested model, and returns once
-        it is ready to serve. Loading the model already loaded is a no-op rather
-        than a reload.
-
-        A failed load leaves no model resident: the previous one is unloaded
-        first, so that two are never held at once.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ModelRequest"
-      responses:
-        "200":
-          description: The model is loaded and ready.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ModelAction"
-        "400":
-          description: No model id in the body, or the id is unknown.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Work is in flight against the model, or a streaming session holds the service.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "503":
-          description: Building the model failed; what was resident before may be gone.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /v1/models/unload:
-    post:
-      operationId: unloadModel
-      summary: Release a model, naming it.
-      description: |
-        Drops the model if it is the resident one. Unloading a model that is not
-        loaded is a no-op rather than an error: the caller wanted it gone, and it
-        already is.
-
-        `DELETE /v1/models` does the same thing without naming a model, and is
-        the spelling OpenAI-compatible clients use. Name the model here when the
-        caller believes it knows what is resident and wants that asserted.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ModelRequest"
-      responses:
-        "200":
-          description: The model is not resident.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ModelAction"
-        "400":
-          description: No model id in the body, or the id is unknown.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Work is in flight against the model.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
 
   /v2/repository/index:
     post:
@@ -296,13 +163,6 @@ components:
       schema:
         type: string
       description: A serving's runtime key.
-    ModelName:
-      name: model_name
-      in: query
-      required: true
-      schema:
-        type: string
-      description: A model id, as listed by /v1/models.
 
   schemas:
     Health:
@@ -361,7 +221,7 @@ components:
         loadable:
           type: boolean
           description: |
-            Whether this model can be made resident over /v1/models/load. Every
+            Whether this model can be made resident over the repository load. Every
             model in the roster is, so this is constant — it is kept because
             OpenAI-compatible clients read it, not because it discriminates.
         kind:
@@ -430,44 +290,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Model"
-
-    ModelRequest:
-      type: object
-      required: [model]
-      properties:
-        model:
-          type: string
-          description: A model id, as listed by /v1/models.
-        mode:
-          type: string
-          enum: [batch, streaming, both]
-          description: |
-            Which mode to make resident. Required for a model reporting kind
-            `both`, and refused for a model that does not serve what it names.
-            A model with a choice to make is never defaulted: the wrong choice
-            would surface as unexplained latency rather than as an error.
-        variant:
-          type: string
-          description: |
-            Which of the model's variants to load, by id. Given with
-            parameters that select a different variant, the load is refused.
-        chunkMs:
-          type: integer
-          description: |
-            The `chunkMs` parameter, for a model declaring it. Where the
-            roster maps a value to a variant, giving it selects that variant.
-
-    ModelAction:
-      type: object
-      required: [object, loaded]
-      properties:
-        object:
-          type: string
-        loaded:
-          type: string
-        variant:
-          type: string
-          description: The variant now resident, for a model that has several.
 
     Param:
       type: object

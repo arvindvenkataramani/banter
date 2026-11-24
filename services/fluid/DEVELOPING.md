@@ -76,7 +76,7 @@ Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directo
 ### Loading
 
 - **A request loads the model it names.** The first request that needs a model loads the one it names, or the roster's `defaultModel` when it names none, in the mode its route needs: streaming for a WebSocket, batch for a transcription. Requests arriving during a load share it. A request naming another model, or another variant of the resident one, replaces it once the work in flight ends; a nameless request uses whatever is resident.
-- **A request never downloads.** It loads only weights already on the machine; an absent model is refused, and the load endpoints are what fetch one. A failed build is a 503 naming the model.
+- **A request never downloads.** It loads only weights already on the machine; an absent model is refused, and a model repository load is what fetches one. A failed build is a 503 naming the model.
 - **A model that needs a parameter loads on a request only when the request carries it.** Nemotron's chunk size comes from the stream socket's `chunkMs`; another tier of the resident model replaces it like any other model.
 - **The model unloads when idle.** After the roster's `idleUnloadMs` without work (30 minutes when absent or not positive), the model is released, whichever way it was loaded. Health checks and model listings aren't work, and an open session is never unloaded. This is separate from the control plane's idle stop, which ends the process.
 - **A model of kind `both` needs `mode` on every load.** There is no default, because the wrong choice would surface as unexplained latency rather than as an error. `mode` can be `batch`, `streaming` or `both`.
@@ -92,10 +92,9 @@ Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directo
 |---|---|
 | `GET /healthz` | `{"status":"ok","model":<id or null>,"variant":<or null>,"bundleIdentifier","shortVersion","buildVersion"}`. Answers as soon as the process is up, before anything is loaded. The last three come from the `.app`'s Info.plist: the package version and the source commit |
 | `GET /v1/models` | Each entry adds `loaded`, `loadable`, `kind`, `transport`, `present` and, where declared, `params` and `variants`. The loaded entry also carries `variant` and `modes` (which halves of a `both` model are up). `loadable` is always true, kept because OpenAI-compatible clients read it |
-| `POST /v1/models/load` | `{"model", "mode"?, "variant"?, "chunkMs"?}`. 200 `{"object":"model.load","loaded":<id>}` (plus `variant`); 400 for an unknown id or a request the roster refuses; 409 when busy or a session holds the service; 503 when building the model fails |
-| `POST /v1/models?model_name=<id>` | The spelling mlx-audio answers. Carries no mode or variant, so a model that needs one is refused here |
-| `POST /v1/models/unload` | `{"model"}`. Drops it if resident; otherwise a no-op |
-| `DELETE /v1/models` | Drops whatever is resident. Unlike every other route, refuses at once rather than waiting when work is in flight |
+| `POST /v2/repository/models/{name}/load` | `{"parameters": {"mode"?, "variant"?}}`, the model named by its serving's key. 400 for an unknown name or parameters the roster refuses; 409 when a session holds the service and the load would change the model, or work in flight outlasts the wait; 503 when building the model fails. A load of what is resident changes nothing |
+| `POST /v2/repository/models/{name}/unload` | Drops the model if resident; otherwise a no-op. 409 while a session holds it |
+| `POST /v2/repository/index` | Every roster model as `{name, state, reason}`, `READY` for the resident one; `{"ready": true}` lists only that one |
 | `POST /v1/audio/transcriptions`, `POST /audio/transcriptions` | Multipart, `file` required, capped at 200 MB. Loads the named model, or the default, replacing an idle resident one. 409 when a streaming session holds the service; 503 when the load fails; 415 for a non-multipart body |
 | `POST /listen`, `POST /v1/listen` | Deepgram batch: the audio file as the raw body, a Deepgram response back. See below |
 

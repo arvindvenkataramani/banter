@@ -71,83 +71,6 @@ struct APIHandlers: APIProtocol {
         return .ok(.init(body: .json(.init(object: "list", data: data))))
     }
 
-    func loadModel(_ input: Operations.loadModel.Input) async throws
-        -> Operations.loadModel.Output
-    {
-        guard case .json(let body) = input.body else {
-            return .badRequest(.init(body: .json(.init(error: "expected a JSON body"))))
-        }
-        let variant: String?
-        do {
-            variant = try await ctx.resident.load(
-                id: body.model,
-                mode: body.mode.map { LoadMode(rawValue: $0.rawValue) ?? .batch },
-                variant: body.variant,
-                params: body.chunkMs.map { [ParamBinding(name: "chunkMs", value: $0)] } ?? [])
-        } catch let error as FluidServerSTTError {
-            return loadFailure(error)
-        } catch let error as SlotError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        }
-        return .ok(
-            .init(body: .json(.init(object: "model.load", loaded: body.model, variant: variant))))
-    }
-
-    /// The query spelling of a load, with nothing to say about mode, variant
-    /// or parameters — the roster refuses a model that needs any of them.
-    func loadModelByName(_ input: Operations.loadModelByName.Input) async throws
-        -> Operations.loadModelByName.Output
-    {
-        let id = input.query.model_name
-        let variant: String?
-        do {
-            variant = try await ctx.resident.load(id: id, mode: nil, variant: nil, params: [])
-        } catch let error as FluidServerSTTError {
-            let payload = Components.Schemas._Error(error: error.description)
-            switch error.status {
-            case .conflict: return .conflict(.init(body: .json(payload)))
-            case .serviceUnavailable: return .serviceUnavailable(.init(body: .json(payload)))
-            default: return .badRequest(.init(body: .json(payload)))
-            }
-        } catch let error as SlotError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        }
-        return .ok(.init(body: .json(.init(object: "model.load", loaded: id, variant: variant))))
-    }
-
-    func unloadModel(_ input: Operations.unloadModel.Input) async throws
-        -> Operations.unloadModel.Output
-    {
-        guard case .json(let body) = input.body else {
-            return .badRequest(.init(body: .json(.init(error: "expected a JSON body"))))
-        }
-        do {
-            try await ctx.resident.unload(id: body.model)
-        } catch let error as FluidServerSTTError {
-            return unloadFailure(error)
-        } catch let error as SlotError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        }
-        return .ok(.init(body: .json(.init(object: "model.unload", loaded: body.model))))
-    }
-
-    /// Drop whatever is resident, without naming it — the spelling
-    /// OpenAI-compatible clients use, and what the synthesis server answers on
-    /// the same path.
-    func dropResidentModel(_ input: Operations.dropResidentModel.Input) async throws
-        -> Operations.dropResidentModel.Output
-    {
-        guard let loaded = await ctx.resident.loadedId else { return .ok(.init()) }
-        do {
-            try await ctx.resident.unload(id: loaded)
-        } catch let error as SlotError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        } catch let error as FluidServerSTTError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        }
-        return .ok(.init())
-    }
-
     // MARK: - Model repository
 
     func repositoryIndex(_ input: Operations.repositoryIndex.Input) async throws
@@ -212,27 +135,5 @@ struct APIHandlers: APIProtocol {
             return .conflict(.init(body: .json(.init(error: error.description))))
         }
         return .ok(.init())
-    }
-
-    // MARK: - Failure mapping
-    //
-    // Each operation gets its own union of responses from the spec, so the same
-    // error maps through a per-operation shape rather than one shared helper.
-
-    private func loadFailure(_ error: FluidServerSTTError) -> Operations.loadModel.Output {
-        let payload = Components.Schemas._Error(error: error.description)
-        switch error.status {
-        case .conflict: return .conflict(.init(body: .json(payload)))
-        case .serviceUnavailable: return .serviceUnavailable(.init(body: .json(payload)))
-        default: return .badRequest(.init(body: .json(payload)))
-        }
-    }
-
-    private func unloadFailure(_ error: FluidServerSTTError) -> Operations.unloadModel.Output {
-        let payload = Components.Schemas._Error(error: error.description)
-        switch error.status {
-        case .conflict: return .conflict(.init(body: .json(payload)))
-        default: return .badRequest(.init(body: .json(payload)))
-        }
     }
 }

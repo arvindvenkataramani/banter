@@ -147,15 +147,6 @@ func handleTranscribe(
     )
 }
 
-private func modelIdFromBody(_ request: Request) async throws -> String {
-    let buffer = try await request.body.collect(upTo: 64 * 1024)
-    let body = try? JSONDecoder().decode(LoadRequest.self, from: buffer)
-    guard let id = body?.model ?? body?.id, !id.isEmpty else {
-        throw HTTPError(.badRequest, message: #"expected {"model": "<id>"}"#)
-    }
-    return id
-}
-
 func jsonResponse<T: Encodable>(_ value: T, status: HTTPResponse.Status = .ok) throws -> Response {
     let data = try JSONEncoder().encode(value)
     return Response(

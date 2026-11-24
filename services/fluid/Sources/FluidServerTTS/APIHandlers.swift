@@ -78,55 +78,6 @@ struct APIHandlers: APIProtocol {
         return .ok(.init(body: .json(.init(object: "list", data: data))))
     }
 
-    func loadModel(_ input: Operations.loadModel.Input) async throws
-        -> Operations.loadModel.Output
-    {
-        guard case .json(let body) = input.body else {
-            return .badRequest(.init(body: .json(.init(error: "expected a JSON body"))))
-        }
-        switch try await load(body.model) {
-        case .loaded: return .ok(.init())
-        case .unknown(let error): return .badRequest(.init(body: .json(.init(error: error))))
-        case .refused(let error): return .conflict(.init(body: .json(.init(error: error))))
-        }
-    }
-
-    func loadModelByName(_ input: Operations.loadModelByName.Input) async throws
-        -> Operations.loadModelByName.Output
-    {
-        switch try await load(input.query.model_name) {
-        case .loaded: return .ok(.init())
-        case .unknown(let error): return .badRequest(.init(body: .json(.init(error: error))))
-        case .refused(let error): return .conflict(.init(body: .json(.init(error: error))))
-        }
-    }
-
-    private enum LoadOutcome {
-        case loaded
-        case unknown(String)
-        case refused(String)
-    }
-
-    /// The one load both spellings share.
-    private func load(_ id: String) async throws -> LoadOutcome {
-        // Resolve through the roster, not straight to the driver factory: the
-        // roster is what this server offers, and its id is the platform's
-        // while the driver wants the runtime's key. Skipping it would load a
-        // model the roster deliberately left out.
-        guard let key = ctx.roster.key(for: id) else {
-            return .unknown(TtsError.unknownModel(id).description)
-        }
-        do {
-            try await ctx.resident.load(key)
-        } catch let error as TtsError {
-            if case .unknownModel = error { return .unknown(error.description) }
-            return .refused(error.description)
-        } catch let error as SlotError {
-            return .refused(error.description)
-        }
-        return .loaded
-    }
-
     // MARK: - Model repository
 
     func repositoryIndex(_ input: Operations.repositoryIndex.Input) async throws
@@ -180,19 +131,6 @@ struct APIHandlers: APIProtocol {
         do {
             try await ctx.resident.unload()
         } catch let error as SlotError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        }
-        return .ok(.init())
-    }
-
-    func unloadModel(_ input: Operations.unloadModel.Input) async throws
-        -> Operations.unloadModel.Output
-    {
-        do {
-            try await ctx.resident.unload()
-        } catch let error as SlotError {
-            return .conflict(.init(body: .json(.init(error: error.description))))
-        } catch let error as TtsError {
             return .conflict(.init(body: .json(.init(error: error.description))))
         }
         return .ok(.init())

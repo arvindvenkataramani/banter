@@ -70,8 +70,7 @@ func buildStreamRouter(ctx: TtsAppContext) -> Router<BasicWebSocketRequestContex
         }
         if let want = expecting {
             // Asserts which model the caller believes is loaded; it never
-            // switches. Loading is POST /v1/models/load and nothing else, so
-            // opening a socket cannot evict a model from under another caller.
+            // switches, so opening a socket cannot evict a model from under another caller.
             //
             // Compared as platform ids: the slot holds the runtime key, and a
             // caller names what the listing showed it.
