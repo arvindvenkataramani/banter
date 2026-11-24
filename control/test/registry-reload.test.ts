@@ -24,6 +24,7 @@ function base(): Doc {
     capabilities: [{ id: "tts", name: "Text-to-Speech" }],
     services: [{
       id: "svc-a",
+      provides: [{ api: "openai.audio.speech" }],
       capabilityId: "tts",
       hostId: "gpu-machine",
       permissions: { enabled: true },
@@ -60,6 +61,7 @@ describe("reloadRegistry", () => {
   it.each([
     ["a file that is not JSON", "{ not valid json"],
     ["a file that fails validation", JSON.stringify({ ...base(), services: [{ id: "svc-a" }] })],
+    ["[T1] a provision whose omits names a part its API's index lacks", JSON.stringify((() => { const d = base(); d.services[0].provides = [{ api: "openai.audio.speech", omits: ["parameter:nonesuch"] }]; return d; })())],
   ])("reports %s and leaves the live registry untouched", async (_, contents) => {
     await writeFile(registryPath, JSON.stringify(base()));
     const live = await loadRegistry(registryPath);
@@ -166,5 +168,42 @@ describe("reloadRegistry", () => {
     expect(live.roster?.providers["svc-a"].serves[0].key).toBe("k2");
     expect(live.shards?.[0].port).toBe(5007);
     expect(live.intervals).toEqual({ healthMs: 60000 });
+  });
+});
+
+describe("when a service's provisions change", () => {
+  // INVENTED: the design says the reload's warnings name a server that reads its own
+  // provisions at startup, "as they do for a roster change"; this reuses that warning's kind.
+  const before = [{ api: "openai.audio.speech" }];
+  const after = [{ api: "openai.audio.speech", omits: ["parameter:instructions"] }];
+  const doc = (main: string, provides: unknown[]): Doc => {
+    const d = base();
+    d.services[0].runner = { type: "process", main };
+    d.services[0].provides = provides;
+    return d;
+  };
+
+  it("[T1] names the server that reads the registry as needing a restart", async () => {
+    const main = "server --registry {registry} --provider svc-a";
+    await writeFile(registryPath, JSON.stringify(doc(main, before)));
+    const live = await loadRegistry(registryPath);
+    await writeFile(registryPath, JSON.stringify(doc(main, after)));
+
+    const result = await reloadRegistry(registryPath, live, () => true);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.warnings).toEqual([expect.objectContaining({ kind: "provider-changed", serviceId: "svc-a" })]);
+  });
+
+  // INVENTED: a server that does not read the registry has nothing to restart, so the reload says nothing of it.
+  it("[T1] applies a change to a server that does not read the registry, with nothing to restart", async () => {
+    const main = ".venv/bin/server";
+    await writeFile(registryPath, JSON.stringify(doc(main, before)));
+    const live = await loadRegistry(registryPath);
+    await writeFile(registryPath, JSON.stringify(doc(main, after)));
+
+    const result = await reloadRegistry(registryPath, live, () => true);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.warnings).toEqual([]);
+    expect((live.services[0] as any).provides).toEqual(after);
   });
 });

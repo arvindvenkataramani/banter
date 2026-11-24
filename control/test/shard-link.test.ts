@@ -237,7 +237,6 @@ const FORWARDED: [string, string, string, string, unknown][] = [
   ["stop", "POST", "/api/services/shard-tts/stop", "/api/services/shard-tts/stop", undefined],
   ["restart", "POST", "/api/services/shard-tts/restart", "/api/services/shard-tts/restart", undefined],
   ["check", "POST", "/api/services/shard-tts/check", "/api/services/shard-tts/check", undefined],
-  ["info", "GET", "/api/services/shard-tts/info", "/api/services/shard-tts/info", undefined],
   ["a patch", "PATCH", "/api/services/shard-tts", "/api/services/shard-tts", { notes: "edited" }],
   ["the enabled toggle", "PATCH", "/api/services/shard-tts/enabled", "/api/services/shard-tts/enabled", { enabled: false }],
   ["a ping", "POST", "/api/services/shard-tts/ping", "/ping/shard-tts", undefined],
@@ -277,6 +276,18 @@ describe("forwarding to a shard", () => {
 
     await call(app, "POST", "/api/services/shard-tts/start");
     await until(async () => (await healthOf(app, "shard-tts")) === "down");
+  });
+});
+
+describe("a service's info route", () => {
+  it("[T1] is gone for a shard's service and a local one, and nothing is sent to the shard", async () => {
+    shard.reply("GET", "/api/services/shard-tts/info", { status: 200, body: { from: "shard" } });
+    const app = await plane();
+
+    for (const id of ["shard-tts", "local-tts"]) {
+      expect((await app.fetch(new Request(`http://localhost/api/services/${id}/info`))).status).toBe(404);
+    }
+    expect(shard.received("GET", "/api/services/shard-tts/info")).toEqual([]);
   });
 });
 

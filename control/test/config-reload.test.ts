@@ -25,6 +25,7 @@ function makeRegistry(opts?: { roster?: NodeRoster; shards?: Registry["shards"] 
     services: [
       {
         id: "tts-a", name: "TTS A", capabilityId: "tts", hostId: "home-server",
+        provides: [{ api: "openai.audio.speech" }],
         permissions: { enabled: true },
         runner: { type: "external" },
         network: { port: 8001, healthPath: "/health" },

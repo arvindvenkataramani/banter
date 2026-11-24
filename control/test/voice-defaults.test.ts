@@ -59,12 +59,14 @@ function makeRegistry(roster: NodeRoster | undefined = ROSTER, shards: Registry[
     services: [
       {
         id: "tts-mlx-audio", name: "MLX Audio", capabilityId: "tts", hostId: "home-server",
+        provides: [{ api: "openai.audio.speech" }],
         permissions: { enabled: true },
         runner: { type: "external" },
         network: { port: 8001, healthPath: "/health" },
       },
       {
         id: "tts-other", name: "Other TTS", capabilityId: "tts", hostId: "home-server",
+        provides: [{ api: "openai.audio.speech" }],
         permissions: { enabled: true },
         runner: { type: "external" },
         network: { port: 8002, healthPath: "/health" },

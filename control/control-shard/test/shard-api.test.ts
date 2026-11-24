@@ -37,7 +37,7 @@ function doc(servingKey = "model-a") {
     hosts: [{ id: "gpu-machine", name: "gpu-machine", hostname: "gpu-machine.example.ts.net", role: "worker" }],
     capabilities: [{ id: "tts", name: "TTS" }],
     services: [
-      service("demand"),
+      service("demand", { provides: [{ api: "openai.audio.speech" }] }),
       service("off", { permissions: { enabled: false } }),
       service("always", { lifecycle: { loadStrategy: "startup" } }),
     ],

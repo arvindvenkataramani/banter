@@ -138,7 +138,6 @@ describe("reading services", () => {
 describe("refusals", () => {
   it.each([
     ["GET", "/api/services/nope"],
-    ["GET", "/api/services/nope/info"],
     ["POST", "/api/services/nope/check"],
     ["POST", "/api/services/nope/start"],
     ["POST", "/api/services/nope/stop"],

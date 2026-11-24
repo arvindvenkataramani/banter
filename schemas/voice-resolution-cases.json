@@ -4,15 +4,36 @@
   "services": [
     {
       "id": "fluid-tts",
-      "capabilityId": "tts"
+      "capabilityId": "tts",
+      "provides": [
+        {
+          "api": "openai.audio.speech",
+          "omits": ["parameter:instructions", "parameter:stream_format"],
+          "restricts": { "response_format": ["aac", "wav", "pcm"] },
+          "extends": ["stream-flag", "cloning-reference"]
+        }
+      ]
     },
     {
       "id": "tts-mlx-audio",
-      "capabilityId": "tts"
+      "capabilityId": "tts",
+      "provides": [{ "api": "openai.audio.speech" }]
     },
     {
       "id": "fluid-stt",
-      "capabilityId": "stt"
+      "capabilityId": "stt",
+      "provides": [
+        { "api": "fluid.stt.stream" },
+        {
+          "api": "openai.audio.transcriptions",
+          "omits": [
+            "parameter:language", "parameter:languages", "parameter:keywords", "parameter:prompt",
+            "parameter:temperature", "parameter:include", "parameter:stream", "parameter:chunking_strategy",
+            "parameter:known_speaker_names", "parameter:known_speaker_references"
+          ],
+          "restricts": { "response_format": ["json", "text", "verbose_json"] }
+        }
+      ]
     }
   ],
   "roster": {

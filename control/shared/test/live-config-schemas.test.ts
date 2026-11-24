@@ -41,3 +41,32 @@ describe("the turn-taking curve", () => {
     expect((r.doc as any).voice.stt.turnTaking.curve).toEqual(curve);
   });
 });
+
+describe("voice preload and the encodings the browser may send", () => {
+  const example = () => {
+    const config = readJson("control-plane/data/config.example.json");
+    moveRuntimeState(config, {});
+    return config;
+  };
+
+  it("[T1] a config that states neither preloads, and offers Opus before 16-bit PCM", () => {
+    const r = syncDocument(example(), configSpec) as { doc: any };
+    expect(r.doc.voice.preload).toBe(true);
+    expect(r.doc.voice.stt.encodings).toEqual(["opus", "pcm16"]);
+  });
+
+  it("[T1] keeps what a config states, in its order", () => {
+    const config = example();
+    config.voice.preload = false;
+    config.voice.stt.encodings = ["pcm16", "opus"];
+    const r = syncDocument(config, configSpec) as { doc: any };
+    expect(r.doc.voice.preload).toBe(false);
+    expect(r.doc.voice.stt.encodings).toEqual(["pcm16", "opus"]);
+  });
+
+  it("[T1] refuses an encoding other than opus and pcm16", () => {
+    const config = example();
+    config.voice.stt.encodings = ["opus", "flac"];
+    expect(() => syncDocument(config, configSpec)).toThrow(/encodings/);
+  });
+});

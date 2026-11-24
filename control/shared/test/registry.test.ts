@@ -29,6 +29,7 @@ async function write(edit: (doc: Doc) => void = () => {}): Promise<Doc> {
     capabilities: [{ id: "tts", name: "Text-to-Speech" }],
     services: [{
       id: "svc1",
+      provides: [{ api: "openai.audio.speech" }],
       capabilityId: "tts",
       hostId: "host1",
       permissions: { enabled: true },

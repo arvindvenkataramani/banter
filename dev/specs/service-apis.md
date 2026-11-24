@@ -42,6 +42,8 @@ The catalog, part indexes, adapters and selection live in the shared package (`@
 
 ## 3. The catalog
 
+A reference to a document in this repository has the revision `"in-repo"`: it changes with the commit that holds the catalog. Each part index's `revision` equals its catalog entry's `reference.revision`.
+
 `catalog.json` holds two lists: `apis`, each `{ id, name, reference: { document, revision, part } }`, and `extensions`, each `{ id, adds, reference }`, with `reference` in the same shape. `revision` is a commit, or `{ read, sha256 }` for a page. No path, field or enumeration is written there.
 
 **APIs:** `openai.audio.speech`, `openai.audio.transcriptions`, `openai.realtime`, `deepgram.listen.prerecorded`, `deepgram.listen.live`, `deepgram.speak`, `deepgram.speak.live`, `fluid.stt.stream`, `fluid.tts.stream` and `triton.model-repository`, with the references in the design's table and the pins in section 1. `openai.chat.completions` is not in Banter's catalog.
@@ -149,7 +151,7 @@ Selection works in this order:
 
 The result is the winning provision and its adapter. If nothing is left, it is a refusal whose message names the service id, the operation and the API ids the service declares, for example `fluid-stt cannot transcribeStream: it provides openai.audio.transcriptions, triton.model-repository`.
 
-The voice engine's preferences for `transcribeStream` are `voice.stt.encodings` mapped to capabilities (`opus` → `opus`; `pcm16` adds none), followed by `takeover`. Every other operation has no preferences.
+The voice engine's preferences for `transcribeStream` are `opus` when `voice.stt.encodings` lists `opus` before `pcm16` (or lists `opus` alone), followed by `takeover`. When `pcm16` comes first, or `opus` is absent, the engine sends pcm16 even to a provision that accepts Opus, and `opus` is not a preference. Every other operation has no preferences.
 
 ## 7. Model loading
 
@@ -176,10 +178,33 @@ The rows are checked top to bottom. An explicit load uses the provision whose ad
 
 `{model}` in a declared call and `{name}` in a Triton route both follow these rules. A fluid server maps the roster id to its runtime key itself, as `fluid-tts` does today for `kokoro-82m` (key `kokoro-ane`). A variant travels as the roster's variant id.
 
+**Paths.** An adapter's path is the spec's own path under the spec's server address. A provision's `basePath` replaces the path part of that server address. With no `basePath`, the defaults are:
+
+| API | Default path |
+|---|---|
+| OpenAI REST APIs | `/v1/audio/speech`, `/v1/audio/transcriptions` |
+| `openai.realtime` | `/v1/realtime` |
+| Deepgram (server root) | `/v1/listen`, `/v1/speak` |
+| `triton.model-repository` (root) | `/v2/repository/...` |
+| `fluid.stt.stream` and `fluid.tts.stream` (root) | `/v1/audio/stream` |
+
+So with `basePath: "/alt"`:
+
+| API | Path |
+|---|---|
+| `openai.audio.speech` | `/alt/audio/speech` |
+| `openai.realtime` | `/alt/realtime` |
+| `deepgram.listen.live` | `/alt/v1/listen` |
+| `triton.model-repository` load | `/alt/v2/repository/models/{name}/load` |
+
+The caller's endpoint path, such as the dsh relay's `/dsh-voice/speech/<id>`, comes before all of it.
+
+**Failures.** Every adapter rejects a non-2xx answer with an error carrying the server's text: the body's `error` (string or `error.message`), or the raw body if it isn't JSON, prefixed by the status. The voice system shows that text and does not go live when a load fails.
+
 Each adapter is written from its pinned reference. Paths are the spec's, prefixed by the provision's `basePath` and then by the endpoint the caller holds, which may itself carry a path (the dsh relay's `/dsh-voice/speech/<id>`). An adapter never reads a service id or capability. It sends an extension's fields only when the provision declares that extension, and it always sends the parameters it depends on.
 
 - **`openai.audio.speech`**, `synthesize`. The body is `model`, `input`, `voice` and `speed`, the serving's `requestParams` spread in first, and `response_format`.
-  - **Format.** `response_format` is the first value of `restricts.response_format` that the caller can decode (mp3, aac, wav). Without a restriction it is the first of mp3, aac and wav. The adapter returns the format it asked for, and the playback engine decodes by it.
+  - **Format.** `response_format` is the first value of `restricts.response_format` that the caller can decode (mp3, aac, wav). Without a restriction it is the first of mp3, aac and wav. The adapter returns the format it asked for, and the playback engine decodes by it. If a restriction leaves no value the caller can decode, the adapter rejects before sending any request, with a message naming the formats the service accepts.
   - **Cloned voice.** A resolution that is a recording is sent as `ref_audio`, with `ref_text` when there is a transcript, and only with `cloning-reference`. Without that extension it is refused before any request.
   - **Streaming.** With `stream-flag` it sends `stream: true` when the caller wants progressive audio.
   - **Capability.** `renders-progressively` holds on `{ spec: true }` or on `stream-flag`.
@@ -197,7 +222,9 @@ Each adapter is written from its pinned reference. Paths are the spec's, prefixe
     - `takeover` on `{ extension: "session-claim" }`;
     - `session-loads` on `{ part: "parameter:model" }`.
 - **`openai.realtime`**, `transcribeStream`, built in step T3.
-  - **Opening.** It opens `<base>/v1/realtime?intent=transcription` and sends `session.update` with `session.type: "transcription"`, `turn_detection: null`, and an input format of `{ type: "audio/pcm", rate: 24000 }`. With `opus-input` it can instead send `{ type: "audio/opus", rate: 48000 }`, with each `input_audio_buffer.append` carrying one raw Opus packet as WebCodecs emits it (48 kHz mono), base64-encoded.
+  - **Resampling.** The engine hands every `transcribeStream` adapter the same audio: Opus packets, or 16 kHz mono pcm16. This adapter resamples pcm16 to 24 kHz before appending it.
+  - **Ready.** It calls `onReady` on `session.updated`. The `deepgram.listen.live` adapter calls it when the socket opens.
+  - **Opening.** It opens `<path>?intent=transcription` and sends `session.update` with `session.type: "transcription"`, `turn_detection: null`, and an input format of `{ type: "audio/pcm", rate: 24000 }`. With `opus-input` it can instead send `{ type: "audio/opus", rate: 48000 }`, with each `input_audio_buffer.append` carrying one raw Opus packet as WebCodecs emits it (48 kHz mono), base64-encoded.
   - **Turns.** Audio goes as `input_audio_buffer.append` and a finalize as `input_audio_buffer.commit`. A finalize with no audio since the last commit is answered with an empty final and no commit.
   - **Transcripts.** Deltas accumulate per `item_id`. Finals are released in commit order, matched by `item_id`.
   - **Capabilities:** `client-endpointing` on `{ spec: true }`, and `opus` on `{ extension: "opus-input" }`. It has no `session-loads`.
@@ -208,6 +235,19 @@ Each adapter is written from its pinned reference. Paths are the spec's, prefixe
 - **`declared-call`**, `loadModel` and `unloadModel`, from `models.load` and `models.unload`. It substitutes `{model}` in the path, query and body with the serving's `key`.
 
 `select` treats `models.load` and `models.unload` as a load call when no provision performs one.
+
+**Declarations.** Every adapter's declaration lands in T1, so selection and validation can be tested there. The wire code lands in T2, or in T3 for the last two rows.
+
+| API | Operations | Requires | Uses when present |
+|---|---|---|---|
+| `openai.audio.speech` | `synthesize` | `parameter:input`, `parameter:response_format` | `parameter:voice`, `parameter:speed`, `cloning-reference`, `stream-flag` |
+| `openai.audio.transcriptions` | `transcribe` | `parameter:file` | `parameter:model`, `parameter:response_format` |
+| `fluid.stt.stream` | `transcribeStream` | `client-message:Finalize`, `server-message:transcript` | `parameter:session`, `parameter:takeover`, `parameter:chunkMs`, `value:format=opus` |
+| `triton.model-repository` | `loadModel`, `unloadModel` | `route:load` (load), `route:unload` (unload) | `resident-slot` |
+| `deepgram.listen.live` | `transcribeStream` | `client-message:Finalize`, `server-message:Results`, `parameter:endpointing` | `client-message:KeepAlive`, `client-message:CloseStream`, `parameter:model`, `finalize-answered`, `session-claim`, `opus-packets` |
+| `openai.realtime` | `transcribeStream` | `mode:transcription`, `client-message:session.update`, `client-message:input_audio_buffer.append`, `client-message:input_audio_buffer.commit`, `server-message:input_audio_buffer.committed`, `server-message:conversation.item.input_audio_transcription.completed` | `server-message:conversation.item.input_audio_transcription.delta`, `client-message:input_audio_buffer.clear`, `opus-input` |
+
+Capabilities are as stated per adapter above.
 
 ## 9. The fluid servers
 
@@ -235,7 +275,7 @@ Each server holds, in code, the list of APIs it serves and the parts of each tha
 - A load that would change the model while a session holds the server is a 409.
 - `index` returns `[{name, state, reason}]`, with `state` `READY` for the resident model and `UNAVAILABLE` for the others.
 
-**`fluid-stt` on demand.** The design's "The servers the platform builds", rule for rule. `modelMismatch` goes. A request naming another model while idle replaces the resident one once in-flight work ends. Anything while a session holds the server is refused at once.
+**`fluid-stt` on demand.** The design's "The servers the platform builds", rule for rule. `modelMismatch` goes. A request naming another model while idle replaces the resident one once in-flight work ends. So does a request naming another variant of the resident model: a variant is a different model for this rule. Anything while a session holds the server is refused at once.
 
 **`deepgram.listen.live` conformance (S2).**
 - `encoding` accepts `opus` (one raw packet per binary message) and `linear16`; anything else closes with 4007.
@@ -249,7 +289,7 @@ Each server holds, in code, the list of APIs it serves and the parts of each tha
 
 **Realtime subsets (S2).**
 - `fluid-stt` implements `session.update` (transcription session only), `input_audio_buffer.append`, `input_audio_buffer.commit` and `input_audio_buffer.clear`. It answers with `session.created`, `session.updated`, `input_audio_buffer.committed`, `input_audio_buffer.cleared`, `conversation.item.input_audio_transcription.delta` and `.completed`, and `error`.
-- `fluid-tts` implements `session.update`, `response.create` (speaking the text of `input_text` parts verbatim) and `response.cancel`, answering with `response.created`, `response.output_audio.delta`, `response.output_audio.done` and `response.done`, in 24 kHz PCM.
+- `fluid-tts` implements `session.update`, `response.create` (speaking the text of `input_text` parts verbatim) and `response.cancel`, answering with `session.created`, `session.updated`, `response.created`, `response.output_audio.delta`, `response.output_audio.done`, `response.done` and `error`, in 24 kHz PCM.
 - Any other client event is answered with `error`.
 - The provisions list exactly these under `only`.
 
@@ -273,7 +313,8 @@ These checks are in a new `control/shared/src/provisions.ts`, called from `valid
    - a provider serving a `batch` STT model: `transcribe`;
    - a provider serving a `both` model: either one.
    
-   "Banter calls" means a roster provider names the service. The config's selections must name a roster provider, which the control plane checks when it loads the config, with the same fatality.
+   "Banter calls" means a roster provider names the service.
+10. **Selections.** `validateSelections(config, roster)` in `control/shared/src/provisions.ts` checks that `voice.tts.selection.serviceId` and `voice.stt.serviceId`, where set, each name a roster provider. The control plane calls it at startup after loading both files, which is fatal, and at a config or registry reload, which is refused and leaves the live files unchanged.
 
 No sync or repair rule writes `provides` or `models`.
 
@@ -398,7 +439,7 @@ T3's adapters are verified inside that sandboxed scratch deploy and never agains
 ## 16. Steps and sync points
 
 **TypeScript builder:**
-- **T1, contract:** sections 2 to 7 and 10; the removal of `TtsOperation` and the `/info` route; the T1 example provisions. Sync point A.
+- **T1, contract:** sections 2 to 7 and 10, and every adapter's declaration (section 8's table), but no wire code; the removal of `TtsOperation` and the `/info` route; the T1 example provisions. Sync point A.
 - **T2, cutover:** sections 8 (except the two T3 adapters), 11 and 12, and the removal of `responseFormat` and `sessions`. Starts after S1.
 - **T3:** the `deepgram.listen.live` and `openai.realtime` adapters, verified against the local servers. Starts after S2.
 
@@ -418,5 +459,5 @@ T3's adapters are verified inside that sandboxed scratch deploy and never agains
   - dsh plugin: `bun run test`, `bun run lint` and `bunx tsc -p .` in `plugins/dsh/voice/`;
   - Swift: `swift test` in `services/fluid/`;
   - `scripts/fluid-smoke.sh`.
-- No TypeScript source outside `shared/apis/adapters/` and its tests contains a path to a speech service: `/v1/audio/speech`, `/audio/transcriptions`, `/v1/audio/stream`, `/v1/listen`, `/v1/realtime`, `/v1/models` or `/v2/repository`. Registry data, schemas, Swift, scripts and docs are not covered.
+- No non-test TypeScript source outside `shared/apis/adapters/` contains a path to a speech service: `/v1/audio/speech`, `/audio/transcriptions`, `/v1/audio/stream`, `/v1/listen`, `/v1/realtime`, `/v1/models` or `/v2/repository`. Registry data, schemas, Swift, scripts and docs are not covered.
 - No source reads `responseFormat`, `sessions`, `TtsOperation` or `capabilityId` to choose a call.
