@@ -6,8 +6,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { Button, Input, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { STREAMING_BACKEND, getDetectedBackend, saveStreamingBackend } from '@platform/voice-engine/system/streaming-backend'
 import type { StreamingBackend } from '@platform/voice-engine/system/streaming-backend'
-import { loadVoiceSelection, type VoiceConfig } from '@platform/voice-engine/voice-config'
-import { resolveChunkingFor } from '@platform/voice-engine/agent/chunking-setting'
 import { useVoiceSystemStore } from '@platform/voice-engine/system/voice-system'
 import { describeSttInUse } from '@platform/voice-engine/stt-mode-text'
 import { DEFAULT_SETTINGS, type PluginSettings } from '../host/settings.ts'
@@ -16,6 +14,7 @@ import type { VoiceRuntime } from './runtime.ts'
 import { normaliseServerUrl } from './server-url.ts'
 import { checkService } from './services.ts'
 import { SelectField } from './settings-controls.tsx'
+import { voiceSummary } from './voice-summary.ts'
 import { ReadOnly, SCOPE, ensureStyles } from './settings-style.ts'
 
 type Field = keyof PluginSettings
@@ -288,27 +287,6 @@ function StatusRow({ row }: { row: Row }) {
 
 // ── Voice settings ───────────────────────────────────────────────────────
 
-const MODE_NAMES: Record<string, string> = { 'two-chunk': '2-chunk', paragraph: 'Paragraph', sentence: 'Sentence', greedy: 'Greedy' }
-
-function summary(config: VoiceConfig): Array<[string, string]> {
-  const sel = config.tts.selection
-  const provider = config.tts.providers.find(p => p.serviceId === sel?.serviceId)
-  const model = config.tts.models.find(m => m.id === sel?.model)
-  const voice = config.tts.voices.find(v => v.id === sel?.voice)
-  const stt = config.stt?.options?.find(o => o.serviceId === config.stt?.serviceId)
-  const resolved = loadVoiceSelection(config)
-  const chunking = resolved ? resolveChunkingFor(config, resolved) : null
-  return [
-    ['Transcription', config.stt?.serviceId
-      ? [stt?.name ?? config.stt.serviceId, config.stt.model, config.stt.preferStreaming === true ? 'streaming' : 'batch'].filter(Boolean).join(' · ')
-      : 'None chosen'],
-    ['Voice', sel ? [provider?.name ?? sel.serviceId, model?.name ?? sel.model, voice?.name ?? sel.voice].join(' · ') : 'None chosen'],
-    ['Speed', `${(sel?.speed ?? 1).toFixed(1)}x`],
-    ['Chunking', chunking ? (MODE_NAMES[chunking.strategy] ?? chunking.strategy) : '—'],
-    ['Take-over', config.takeover === 'always' ? 'Always take over' : 'Ask first'],
-  ]
-}
-
 function VoiceSettingsSection({ runtime, url }: { runtime: VoiceRuntime; url: string }) {
   const feed = useSyncExternalStore(listener => runtime.feed.subscribe(listener), () => runtime.feed.state())
   // How voice is transcribing right now; set only while voice is on.
@@ -329,11 +307,12 @@ function VoiceSettingsSection({ runtime, url }: { runtime: VoiceRuntime; url: st
         ? <p className="dv-help">Not loaded yet{feed.error === null ? '.' : `: ${feed.error}.`}</p>
         : (
           <dl className="dv-table">
-            {summary(feed.config).map(([label, value]) => (
+            {voiceSummary(feed.config).map(({ label, value, problem }) => (
               <div key={label} className="dv-contents">
                 <dt>{label}</dt>
                 <dd>
                   <span>{value}</span>
+                  {problem !== undefined && <p className="dv-problem" role="alert">{problem}</p>}
                   {label === 'Transcription' && inUse !== null && <p className="dv-help" role="status">{describeSttInUse(inUse)}</p>}
                 </dd>
               </div>

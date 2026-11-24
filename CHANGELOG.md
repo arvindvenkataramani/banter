@@ -14,7 +14,7 @@ What changed in each release, for someone updating from the one before. What goe
 ### New
 
 - The fluid servers serve the standard speech APIs: OpenAI transcription, speech and Realtime, Deepgram's listen and speak routes, and the model repository routes for loading models. [The speech server API](docs/reference/speech-server-api.md) lists what each provides.
-- A voice selection that Banter cannot call is shown beside its picker in the voice settings, and the STT picker lists a service with no API to transcribe through as disabled. A selection save naming such a service is refused. See [the selection check](docs/reference/design/service-apis.md#selections).
+- A voice selection that Banter cannot call is shown beside its picker in the voice settings and on the dsh plugin's settings page, and the STT picker lists a service with no API to transcribe through as disabled. A selection save naming such a service is refused. See [the selection check](docs/reference/design/service-apis.md#selections).
 - [Test environment](docs/reference/test-environment.md): running a branch's control plane and fluid servers beside an installation.
 
 ### Changed

@@ -29,7 +29,7 @@ One row per check, with its state in words and, when something is wrong, the rea
 
 ## Voice settings
 
-A read-only summary of what is in use, as Banter set it: transcription service with its model and mode (plus, while voice is on, which mode is in use and why), provider, model and voice, speed, chunking mode and take-over, with the time it was loaded.
+A read-only summary of what is in use, as Banter set it: transcription service with its model and mode (plus, while voice is on, which mode is in use and why), provider, model and voice, speed, chunking mode and take-over, with the time it was loaded. A transcription service or voice that Banter cannot call is shown with the reason under its row; change it in Banter's settings.
 
 - **Reload voice settings** fetches them from Banter again. Banter's settings are also fetched when the page opens, when the page regains focus, and when voice starts; while voice is on, a changed voice selection reconfigures it. A failed reload says why and leaves the settings in use as they were.
 - **Open voice settings in Banter** opens Banter's settings dialog in a new tab. Voice selection, transcription service, chunking, take-over and the speech-detection and turn-taking sliders are changed there and apply to every client. Disabled until a URL is saved.
