@@ -1,6 +1,5 @@
 import { getService, startService } from '@/lib/api'
 import type { ServiceWithHealth } from '@/lib/api'
-import type { SttModelKind } from '@platform/voice-engine/human/stt-transport'
 
 const POLL_INTERVAL_MS = 500
 
@@ -82,62 +81,4 @@ export async function ensureServiceReady(serviceId: string): Promise<string> {
 
 export async function ensureTtsReady(serviceId: string): Promise<string> {
   return ensureServiceReady(serviceId)
-}
-
-export async function loadTtsModel(endpoint: string, modelName: string): Promise<void> {
-  const res = await fetch(`${endpoint}/v1/models?model_name=${encodeURIComponent(modelName)}`, {
-    method: 'POST',
-  })
-  if (!res.ok) {
-    throw new Error(`Failed to load model "${modelName}": ${res.status}`)
-  }
-}
-
-/**
- * Load an STT model before the first utterance, so no utterance waits on the
- * load. The server would load into an empty slot on demand, but never replaces
- * a resident model: a transcription naming another one is refused.
- *
- * `mode` names which way a model capable of both should be brought up. A model
- * that does one thing needs none, and one capable of both is refused without
- * it — the refusal being the point, since the alternative is discovering the
- * wrong choice as unexplained latency rather than as an error. What the server
- * then makes resident is its own decision: asking for batch does not pay for
- * the streaming encoder.
- */
-export async function loadSttModel(
-  endpoint: string,
-  model: string,
-  mode?: Exclude<SttModelKind, 'both'>,
-  chunkMs?: number,
-): Promise<void> {
-  const res = await fetch(`${endpoint}/v1/models/load`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      ...(mode ? { mode } : {}),
-      // A latency tier is a parameter, not a separate model — the roster
-      // stopped baking it into the id.
-      ...(typeof chunkMs === 'number' ? { chunkMs } : {}),
-    }),
-  })
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null)
-    const reason = detail && typeof detail.error === 'string' ? `: ${detail.error}` : ''
-    throw new Error(`Failed to load STT model "${model}" (${res.status})${reason}`)
-  }
-}
-
-export async function unloadTtsModel(endpoint: string, modelName: string): Promise<void> {
-  try {
-    const res = await fetch(`${endpoint}/v1/models?model_name=${encodeURIComponent(modelName)}`, {
-      method: 'DELETE',
-    })
-    if (!res.ok && res.status !== 404) {
-      console.error(`Failed to unload model "${modelName}": ${res.status}`)
-    }
-  } catch {
-    // Best-effort — don't block on failure
-  }
 }

@@ -7,13 +7,13 @@ const config = (sttServiceId: string, ttsServiceId: string): VoiceConfig => ({
   enabled: true,
   tts: {
     models: [],
-    providers: [{ serviceId: ttsServiceId, responseFormat: 'mp3', serves: [] }],
+    providers: [{ serviceId: ttsServiceId, provides: [{ api: 'openai.audio.speech' }], models: { loading: 'none' }, serves: [] }],
     voices: [],
     selection: { serviceId: ttsServiceId, model: 'model-1', voice: 'voice-1', speed: 1 },
   },
   stt: { serviceId: sttServiceId },
   debug: { saveMicSamples: true },
-})
+}) as unknown as VoiceConfig
 
 const answer = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 

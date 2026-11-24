@@ -12,17 +12,25 @@
  * consumed, and leaving it there puts it in the next turn's first partial.
  */
 
-import { SttSocket, type AudioFormat } from './stt-socket'
-import { createEncoder, canEncodeOpus, type FrameEncoder } from './stt-audio-encoder'
+import { capabilityHolds } from '@platform/shared/apis/select'
+import type { Adapter } from '@platform/shared/apis'
+import type { Provision, StreamSession } from '@platform/shared/apis/types'
+import { createEncoder, canEncodeOpus, type FrameEncoder, type SttFormat } from './stt-audio-encoder'
+import { opusFirst } from '../service-calls'
 import type { SttTransport } from './stt-transport'
 
 export interface StreamingTransportOptions {
   endpoint: string
+  /** The serving's key for the model. */
   model: string
   chunkMs?: number
-  format?: AudioFormat
-  /** This connection's session id. Sent only when the STT service declares
-   *  `sessions: true`. */
+  /** The provision selection chose for the session, and the adapter that speaks it. */
+  provision: Provision
+  adapter: Adapter
+  /** The formats the browser may send, most preferred first. Opus goes only when the provision
+   *  holds it, the browser can encode it and this list puts it ahead of 16-bit PCM. */
+  encodings?: ('opus' | 'pcm16')[]
+  /** This connection's session id. The adapter sends it only to a provision that implements sessions. */
   session?: string
   /** Take the slot from whoever holds it. */
   takeover?: boolean
@@ -43,7 +51,7 @@ export interface StreamingCloseInfo {
 }
 
 export class StreamingSttTransport implements SttTransport {
-  private socket: SttSocket
+  private socket: StreamSession
   private encoder: FrameEncoder
   private closed = false
   /** Muted: the microphone's frames are not sent. */
@@ -63,7 +71,20 @@ export class StreamingSttTransport implements SttTransport {
   private pending: Array<{ resolve: (text: string) => void; reject: (err: Error) => void }> = []
 
   constructor(opts: StreamingTransportOptions) {
-    this.socket = new SttSocket({
+    this.onClosed = opts.onClosed
+
+    const format: SttFormat = canEncodeOpus() && opusFirst(opts.encodings) && capabilityHolds(opts.provision, opts.adapter, 'opus')
+      ? 'opus'
+      : 'pcm16'
+    this.socket = opts.adapter.transcribeStream!({
+      endpoint: opts.endpoint,
+      provision: opts.provision,
+      model: opts.model,
+      chunkMs: opts.chunkMs,
+      format,
+      session: opts.session,
+      takeover: opts.takeover,
+    }, {
       onPartial: opts.onPartial,
       onFinal: (text) => {
         const oldest = this.pending.shift()
@@ -71,17 +92,6 @@ export class StreamingSttTransport implements SttTransport {
       },
       onReady: () => opts.onReady?.(),
       onClosed: (reason, code) => this.fail(reason, code),
-    })
-    this.onClosed = opts.onClosed
-
-    const format = opts.format ?? (canEncodeOpus() ? 'opus' : 'pcm16')
-    this.socket.connect({
-      endpoint: opts.endpoint,
-      model: opts.model,
-      chunkMs: opts.chunkMs,
-      format,
-      session: opts.session,
-      takeover: opts.takeover,
     })
     this.encoder = createEncoder(
       format,

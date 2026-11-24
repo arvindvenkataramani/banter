@@ -75,8 +75,8 @@ describe('plugin services', () => {
   })
 
   it('the relay endpoint the engine is given is one the host resolves to the configured service', () => {
-    const url = new URL(`${relayEndpoint(origin, 'stt-a')}/v1/models?x=1`)
-    expect(resolveSpeechUpstream(settings, url.pathname + url.search)?.href).toBe('http://stt.invalid:8000/v1/models?x=1')
+    const url = new URL(`${relayEndpoint(origin, 'stt-a')}/probe/items?x=1`)
+    expect(resolveSpeechUpstream(settings, url.pathname + url.search)?.href).toBe('http://stt.invalid:8000/probe/items?x=1')
   })
 })
 

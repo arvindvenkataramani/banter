@@ -44,17 +44,18 @@ const config = (ttsModel: string, sttServiceId = 'stt-a'): VoiceConfig => ({
     ],
     providers: [{
       serviceId: 'tts-b',
-      responseFormat: 'mp3',
+      provides: [{ api: 'openai.audio.speech' }],
+      models: { loading: 'none' },
       serves: [
         { model: 'model-1', key: 'model-1', realtime: true },
         { model: 'model-2', key: 'model-2', realtime: true },
       ],
     }],
     voices: [{ id: 'voice-1', name: 'One', renderings: [{ model: 'model-1', method: 'preset' }, { model: 'model-2', method: 'preset' }] }],
-    selection: { serviceId: 'tts-b', model: ttsModel, voice: 'voice-1', speed: 1, request: { model: ttsModel, voice: 'voice-1' } },
+    selection: { serviceId: 'tts-b', model: ttsModel, voice: 'voice-1', speed: 1, resolution: { model: ttsModel, voice: { name: 'voice-1' } } },
   },
   stt: { serviceId: sttServiceId },
-})
+}) as unknown as VoiceConfig
 
 /** A feed whose state the test sets; `reload` never answers unless the test says so. */
 function fakeFeed(initial: VoiceConfig | null) {

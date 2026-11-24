@@ -1,139 +1,82 @@
-import { afterEach, describe, it, expect, vi } from 'vitest'
-import { fetchSttModelFacts, resolveSttMode, resolveChunkMs, sttModeSource } from './voice-session-store'
+import { describe, it, expect } from 'vitest'
+import { resolveSttMode, resolveChunkMs, sttModeSource } from './voice-session-store'
 
-/**
- * Which way a model is brought up, given what its server said about it.
- *
- * The server is the authority wherever it answers. Config answers only for
- * what the server left open — a model that genuinely offers both, or a server
- * old enough to report neither field.
- */
+// Which way a model is brought up, from what the roster declares about the model
+// (`stt.models[].kind`, as GET /api/voice serves it) and what the selected service's
+// provisions offer (dev/specs/service-apis.md, sections 6 and 11). Nothing is read
+// from the server.
+//
+// INVENTED: the functions keep their names and module. `resolveSttMode(option, model,
+// preferStreaming?)` and `sttModeSource(option, model)` take the selected `stt.options[]`
+// entry (`{ serviceId, name, provides, models, serves }`) and the `stt.models[]` entry.
+// `resolveChunkMs(model, configured?)` takes the model entry alone.
+
+const asFn = <T>(fn: unknown): T => fn as T
+const mode = asFn<(option: unknown, model: unknown, prefer?: boolean) => 'batch' | 'streaming'>(resolveSttMode)
+const source = asFn<(option: unknown, model: unknown) => 'choice' | 'model' | 'unknown'>(sttModeSource)
+const chunkMs = asFn<(model: unknown, configured?: number) => number | undefined>(resolveChunkMs)
+
+const stream = { api: 'fluid.stt.stream' }
+const batch = { api: 'openai.audio.transcriptions' }
+const option = (...provides: unknown[]) => ({ serviceId: 'stt-a', name: 'STT A', provides, models: { loading: 'none' }, serves: [] })
+
+const both = option(stream, batch)
+const model = (kind: 'batch' | 'streaming' | 'both') => ({ id: 'stt-model', kind })
+
 describe('resolving how to bring a model up', () => {
-  it('follows the server for a model that does one thing', () => {
-    expect(resolveSttMode({ kind: 'streaming' })).toBe('streaming')
-    expect(resolveSttMode({ kind: 'batch' })).toBe('batch')
-  })
-
-  it('ignores a preference where the model offers no choice', () => {
+  it('[T2] follows the model for one that does a single thing, whatever the preference says', () => {
+    expect(mode(both, model('streaming'))).toBe('streaming')
+    expect(mode(both, model('batch'))).toBe('batch')
     // Preferring streaming cannot make a batch model stream. Config states an
     // inclination, not a capability.
-    expect(resolveSttMode({ kind: 'batch' }, true)).toBe('batch')
-    expect(resolveSttMode({ kind: 'streaming' }, false)).toBe('streaming')
+    expect(mode(both, model('batch'), true)).toBe('batch')
+    expect(mode(both, model('streaming'), false)).toBe('streaming')
   })
 
-  it('lets the preference decide a model that offers both', () => {
-    expect(resolveSttMode({ kind: 'both' }, true)).toBe('streaming')
-    expect(resolveSttMode({ kind: 'both' }, false)).toBe('batch')
+  it('[T2] lets the preference decide a model that offers both, and takes batch with none stated', () => {
+    expect(mode(both, model('both'), true)).toBe('streaming')
+    expect(mode(both, model('both'), false)).toBe('batch')
+    // The more accurate of the two; streaming is opted into.
+    expect(mode(both, model('both'))).toBe('batch')
   })
 
-  it('takes batch for a both model with no preference stated', () => {
-    // The more accurate of the two, and what this loop did before streaming
-    // existed. Streaming is opted into.
-    expect(resolveSttMode({ kind: 'both' })).toBe('batch')
-  })
-
-  it('falls back to transport for a server that reports no kind', () => {
-    expect(resolveSttMode({ transport: ['websocket'] })).toBe('streaming')
-    expect(resolveSttMode({ transport: ['http'] })).toBe('batch')
-  })
-
-  it('lets the preference decide a model reachable both ways', () => {
-    // Two routes and no kind is the same choice a `both` kind presents.
-    expect(resolveSttMode({ transport: ['http', 'websocket'] }, true)).toBe('streaming')
-    expect(resolveSttMode({ transport: ['http', 'websocket'] }, false)).toBe('batch')
-  })
-
-  it('prefers kind over transport when both are reported', () => {
-    // Kind describes the model and transport the route to it. Where they
-    // disagree the model wins, because that is what is being loaded.
-    expect(resolveSttMode({ kind: 'batch', transport: ['websocket'] })).toBe('batch')
-  })
-
-  it('takes batch when nothing is known at all', () => {
-    // A server that answered neither field, or one that could not be reached.
-    // The preference does not rescue this: it says which half of a model that
-    // offers both to take, and nothing here says the model offers both.
-    expect(resolveSttMode({})).toBe('batch')
-    expect(resolveSttMode({}, true)).toBe('batch')
-  })
-})
-
-describe('choosing a latency tier', () => {
-  // The real Nemotron entry.
-  const tiered = { kind: 'streaming' as const, chunkSizesMs: [560, 1120, 2240] }
-
-  it('names nothing for a model that offers no choice', () => {
-    expect(resolveChunkMs({ kind: 'streaming' })).toBeUndefined()
-    expect(resolveChunkMs({ kind: 'batch' }, 560)).toBeUndefined()
-  })
-
-  it('takes the configured tier when the model offers it', () => {
-    expect(resolveChunkMs(tiered, 1120)).toBe(1120)
-  })
-
-  it('always names one for a model that offers tiers', () => {
-    // Such a model refuses a load naming none, so answering nothing here
-    // would be a load that cannot succeed.
-    expect(resolveChunkMs(tiered)).toBe(560)
-  })
-
-  it('ignores a tier the model does not offer rather than approximating it', () => {
-    // 800 is between two real tiers. Rounding to a neighbour would give a
-    // latency nobody asked for and nobody could account for.
-    expect(resolveChunkMs(tiered, 800)).toBe(560)
-  })
-})
-
-/**
- * The tiers a model offers are the values of the `chunkMs` parameter its
- * roster entry declares, as the server's listing reports it.
- */
-describe('reading what a model offers from its listing', () => {
-  const listing = {
-    data: [
-      {
-        id: 'nemotron-streaming-en-0.6b',
-        kind: 'streaming',
-        transport: ['websocket'],
-        present: true,
-        params: [{ name: 'chunkMs', values: [560, 1120, 2240] }],
-        variants: [
-          { id: '560ms', params: [{ name: 'chunkMs', value: 560 }] },
-          { id: '1120ms', params: [{ name: 'chunkMs', value: 1120 }] },
-          { id: '2240ms', params: [{ name: 'chunkMs', value: 2240 }] },
-        ],
-      },
-      { id: 'parakeet-unified-0.6b', kind: 'both', transport: ['http', 'websocket'], present: true },
-    ],
-  }
-
-  afterEach(() => vi.unstubAllGlobals())
-
-  function serve(body: unknown) {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })))
-  }
-
-  it('takes the offered tiers from the declared chunkMs parameter', async () => {
-    serve(listing)
-    const facts = await fetchSttModelFacts('https://stt.test', 'nemotron-streaming-en-0.6b')
-    expect(facts.chunkSizesMs).toEqual([560, 1120, 2240])
-    expect(facts.kind).toBe('streaming')
-  })
-
-  it('reports no tiers for a model that declares no chunkMs parameter', async () => {
-    serve(listing)
-    const facts = await fetchSttModelFacts('https://stt.test', 'parakeet-unified-0.6b')
-    expect(facts.chunkSizesMs).toBeUndefined()
+  it('[T2] takes the only route the service offers for a model that offers both', () => {
+    expect(mode(option(stream), model('both'), false)).toBe('streaming')
+    expect(mode(option(batch), model('both'), true)).toBe('batch')
   })
 })
 
 describe('what decided the mode', () => {
-  it('is the choice for a model that does both, the model where it does one thing, and nothing known where the server said neither', () => {
-    expect(sttModeSource({ kind: 'both' })).toBe('choice')
-    expect(sttModeSource({ transport: ['http', 'websocket'] })).toBe('choice')
-    expect(sttModeSource({ kind: 'batch' })).toBe('model')
-    expect(sttModeSource({ kind: 'streaming', transport: ['http', 'websocket'] })).toBe('model')
-    expect(sttModeSource({ transport: ['websocket'] })).toBe('model')
-    expect(sttModeSource({})).toBe('unknown')
+  it('[T2] is the choice where the model and the service both allow either, and the declarations where they leave one', () => {
+    expect(source(both, model('both'))).toBe('choice')
+    expect(source(both, model('batch'))).toBe('model')
+    expect(source(both, model('streaming'))).toBe('model')
+    expect(source(option(stream), model('both'))).toBe('model')
+  })
+})
+
+describe('choosing a latency tier', () => {
+  // The real Nemotron entry: the tiers are the values of its declared chunkMs parameter.
+  const tiered = { id: 'tiered', kind: 'streaming', params: [{ name: 'chunkMs', values: [560, 1120, 2240] }] }
+
+  it('[T2] names nothing for a model that offers no choice', () => {
+    expect(chunkMs({ id: 'plain', kind: 'streaming' })).toBeUndefined()
+    expect(chunkMs({ id: 'plain', kind: 'batch', params: [] }, 560)).toBeUndefined()
+  })
+
+  it('[T2] takes the configured tier when the model offers it', () => {
+    expect(chunkMs(tiered, 1120)).toBe(1120)
+  })
+
+  it('[T2] always names one for a model that offers tiers', () => {
+    // Such a model refuses a load naming none, so answering nothing here
+    // would be a load that cannot succeed.
+    expect(chunkMs(tiered)).toBe(560)
+  })
+
+  it('[T2] ignores a tier the model does not offer rather than approximating it', () => {
+    // 800 is between two real tiers. Rounding to a neighbour would give a
+    // latency nobody asked for and nobody could account for.
+    expect(chunkMs(tiered, 800)).toBe(560)
   })
 })

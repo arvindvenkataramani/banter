@@ -5,12 +5,12 @@ import { VoiceSystem } from '@platform/voice-engine/system/voice-system'
 import { acquire, release } from '@platform/voice-engine/devices'
 import { PlaybackEngine } from '@platform/voice-engine/system/playback-engine'
 import { createToneQueue } from '@platform/voice-engine/system/tones'
-import { fetchSttModelFacts, createSttTransport } from '@platform/voice-engine/voice-session-store'
+import { createSttTransport } from '@platform/voice-engine/voice-session-store'
 import { HumanVoice } from '@platform/voice-engine/human/human-voice'
 import { AgentVoice } from '@platform/voice-engine/agent/agent-voice'
 import { SileroVad } from '@platform/voice-engine/human/silero-vad'
 import { SmartTurn } from '@platform/voice-engine/human/smart-turn'
-import { loadSttModel, loadTtsModel, pageStreamBaseUrl, streamingEndpoint, type PluginServices } from './services.ts'
+import { pageStreamBaseUrl, streamingEndpoint, type PluginServices } from './services.ts'
 
 export interface VoiceSystemParts {
   services: PluginServices
@@ -46,9 +46,6 @@ export function createVoiceSystem(parts: VoiceSystemParts): VoiceSystem {
     services: {
       ensureTtsReady: services.ensureTtsReady,
       ensureServiceReady: services.ensureServiceReady,
-      loadTtsModel,
-      loadSttModel,
-      fetchSttModelFacts,
       ping: services.ping,
     },
     loadModels,

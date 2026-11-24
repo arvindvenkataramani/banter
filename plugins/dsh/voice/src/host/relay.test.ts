@@ -15,14 +15,14 @@ const settings = {
 
 describe('speech relay upstream', () => {
   it('a request for the configured STT or TTS service id goes to that service, path and query intact', () => {
-    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/stt-a/v1/models?x=1')?.href).toBe('http://stt.invalid:8000/v1/models?x=1')
-    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/tts-b/v1/audio/speech')?.href).toBe('http://tts.invalid:9000/v1/audio/speech')
+    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/stt-a/probe/items?x=1')?.href).toBe('http://stt.invalid:8000/probe/items?x=1')
+    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/tts-b/probe/speak')?.href).toBe('http://tts.invalid:9000/probe/speak')
   })
 
   it('a service id that is not configured is refused, even when the host knows its endpoint', () => {
-    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/other-svc/v1/models')).toBeNull()
-    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/unknown/v1/models')).toBeNull()
-    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech//other.invalid/v1/models')).toBeNull()
+    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/other-svc/probe/items')).toBeNull()
+    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech/unknown/probe/items')).toBeNull()
+    expect(resolveSpeechUpstream(settings, '/dsh-voice/speech//other.invalid/probe/items')).toBeNull()
   })
 })
 

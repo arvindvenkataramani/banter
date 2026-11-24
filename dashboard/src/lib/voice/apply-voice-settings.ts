@@ -4,8 +4,8 @@ import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from '@platfo
 import { voiceSystem } from './system'
 
 /**
- * Brings the running session in line with voice settings just saved: merges
- * the PATCH result into the store and readies the services it now names.
+ * Brings the running session in line with voice settings just saved: readies
+ * the services it now names, then merges the PATCH result into the store.
  *
  * Without the merge, Save writes to disk but nothing in the running store
  * changes until a reload — the PATCH response is the only place the merged
@@ -20,6 +20,8 @@ export function applySavedVoiceSettings(
   updatedVoice: VoiceUpdateResult,
 ): void {
   const prev = useVoiceSessionStore.getState().voiceConfig
+  // The system reads the selection it is leaving from the store, so it is told of the change first.
+  voiceSystem.reconfigure(sel, newSttServiceId ?? prev?.stt?.serviceId)
   setVoiceSelection(sel)
   setVoiceConfig(prev ? {
     ...prev,
@@ -41,6 +43,4 @@ export function applySavedVoiceSettings(
     },
     debug: updatedVoice.debug ?? prev.debug,
   } : prev)
-
-  voiceSystem.reconfigure(sel, newSttServiceId ?? prev?.stt?.serviceId)
 }

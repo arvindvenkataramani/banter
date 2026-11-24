@@ -359,8 +359,12 @@ const VoiceSelectionSchema = z.object({
   model: z.string().optional(),
   voice: z.string().optional(),
   speed: z.number().optional(),
-  request: z.record(z.string(), z.unknown()).optional().openapi({ description: "The shard's resolution of this selection: the fields to put into a speech request sent to the runtime unchanged" }),
-  requestError: z.string().optional().openapi({ description: "Why `request` is absent: the shard refused the selection or could not be reached" }),
+  resolution: z.object({
+    model: z.string(),
+    voice: z.union([z.object({ name: z.string() }), z.object({ recording: z.string(), transcript: z.string().optional() })]),
+    params: z.record(z.string(), z.unknown()).optional(),
+  }).optional().openapi({ description: "The shard's resolution of this selection: the model as the runtime names it, the voice by name or recording, and the serving's request parameters" }),
+  resolutionError: z.string().optional().openapi({ description: "Why `resolution` is absent: the shard refused the selection or could not be reached" }),
 }).openapi("VoiceSelection");
 
 const VoiceTtsSchema = z.object({
@@ -375,9 +379,9 @@ const VoiceTtsSchema = z.object({
     hostId: z.string(),
     reachable: z.boolean(),
     name: z.string(),
-    responseFormat: z.enum(["mp3", "aac", "wav"]),
     resolvesVoices: z.boolean().optional(),
-    sessions: z.boolean().optional(),
+    provides: z.array(z.record(z.string(), z.unknown())).optional().openapi({ description: "The APIs the runtime's service serves, with how it departs from each" }),
+    models: z.record(z.string(), z.unknown()).optional().openapi({ description: "How the service's models load" }),
     serves: z.array(z.object({
       model: z.string(),
       key: z.string(),
@@ -405,7 +409,7 @@ export const getVoice = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: VoiceConfigSchema } },
-      description: "Voice configuration object; `tts.selection.request` is the shard's resolution of the stored selection",
+      description: "Voice configuration object; `tts.selection.resolution` is the shard's resolution of the stored selection",
     },
     503: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -534,7 +538,7 @@ export const patchVoiceSelection = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: z.object({ tts: z.object({ selection: VoiceSelectionSchema }).passthrough() }).passthrough() } },
-      description: "Updated voice configuration object; `tts.selection.request` is the shard's resolution of the new selection",
+      description: "Updated voice configuration object; `tts.selection.resolution` is the shard's resolution of the new selection",
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },

@@ -2,8 +2,8 @@
 // "The assembler"). Plain objects in, plain objects out — no HTTP, no poller.
 //
 // Assumed assembled shape: `ttsModels` (the union of the nodes' synthesis
-// models), `providers` (each with serviceId, hostId, reachable, name,
-// responseFormat and `serves`), `voices` (with `renderings`) and `collisions`
+// models), `providers` (each with serviceId, hostId, reachable, name
+// and `serves`), `voices` (with `renderings`) and `collisions`
 // as { kind: "model" | "voice", id, hostIds }.
 
 import { describe, it, expect } from "bun:test";
@@ -53,10 +53,9 @@ describe("assembleRoster: providers", () => {
     expect(result.providers).toHaveLength(0);
   });
 
-  it("names a provider from the merged service list, falling back to its id, and defaults its response format to mp3", () => {
+  it("[T2] names a provider from the merged service list, falling back to its id", () => {
     const result = assemble(roster({ provider: "unknown-svc", models: ["m"] }));
     expect(result.providers[0].name).toBe("unknown-svc");
-    expect(result.providers[0].responseFormat).toBe("mp3");
   });
 });
 

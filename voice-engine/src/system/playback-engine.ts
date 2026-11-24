@@ -5,7 +5,8 @@ import { element as deviceElement, unlockElement as unlockDeviceElement } from '
 import { useTurnManagerStore, report } from '../store/turn-manager-store'
 import type { StreamingBackend } from './streaming-backend'
 import type { Snapshot, Utterance, AudioSupply } from '../turn-manager'
-import type { AudioFormat } from '../voice-config'
+import { adapterFor } from '@platform/shared/apis'
+import type { AudioFormat, Provision, Resolution } from '@platform/shared/apis/types'
 
 /** A tone that has neither been heard nor cut within this is treated as
  * finished: the microphone must never wait on a sound indefinitely. */
@@ -14,10 +15,10 @@ const TONE_TIMEOUT_MS = 3000
 export interface SpeakRequest {
   endpoint: string
   text: string
-  /** The speech-request fields the control plane served for the selection, sent as they came. */
-  request: Record<string, unknown>
-  /** The runtime's own format, requested and decoded as such. */
-  format: AudioFormat
+  /** What the control plane served for the selection, which the speech adapter encodes as it came. */
+  resolution: Resolution
+  /** The provision of the speech API the selection chose. */
+  provision: Provision
   speed: number
 }
 
@@ -764,11 +765,13 @@ export class PlaybackEngine implements SpeechPlayer, TonePlayer {
     // below hands the place a reader or null, or the chain behind it stalls.
     let handOver: (reader: ReadableStreamDefaultReader<Uint8Array> | null) => void = () => {}
     let turn: Promise<void> = Promise.resolve()
+    // The adapter chooses the format from what the provision accepts; the stream is read only after it has.
+    let format: AudioFormat = 'mp3'
     if (STREAMING_BACKEND !== 'blob') {
       const handed = new Promise<ReadableStreamDefaultReader<Uint8Array> | null>(r => { handOver = r })
       turn = this.streamingChain.then(async () => {
         const reader = await handed
-        if (reader) await this.drainStream(reader, gen, FORMAT_MIME[req.format])
+        if (reader) await this.drainStream(reader, gen, FORMAT_MIME[format])
       })
       this.streamingChain = turn
     }
@@ -795,37 +798,24 @@ export class PlaybackEngine implements SpeechPlayer, TonePlayer {
       this.enqueueBlob(slot)
     }
 
-    const url = `${req.endpoint.replace(/\/$/, '')}/v1/audio/speech`
-    const body = {
-      ...req.request,
-      input: req.text,
-      speed: req.speed,
-      stream: STREAMING_BACKEND !== 'blob',
-      // After the request: the bytes are decoded as the runtime's format, so
-      // nothing may ask for another.
-      response_format: req.format,
-    }
-
     let res: Response
     try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      const spoken = await adapterFor(req.provision.api)!.synthesize!({
+        endpoint: req.endpoint,
+        provision: req.provision,
+        text: req.text,
+        resolution: req.resolution,
+        speed: req.speed,
+        progressive: STREAMING_BACKEND !== 'blob',
         signal: abort.signal,
       })
+      format = spoken.format
+      res = spoken.response
     } catch (err) {
       resolveSlot(null)
       handOver(null)
       release()
       throw err
-    }
-
-    if (!res.ok) {
-      resolveSlot(null)
-      handOver(null)
-      release()
-      throw new Error(`TTS request failed: ${res.status} ${res.statusText}`)
     }
 
     if (STREAMING_BACKEND === 'blob') {

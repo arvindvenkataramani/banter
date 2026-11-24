@@ -5,9 +5,12 @@ import {
   setSpeed, setSttService, setTakeover, setTuning, setVoice, TUNING_FIELDS, type Draft,
 } from './voice-settings-model'
 
-// A voice config with two TTS providers (the second one's first model is not realtime), two STT options, chunking options, a stored
-// preference for another model, vad and turn-taking values with a curve, and mic samples off.
-const CONFIG: VoiceConfig = {
+const SPEECH = { api: 'openai.audio.speech' }
+
+// A voice config with two TTS providers (the second one's first model is not realtime), three STT options, chunking options, a stored
+// preference for another model, vad and turn-taking values with a curve, and mic samples off. Providers and options carry
+// `provides` and `models`, as GET /api/voice serves them.
+const CONFIG = ({
   enabled: true,
   takeover: 'ask',
   tts: {
@@ -22,13 +25,14 @@ const CONFIG: VoiceConfig = {
       {
         serviceId: 'tts-a',
         name: 'Provider A',
-        responseFormat: 'mp3',
-        sessions: true,
+        provides: [SPEECH],
+        models: { loading: 'none' },
         serves: [{ model: 'a-one', realtime: true }, { model: 'a-two', realtime: true }, { model: 'a-batch' }],
       },
       {
         serviceId: 'tts-b',
-        responseFormat: 'aac',
+        provides: [SPEECH],
+        models: { loading: 'none' },
         serves: [{ model: 'b-batch' }, { model: 'b-live', realtime: true }],
       },
     ],
@@ -41,7 +45,7 @@ const CONFIG: VoiceConfig = {
       { id: 'e1', name: 'E1', renderings: [{ model: 'b-live', method: 'preset' }] },
       { id: 'e2', name: 'E2', renderings: [{ model: 'b-live', method: 'preset' }] },
     ],
-    selection: { serviceId: 'tts-a', model: 'a-one', voice: 'a1', speed: 1.2, request: { model: 'a-one', voice: 'a1' } },
+    selection: { serviceId: 'tts-a', model: 'a-one', voice: 'a1', speed: 1.2, resolution: { model: 'a-one', voice: { name: 'a1' } } },
     options: { chunkStrategy: 'sentence', minChunkWords: 3, maxChunkWords: 40 },
     modelPrefs: { 'tts-a': { 'a-two': { chunking: { mode: 'paragraph' } } } },
     settingsScope: 'per-model',
@@ -49,12 +53,17 @@ const CONFIG: VoiceConfig = {
   stt: {
     serviceId: 'stt-a',
     model: 'stt-model-1',
-    options: [{ serviceId: 'stt-a', name: 'STT A' }, { serviceId: 'stt-b', name: 'STT B', sessions: true }],
+    options: [
+      { serviceId: 'stt-a', name: 'STT A', provides: [{ api: 'openai.audio.transcriptions' }], models: { loading: 'none' }, serves: [] },
+      { serviceId: 'stt-b', name: 'STT B', provides: [{ api: 'fluid.stt.stream' }], models: { loading: 'none' }, serves: [] },
+      { serviceId: 'stt-c', name: 'STT C', provides: [{ api: 'fluid.stt.stream', omits: ['parameter:session'] }], models: { loading: 'none' }, serves: [] },
+    ],
+    models: [],
     vad: { minSpeechDurationS: 0.5 },
     turnTaking: { pauseThresholdMs: 700, commitMinDelayMs: 200, curve: { type: 'power', exponent: 2 } },
   },
   debug: { saveMicSamples: false },
-}
+}) as unknown as VoiceConfig
 
 const draftOf = (config: VoiceConfig = CONFIG): Draft =>
   seedDraft(config, loadVoiceSelection(config)!)
@@ -93,11 +102,21 @@ describe('rosters and cascades', () => {
     expect(setModel(draftOf(), 'a-two')).toMatchObject({ ttsServiceId: 'tts-a', ttsModel: 'a-two', ttsVoice: 'b1', ttsSpeed: 1.2 })
   })
 
-  it('take-over is offered when the selected TTS provider or STT option declares sessions, and only then', () => {
-    expect(roster(draftOf()).declaresSessions).toBe(true)
-    const noTts = setProvider(draftOf(), 'tts-b')
-    expect(roster(noTts).declaresSessions).toBe(false)
-    expect(roster(setSttService(noTts, 'stt-b')).declaresSessions).toBe(true)
+  // Take-over is a capability of the selected STT option's streaming provision, read
+  // from that option alone: the TTS provider has no say (dev/specs/service-apis.md,
+  // section 11). INVENTED: the roster view's flag is named `offersTakeover`.
+  const offered = (draft: Draft): boolean => (roster(draft) as unknown as { offersTakeover: boolean }).offersTakeover
+
+  it('[T2] take-over is offered when the selected STT option\'s stream provision holds it, and only then', () => {
+    // stt-a has a batch provision only, stt-b a stream provision, stt-c a stream provision that omits the session parameter.
+    expect(offered(draftOf())).toBe(false)
+    expect(offered(setSttService(draftOf(), 'stt-b'))).toBe(true)
+    expect(offered(setSttService(draftOf(), 'stt-c'))).toBe(false)
+  })
+
+  it('[T2] the selected TTS provider does not decide whether take-over is offered', () => {
+    expect(offered(setProvider(setSttService(draftOf(), 'stt-b'), 'tts-b'))).toBe(true)
+    expect(offered(setProvider(draftOf(), 'tts-b'))).toBe(false)
   })
 })
 

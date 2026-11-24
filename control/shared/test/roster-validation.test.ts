@@ -81,10 +81,7 @@ describe("roster validation", () => {
     rejects(r => { for (const rec of voice(r, "alex").recordings) rec.durationS = 5.01; }, "alex", "luxtts");
   });
 
-  // Carried over from the old shape: facts that are wrong silently when mistyped.
-  it("a provider's response format must be one the platform can decode", () => {
-    rejects(r => { r.providers["fluid-tts"].responseFormat = "ogg"; }, "fluid-tts", "responseFormat");
-  });
+  // Facts that are wrong silently when mistyped.
 
   it("a serving's concurrency must be a positive integer", () => {
     rejects(r => { r.providers["tts-mlx-audio"].serves[0].concurrency = 0; }, "tts-mlx-audio", "concurrency");

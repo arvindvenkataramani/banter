@@ -1,5 +1,6 @@
 export type { ChunkStrategy } from '@platform/shared'
 import type { ChunkStrategy } from '@platform/shared'
+import type { AudioFormat as SpeechFormat, ModelLoading, Provision, Resolution } from '@platform/shared/apis/types'
 import type { ModelPref, ModelPrefs, SettingsScope } from './model-settings'
 
 export type VoiceSelectionPatch = {
@@ -69,8 +70,8 @@ export interface TtsServing {
   requestParams?: Record<string, unknown>
 }
 
-/** What a TTS runtime returns from /v1/audio/speech. */
-export type AudioFormat = 'mp3' | 'aac' | 'wav'
+/** An audio format the playback engine decodes. */
+export type AudioFormat = SpeechFormat
 
 export interface TtsProvider {
   serviceId: string
@@ -80,21 +81,31 @@ export interface TtsProvider {
   /** An unreachable node's provider is still listed, with its last known
    *  roster. */
   reachable?: boolean
-  /** The runtime's own format: speech is requested and decoded as this. */
-  responseFormat: AudioFormat
   resolvesVoices?: boolean
   serves: TtsServing[]
-  /** Whether this runtime's streaming socket understands session ids and
-   *  take-over, the way it carries responseFormat. Absent means no. */
-  sessions?: boolean
+  /** The APIs the runtime's service serves, and how it departs from each. */
+  provides?: Provision[]
+  /** How the service's models load. */
+  models?: ModelLoading
 }
 
 export interface SttOption {
   serviceId: string
   name: string
-  /** Whether this service's streaming socket understands session ids and
-   *  take-over. False when the roster provider does not declare it. */
-  sessions?: boolean
+  provides?: Provision[]
+  models?: ModelLoading
+  /** What the service serves, by roster id and by the name it knows each by. */
+  serves?: { model: string; key: string }[]
+}
+
+/** A speech-to-text model, as the roster declares it. */
+export interface SttModelEntry {
+  id: string
+  name?: string
+  kind: 'batch' | 'streaming' | 'both'
+  /** The parameters of the model, such as the `chunkMs` tiers it offers. */
+  params?: { name: string; values: number[] }[]
+  variants?: { id: string; params: { name: string; value: number }[] }[]
 }
 
 /** What config.json stores (roster ids), as `GET /api/voice` serves it. */
@@ -103,21 +114,19 @@ export interface StoredVoiceSelection {
   model: string
   voice: string
   speed: number
-  /** The shard's resolution of the selection: the fields of a speech request,
-   *  sent to the runtime as they came. */
-  request?: Record<string, unknown>
-  /** Why `request` is absent. */
-  requestError?: string
+  /** The shard's resolution of the selection, which the speech adapter encodes as it came. */
+  resolution?: Resolution
+  /** Why `resolution` is absent. */
+  resolutionError?: string
 }
 
-/** The selection with its runtime's audio format. */
-export interface VoiceSelection extends StoredVoiceSelection {
-  /** The selected runtime's format. */
-  responseFormat: AudioFormat
-}
+/** The selection as the engine speaks it: the served selection, carried as served. */
+export type VoiceSelection = StoredVoiceSelection
 
 export interface VoiceConfig {
   enabled?: boolean
+  /** Bring a model up when voice starts, where the service offers that choice. Absent means on. */
+  preload?: boolean
   /**
    * What a voice session does when a voice server it wants — TTS or STT — is
    * held by another session. `ask` (default) shows a dialog offering to take
@@ -157,6 +166,10 @@ export interface VoiceConfig {
      * from model to model.
      */
     preferStreaming?: boolean
+    /** The audio formats the browser may send, most preferred first. Absent means Opus then 16-bit PCM. */
+    encodings?: ('opus' | 'pcm16')[]
+    /** The roster's speech-to-text models, with their kind, parameters and variants. */
+    models?: SttModelEntry[]
     /**
      * Which streaming latency tier to load, for a model that offers a choice.
      *
@@ -226,12 +239,10 @@ export async function fetchVoiceConfig(): Promise<VoiceConfig | null> {
   }
 }
 
-/** The served selection with its runtime's audio format. Its `request` is the
- *  shard's resolution, carried as served; nothing is looked up here. */
+/** The served selection. Its `resolution` is the shard's, carried as served; nothing is looked up here. */
 export function loadVoiceSelection(config: VoiceConfig): VoiceSelection | null {
   const sel = config.tts.selection
   if (!sel) return null
-  const provider = config.tts.providers.find(p => p.serviceId === sel.serviceId)
-  return { ...sel, speed: sel.speed ?? 1.0, responseFormat: provider?.responseFormat ?? 'mp3' }
+  return { ...sel, speed: sel.speed ?? 1.0 }
 }
 

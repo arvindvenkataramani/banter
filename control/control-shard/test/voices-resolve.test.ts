@@ -1,9 +1,9 @@
 // POST /api/voices/resolve: the shard resolves a voice for a runtime that cannot
-// read the registry (docs/reference/design/model-roster.md, "Reaching a resolution"). The
-// answer is the speech-request fields a caller sends to the runtime unchanged:
-// flat `model`, then `voice` or `ref_audio` (+ `ref_text`), then the serving's
-// request parameters. The resolution rule itself is covered by the shared cases
-// in control/test/voice-resolution.test.ts.
+// read the registry (docs/reference/design/model-roster.md, "Reaching a resolution").
+// The answer is a resolution (dev/specs/service-apis.md, section 11):
+// `{ model, voice: { name } | { recording, transcript? }, params? }`, which the
+// caller hands to the synthesis adapter unchanged. The resolution rule itself is
+// covered by the shared cases in control/test/voice-resolution.test.ts.
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
@@ -77,42 +77,36 @@ async function resolve(body: Record<string, unknown>, reg?: Registry): Promise<{
 }
 
 describe("POST /api/voices/resolve", () => {
-  it("answers a runtime that resolves voices itself with the platform's model and voice ids, and no recording", async () => {
+  it("[T2] answers a runtime that resolves voices itself with the platform's model id and a voice name, and no recording", async () => {
     const res = await resolve({ voice: "alex", model: "luxtts", serviceId: "fluid-tts" });
     expect(res.status).toBe(200);
     expect(res.body.model).toBe("luxtts");
-    expect(res.body.voice).toBe("alex");
-    expect(res.body.ref_audio).toBeUndefined();
-    expect(res.body.ref_text).toBeUndefined();
+    expect(res.body.voice).toEqual({ name: "alex" });
   });
 
-  it("answers any other runtime with its key for the model, a preset's key, and the serving's request parameters", async () => {
+  it("[T2] answers any other runtime with its key for the model, the preset's key as the voice name, and the serving's request parameters as params", async () => {
     const res = await resolve({ voice: "eponine", model: "pocket-tts", serviceId: "tts-mlx-audio" });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ model: "mlx-community/pocket-tts", voice: "eponine", streaming_interval: 4 });
-    expect(res.body.ref_audio).toBeUndefined();
+    expect(res.body).toEqual({ model: "mlx-community/pocket-tts", voice: { name: "eponine" }, params: { streaming_interval: 4 } });
   });
 
-  it("answers a clone with the recording's audio path and no voice, and no transcript for a model that does not use one", async () => {
+  it("[T2] answers a clone with the recording's audio path as the voice, and no transcript for a model that does not use one", async () => {
     const res = await resolve({ voice: "nicole", model: "pocket-tts", serviceId: "tts-mlx-audio" });
     expect(res.status).toBe(200);
     expect(res.body.model).toBe("mlx-community/pocket-tts");
-    expect(res.body.ref_audio).toBe(`${tmpDir}/refs/voices/nicole.wav`);
-    expect(res.body.ref_text).toBeUndefined();
-    expect(res.body.voice).toBeUndefined();
+    expect(res.body.voice).toEqual({ recording: `${tmpDir}/refs/voices/nicole.wav` });
   });
 
-  it("answers a clone for a model that uses a transcript with the transcript's contents, not its path", async () => {
+  it("[T2] answers a clone for a model that uses a transcript with the transcript's contents, not its path", async () => {
     // LuxTTS is also served by the second runtime here, so the shard is the one resolving.
     const reg = await load(r => { r.providers["tts-mlx-audio"].serves.push({ model: "luxtts", key: "mlx-community/luxtts" }); });
     const res = await resolve({ voice: "alex", model: "luxtts", serviceId: "tts-mlx-audio" }, reg);
     expect(res.status).toBe(200);
     expect(res.body.model).toBe("mlx-community/luxtts");
-    expect(res.body.ref_audio).toBe(`${tmpDir}/refs/voices-5s/alex.wav`);
-    expect(res.body.ref_text).toBe("transcript of alex.wav");
+    expect(res.body.voice).toEqual({ recording: `${tmpDir}/refs/voices-5s/alex.wav`, transcript: "transcript of alex.wav" });
   });
 
-  it("refuses with a 400 naming the voice and the model", async () => {
+  it("[T2] refuses with a 400 naming the voice and the model", async () => {
     for (const body of [
       { voice: "no-such-voice", model: "pocket-tts", serviceId: "tts-mlx-audio" },
       { voice: "eponine", model: "luxtts", serviceId: "fluid-tts" },

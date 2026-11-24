@@ -203,3 +203,23 @@ describe("writing", () => {
     expect(events.find(e => e.type === type)).toMatchObject({ subjectId: id, actor: "user" });
   });
 });
+
+describe("what a node says about how to call a service", () => {
+  const provides = [{ api: "openai.audio.speech", omits: ["parameter:instructions"], restricts: { response_format: ["wav"] }, extends: ["stream-flag"] }];
+  const models = { loading: "required", autoLoad: "always", resident: "one", load: { method: "POST", path: "/v1/models", query: { model_name: "{model}" } } };
+
+  it("[T2] reports a service's provisions and model loading as registered, in the list and alone", async () => {
+    const seed = structuredClone(SEED);
+    Object.assign(seed.services[0], { provides, models });
+    await writeFile(registryPath, JSON.stringify(seed, null, 2));
+    registry = await loadRegistry(registryPath);
+    const app = makeApp();
+
+    const listed = ((await call(app, "GET", "/api/services")).body as any[]).find(s => s.id === "svc");
+    expect(listed.provides).toEqual(provides);
+    expect(listed.models).toEqual(models);
+    const alone = (await call(app, "GET", "/api/services/svc")).body;
+    expect(alone.provides).toEqual(provides);
+    expect(alone.models).toEqual(models);
+  });
+});

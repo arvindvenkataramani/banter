@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { PlaybackEngine } from './playback-engine'
+import { PlaybackEngine, type SpeakRequest } from './playback-engine'
 import { resetDevicesForTest, element as deviceElement } from '../devices'
 import { useTurnManagerStore, resetTurnManager, report } from '../store/turn-manager-store'
 import { initialTurnManagerState, snapshot as buildSnapshot } from '../turn-manager'
 import type { Snapshot } from '../turn-manager'
+
+// A speak request carries the resolution and the provision of the API that speaks
+// it (dev/specs/service-apis.md, section 11); these are the minimal ones.
+const RESOLUTION = { model: 'm', voice: { name: 'v' } } as never
+const SPEECH = { api: 'openai.audio.speech' } as never
 
 /**
  * These tests exercise the engine's logic-only paths: held-chunk lifecycle,
@@ -62,8 +67,8 @@ describe('PlaybackEngine — held chunks', () => {
     engine.enqueueChat({
       endpoint: 'http://localhost:1234',
       text: 'hello',
-      request: { model: 'm1', voice: 'v1' },
-      format: 'mp3',
+      resolution: RESOLUTION,
+      provision: SPEECH,
       speed: 1.0,
     })
 
@@ -85,7 +90,7 @@ describe('PlaybackEngine — held chunks', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    await engine.enqueueChat({ endpoint: '', text: 'a', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'a', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
 
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -93,7 +98,7 @@ describe('PlaybackEngine — held chunks', () => {
   it('releases what was parked once a later enqueue finds play, in the order they were held', async () => {
     const engine = new PlaybackEngine()
     setNewAudio('park')
-    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
     expect(lastAgentReport()?.supply.pending).toBe(1)
 
     setNewAudio('play')
@@ -103,7 +108,7 @@ describe('PlaybackEngine — held chunks', () => {
     // an initialised element, so both dispatches reject the same way — the
     // held chunk first, in the order it was parked, ahead of the chunk
     // that arrives already finding play.
-    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
 
     await expect(p1).rejects.toThrow('init()')
     await expect(p2).rejects.toThrow('init()')
@@ -113,8 +118,8 @@ describe('PlaybackEngine — held chunks', () => {
     const engine = new PlaybackEngine()
     setNewAudio('park')
 
-    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
-    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    const p1 = engine.enqueueChat({ endpoint: '', text: 'a', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
+    const p2 = engine.enqueueChat({ endpoint: '', text: 'b', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
     expect(lastAgentReport()?.supply.pending).toBe(2)
 
     engine.cancel()
@@ -225,7 +230,7 @@ describe('PlaybackEngine — the element survives a reset', () => {
     // turn open on the floor — reasserted before each enqueue, the way a
     // real conversation report holding the floor open would keep it stable
     // for the run's whole duration.
-    const req = { endpoint: 'http://localhost:1234', request: { model: 'm1', voice: 'v1' }, format: 'mp3' as const, speed: 1.0 }
+    const req = { endpoint: 'http://localhost:1234', resolution: RESOLUTION, provision: SPEECH, speed: 1.0 }
     setNewAudio('play')
     await engine.enqueueChat({ ...req, text: 'first' })
     setNewAudio('play')
@@ -243,14 +248,13 @@ describe('PlaybackEngine — the element survives a reset', () => {
     ).toBeGreaterThan(playCount)
   })
 
-  // The speech request is what the control plane served as `selection.request`,
-  // sent as it came: no key, recording or voice is looked up here. The bytes are
-  // decoded as the runtime's format, so that one field is the engine's own.
-  it("sends the served request as it came, adds only the text and the runtime's audio format, and asks for that format over any the request names", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      blob: () => Promise.resolve(new Blob([new Uint8Array([1])])),
-    })
+  // Speech goes through the selected provision's adapter (dev/specs/service-apis.md,
+  // section 11). The resolution is the control plane's, encoded as the provision
+  // allows: a recording goes as ref_audio only where the provision declares
+  // cloning-reference, and the audio format is the adapter's choice from what the
+  // provision restricts, never the engine's.
+  it("[T2] speaks the resolution through the provision's adapter: the served model and params, the text, and a format the provision allows", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(new Blob([new Uint8Array([1])]))))
     vi.stubGlobal('fetch', fetchMock)
     vi.stubGlobal('URL', { ...URL, createObjectURL: () => 'blob:aac', revokeObjectURL: () => {} })
 
@@ -258,8 +262,13 @@ describe('PlaybackEngine — the element survives a reset', () => {
     engine.init()
     engine.beginRun('r-aac')
     setNewAudio('play')
-    const request = { model: 'mlx-community/pocket-tts', ref_audio: '/refs/priya.wav', ref_text: 'spoken words', streaming_interval: 0.5, response_format: 'mp3' }
-    await engine.enqueueChat({ endpoint: 'http://localhost:1234', text: 'hi', format: 'aac', speed: 1, request })
+    const resolution = {
+      model: 'mlx-community/pocket-tts',
+      voice: { recording: '/refs/priya.wav', transcript: 'spoken words' },
+      params: { streaming_interval: 0.5 },
+    }
+    const provision = { api: 'openai.audio.speech', extends: ['cloning-reference'], restricts: { response_format: ['pcm', 'aac', 'wav'] } }
+    await engine.enqueueChat({ endpoint: 'http://localhost:1234', text: 'hi', speed: 1, resolution, provision } as unknown as SpeakRequest)
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body).toMatchObject({
@@ -270,7 +279,6 @@ describe('PlaybackEngine — the element survives a reset', () => {
       input: 'hi',
       response_format: 'aac',
     })
-    expect(body.voice).toBeUndefined()
     engine.cancel()
   })
 })
@@ -363,7 +371,7 @@ describe('PlaybackEngine — reconcile and the agent report', () => {
     engine.init()
     engine.beginRun('run-a')
     setNewAudio('play')
-    await engine.enqueueChat({ endpoint: '', text: 'hi', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'hi', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
     await Promise.resolve()
     // Blob's own "played out": the queued slot has to actually reach the
     // element (playNext() sets audio.src) before the element reports it
@@ -383,7 +391,7 @@ describe('PlaybackEngine — reconcile and the agent report', () => {
     expect(currentAgentUtterance()).toMatchObject({ id: 'run-a', phase: 'ended', outcome: 'completed' })
 
     setNewAudio('play')
-    await engine.enqueueChat({ endpoint: '', text: 'hi again', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'hi again', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
     expect(currentAgentUtterance()).toMatchObject({ id: 'run-b' })
   })
 
@@ -401,7 +409,7 @@ describe('PlaybackEngine — reconcile and the agent report', () => {
     engine.init()
     engine.beginRun('run-a')
     setNewAudio('play')
-    await engine.enqueueChat({ endpoint: '', text: 'hi', request: { model: 'm', voice: 'v' }, format: 'mp3' as const, speed: 1 })
+    await engine.enqueueChat({ endpoint: '', text: 'hi', resolution: RESOLUTION, provision: SPEECH, speed: 1 })
     await Promise.resolve()
 
     const supersededSnapshot = makeSnapshot({

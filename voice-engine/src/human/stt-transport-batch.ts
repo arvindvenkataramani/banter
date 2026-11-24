@@ -10,10 +10,13 @@
 
 import { encodeWav } from './wav-encoder'
 import { transcribeAudio } from './stt-client'
+import type { Provision } from '@platform/shared/apis/types'
 import type { SttTransport } from './stt-transport'
 
 export interface BatchTransportOptions {
   endpoint: string
+  /** The provision of the transcription API the selection chose. */
+  provision: Provision
   /** Sent with each transcription, so a server that idled its model out reloads this one, not its default. */
   model?: string
   /** Restarts a stopped service and retries once. Without it, a failure is final. */
@@ -26,6 +29,7 @@ export interface BatchTransportOptions {
 
 export class BatchSttTransport implements SttTransport {
   private endpoint: string
+  private provision: Provision
   private model?: string
   private serviceId?: string
   private ensureServiceReady?: (serviceId: string) => Promise<string>
@@ -33,6 +37,7 @@ export class BatchSttTransport implements SttTransport {
 
   constructor(opts: BatchTransportOptions) {
     this.endpoint = opts.endpoint
+    this.provision = opts.provision
     this.model = opts.model
     this.serviceId = opts.serviceId
     this.ensureServiceReady = opts.ensureServiceReady
@@ -61,7 +66,7 @@ export class BatchSttTransport implements SttTransport {
    */
   private async transcribeWithRestart(wav: ArrayBuffer): Promise<string> {
     try {
-      return await transcribeAudio(this.endpoint, wav, this.model)
+      return await transcribeAudio(this.endpoint, this.provision, wav, this.model)
     } catch (first) {
       const previousEndpoint = this.endpoint
       if (!this.serviceId || !this.ensureServiceReady) throw new Error('No STT service configured')
@@ -69,7 +74,7 @@ export class BatchSttTransport implements SttTransport {
       this.endpoint = newEndpoint
       this.onEndpointChange?.(newEndpoint)
       try {
-        return await transcribeAudio(newEndpoint, wav, this.model)
+        return await transcribeAudio(newEndpoint, this.provision, wav, this.model)
       } catch (second) {
         // The retry usually fails for the same reason as the first attempt, and
         // reporting only the second hides that the endpoint changed in between.

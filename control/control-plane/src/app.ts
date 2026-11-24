@@ -2,7 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { loadRegistry } from "../../shared/src/registry";
 import { emptyRoster } from "../../shared/src/roster";
-import { buildSpeechRequest } from "../../shared/src/speech-request";
+import { resolveSpeech } from "../../shared/src/speech-request";
 import { createApp } from "../../shared/src/api";
 import { startShardPollLoop } from "./shard-poller";
 import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardPing, fetchShardService, reloadShard, resolveVoiceOnShard } from "./shard-client";
@@ -114,8 +114,8 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       [...registry.services, ...allShardServices()].find((s) => s.id === selection.serviceId)?.hostId;
     if (!hostId) return { ok: false as const, error: `no runtime "${selection.serviceId}" is known` };
     if (hostId === controlHostId) {
-      const built = buildSpeechRequest(registry.roster ?? emptyRoster(), selection.serviceId, selection.model, selection.voice);
-      return built.ok ? { ok: true as const, request: built.request as Record<string, unknown> } : { ok: false as const, error: built.error };
+      const built = resolveSpeech(registry.roster ?? emptyRoster(), selection.serviceId, selection.model, selection.voice);
+      return built.ok ? { ok: true as const, resolution: built.resolution } : { ok: false as const, error: built.error };
     }
     const endpoint = shardEndpointFor(hostId);
     if (!endpoint) return { ok: false as const, error: `no shard on host "${hostId}" to resolve for "${selection.serviceId}"` };

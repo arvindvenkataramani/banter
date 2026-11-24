@@ -3,7 +3,7 @@
 // registry's services already validated, so a provider naming no service fails
 // before the node starts.
 
-import { CHUNK_STRATEGIES, RESPONSE_FORMATS } from "../../../shared/types";
+import { CHUNK_STRATEGIES } from "../../../shared/types";
 import { validateProvisions } from "./provisions";
 import type {
   ChunkStrategy,
@@ -112,12 +112,6 @@ export function validateRoster(data: unknown, services: Service[]): NodeRoster {
     if (!service) fail(`providers["${serviceId}"] names no service in the registry`);
     const capability = service!.capabilityId;
 
-    if (p.responseFormat !== undefined && !(RESPONSE_FORMATS as readonly unknown[]).includes(p.responseFormat)) {
-      fail(`providers["${serviceId}"].responseFormat must be one of ${RESPONSE_FORMATS.join(", ")}`);
-    }
-    if (p.sessions !== undefined && typeof p.sessions !== "boolean") {
-      fail(`providers["${serviceId}"].sessions must be true or false`);
-    }
     if (capability === "tts" ? typeof p.resolvesVoices !== "boolean" : p.resolvesVoices !== undefined && typeof p.resolvesVoices !== "boolean") {
       fail(`providers["${serviceId}"].resolvesVoices must be true or false${capability === "tts" ? "; a synthesis provider states whether it resolves voices itself" : ""}`);
     }

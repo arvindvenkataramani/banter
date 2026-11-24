@@ -394,7 +394,7 @@ export function GeneralPanel({ draft, edit }: PanelProps) {
   const view = roster(draft)
   return (
     <div className="grid gap-5">
-      {view.declaresSessions && (
+      {view.offersTakeover && (
         <SwitchRow
           id="voice-takeover"
           label="Always take over"

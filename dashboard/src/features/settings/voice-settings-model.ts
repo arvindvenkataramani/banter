@@ -3,6 +3,8 @@
 // goes through the engine's own reducers (model-settings,
 // agent/chunking-setting). No React, so it runs in node.
 
+import { candidates } from '@platform/shared/apis/select'
+import { toService } from '@platform/voice-engine/service-calls'
 import type { TtsModel, TtsProvider, TtsVoice, SttOption, VoiceConfig, VoiceSelection, VoiceSelectionPatch } from '@platform/voice-engine/voice-config'
 import {
   buildModelPrefEntry, declaredAt, deleteModelOverride, editField, emptyPref, hasModelDefaults, hasOverride, readPrefs, settingsScopeFrom,
@@ -112,8 +114,8 @@ export interface RosterView {
   currentModel: TtsModel | undefined
   voices: TtsVoice[]
   sttOptions: SttOption[]
-  /** Whether the selected STT option or TTS provider has a socket that understands take-over. */
-  declaresSessions: boolean
+  /** Whether the selected STT option has a streaming provision that holds take-over. */
+  offersTakeover: boolean
 }
 
 /** The synthesis models a runtime serves for the realtime voice loop, in the roster's order. */
@@ -141,7 +143,8 @@ export function roster(draft: Draft): RosterView {
     currentModel,
     voices: currentModel ? voicesOn(draft.config, currentModel.id) : [],
     sttOptions,
-    declaresSessions: currentSttOption?.sessions === true || currentProvider?.sessions === true,
+    offersTakeover: currentSttOption !== undefined
+      && candidates('transcribeStream', toService(currentSttOption), ['client-endpointing', 'takeover'], []).length > 0,
   }
 }
 

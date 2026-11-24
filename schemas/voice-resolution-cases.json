@@ -78,8 +78,6 @@
     "providers": {
       "fluid-tts": {
         "resolvesVoices": true,
-        "responseFormat": "aac",
-        "sessions": true,
         "serves": [
           {
             "model": "pocket-tts",

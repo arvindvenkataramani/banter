@@ -248,19 +248,12 @@ export interface Serving {
 export interface Provider {
   /** Required on a synthesis runtime: whether it resolves voices itself rather than having the shard do it. */
   resolvesVoices?: boolean;
-  /** The audio format this runtime returns from /v1/audio/speech. Absent means mp3. */
-  responseFormat?: ResponseFormat;
-  /** Whether this runtime's streaming socket understands session ids and take-over. Absent means no. */
-  sessions?: boolean;
   /** The STT model a request naming none loads into an empty slot. Validated by the runtime, not here. */
   defaultModel?: string;
   /** How long an STT runtime's model may go without work before it is unloaded. Absent means 30 minutes. */
   idleUnloadMs?: number;
   serves: Serving[];
 }
-
-export const RESPONSE_FORMATS = ["mp3", "aac", "wav"] as const;
-export type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
 
 /** Declared, not probed from the file — a stale value here is taken as fact. */
 export interface Recording {

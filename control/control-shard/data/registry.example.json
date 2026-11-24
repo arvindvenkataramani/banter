@@ -246,7 +246,6 @@
     "providers": {
       "tts-kokoro": {
         "resolvesVoices": false,
-        "responseFormat": "wav",
         "serves": [
           {
             "model": "kokoro-82m",

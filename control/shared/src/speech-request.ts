@@ -1,41 +1,39 @@
-// The speech request a node builds for a runtime on its own machine: the shard
-// on POST /api/voices/resolve, or the control plane for a runtime on its host.
-// The caller sends it to the runtime unchanged.
+// The resolution a node makes for a runtime on its own machine: the shard on
+// POST /api/voices/resolve, or the control plane for a runtime on its host.
+// The synthesis adapter encodes it for the wire (dev/specs/service-apis.md, section 11).
 
 import { readFileSync } from "node:fs";
 import { resolveVoiceForModel } from "./roster";
+import type { Resolution } from "../../../shared/apis/types";
 import type { NodeRoster } from "../../../shared/types";
 
-/** The body of a speech request for a runtime, built by the shared resolution
- *  rule. A runtime that resolves voices itself is sent the platform's model and
- *  voice ids; any other is sent its own key for the model and either the preset's
- *  key or the recording's path (with the transcript's contents when the model
- *  uses one), plus the serving's request parameters. */
-export type SpeechRequest = { model: string; voice?: string; ref_audio?: string; ref_text?: string } & Record<string, unknown>;
-
-export function buildSpeechRequest(
+/** A runtime that resolves voices itself is given the platform's model and voice ids; any other
+ *  is given its own key for the model and either the preset's key or the recording's path
+ *  (with the transcript's contents when the model uses one), plus the serving's request parameters. */
+export function resolveSpeech(
   roster: NodeRoster,
   serviceId: string,
   model: string,
   voice: string
-): { ok: true; request: SpeechRequest } | { ok: false; error: string } {
+): { ok: true; resolution: Resolution } | { ok: false; error: string } {
   const resolved = resolveVoiceForModel(roster, serviceId, model, voice);
   if (resolved.kind === "refused") return { ok: false, error: resolved.reason };
 
   const provider = roster.providers[serviceId];
-  if (provider.resolvesVoices === true) return { ok: true, request: { model, voice } };
+  if (provider.resolvesVoices === true) return { ok: true, resolution: { model, voice: { name: voice } } };
 
-  const requestParams = provider.serves.find(s => s.model === model)?.requestParams;
+  const params = provider.serves.find(s => s.model === model)?.requestParams;
+  const withParams = (resolution: Resolution): Resolution => (params ? { ...resolution, params } : resolution);
   if (resolved.kind === "preset") {
-    return { ok: true, request: { ...requestParams, model: resolved.modelKey, voice: resolved.voice } };
+    return { ok: true, resolution: withParams({ model: resolved.modelKey, voice: { name: resolved.voice } }) };
   }
-  const request: SpeechRequest = { ...requestParams, model: resolved.modelKey, ref_audio: resolved.recording.audio };
-  if (resolved.sendText) {
-    try {
-      request.ref_text = readFileSync(resolved.recording.text, "utf-8");
-    } catch (err) {
-      return { ok: false, error: `voice "${voice}" on model "${model}": transcript unreadable: ${err instanceof Error ? err.message : String(err)}` };
-    }
+  if (!resolved.sendText) {
+    return { ok: true, resolution: withParams({ model: resolved.modelKey, voice: { recording: resolved.recording.audio } }) };
   }
-  return { ok: true, request };
+  try {
+    const transcript = readFileSync(resolved.recording.text, "utf-8");
+    return { ok: true, resolution: withParams({ model: resolved.modelKey, voice: { recording: resolved.recording.audio, transcript } }) };
+  } catch (err) {
+    return { ok: false, error: `voice "${voice}" on model "${model}": transcript unreadable: ${err instanceof Error ? err.message : String(err)}` };
+  }
 }

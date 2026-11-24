@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from 'zustand'
 import { toast } from 'sonner'
-import { fetchVoiceConfig, loadVoiceSelection, unloadTtsModel, setSaveMicSamples } from '@/lib/voice'
+import { fetchVoiceConfig, loadVoiceSelection, setSaveMicSamples } from '@/lib/voice'
 import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection } from '@platform/voice-engine/voice-session-store'
 import { applySavedVoiceSettings } from '@/lib/voice/apply-voice-settings'
 import { updateVoiceSelection } from '@/lib/api'
@@ -34,7 +34,6 @@ export interface VoiceSettingsTabs {
 export function useVoiceSettings(open: boolean): VoiceSettingsTabs {
   const voiceConfig = useStore(useVoiceSessionStore, (s) => s.voiceConfig)
   const selection = useStore(useVoiceSessionStore, (s) => s.voiceSelection)
-  const endpoint = useStore(useVoiceSessionStore, (s) => s.ttsEndpoint)
   const [draft, setDraft] = useState<Draft | null>(null)
 
   // One attempt per open, so a failed fetch is retried by reopening.
@@ -75,10 +74,6 @@ export function useVoiceSettings(open: boolean): VoiceSettingsTabs {
     const patch = buildPatch(draft)
     if (patch === null) return true
 
-    const loadedModel = selection.request?.model
-    if (endpoint && typeof loadedModel === 'string' && selection.model !== draft.ttsModel) {
-      unloadTtsModel(endpoint, loadedModel)
-    }
     let updated: VoiceUpdateResult
     try {
       updated = await updateVoiceSelection(patch)

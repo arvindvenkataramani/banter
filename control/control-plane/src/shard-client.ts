@@ -1,3 +1,4 @@
+import type { Resolution } from "../../../shared/apis/types";
 import type { ServiceWithHealth, Event, NodeRoster, ShardReloadResponse } from "../../../shared/types";
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -302,14 +303,13 @@ export async function fetchShardRoster(endpoint: string): Promise<NodeRoster | n
 }
 
 /** Asks a shard to resolve a voice for a runtime on its machine. The answer is
- *  the speech-request fields a caller sends to the runtime unchanged, passed on
- *  verbatim. Never throws: a refusal or an unreachable shard is `ok: false`
+ *  a resolution, passed on verbatim. Never throws: a refusal or an unreachable shard is `ok: false`
  *  with the reason. */
 export async function resolveVoiceOnShard(
   endpoint: string,
   selection: { voice: string; model: string; serviceId: string },
   timeoutMs: number = FETCH_TIMEOUT_MS,
-): Promise<{ ok: true; request: Record<string, unknown> } | { ok: false; error: string }> {
+): Promise<{ ok: true; resolution: Resolution } | { ok: false; error: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -325,7 +325,7 @@ export async function resolveVoiceOnShard(
       return { ok: false, error: reason };
     }
     if (!isRecord(body)) return { ok: false, error: "shard returned a malformed resolution" };
-    return { ok: true, request: body };
+    return { ok: true, resolution: body as unknown as Resolution };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {

@@ -90,9 +90,6 @@ function sendAnswer(res: ServerResponse, answer: ConfigAnswer): void {
 
 const PACKAGE_ROOT = fileURLToPath(new URL('./', import.meta.url))
 
-/** The streaming WebSocket path the engine's STT socket opens, below its endpoint. */
-const STT_STREAM_PATH = '/v1/audio/stream'
-
 export function apply(ctx: HostContext, config: Config): void {
   const controlPlaneUrl = (): string => config.controlPlaneUrl.get()
   const source = createVoiceConfigSource({ controlPlaneUrl, fetch: (...args) => fetch(...args) })
@@ -248,17 +245,17 @@ export function apply(ctx: HostContext, config: Config): void {
   }), 'dsh-voice: voice guidance')
 
   // dsh matches upgrade routes by exact path, so the STT stream routes follow
-  // the served STT services (the selection and the one before it), re-registered
-  // whenever a load changes them.
+  // the served STT services (the selection and the one before it) and the paths
+  // their streaming provisions use, re-registered whenever a load changes them.
   let disposeUpgrades: Array<() => void> = []
   const registerUpgrade = (): void => {
     for (const dispose of disposeUpgrades) dispose()
     const sttIds = [source.selected()?.sttServiceId ?? '', source.previous()?.sttServiceId ?? ''].filter((id, i, all) => id !== '' && all.indexOf(id) === i)
-    disposeUpgrades = sttIds.map(sttServiceId => upgradeRoute(sttServiceId))
+    disposeUpgrades = sttIds.flatMap(sttServiceId => source.streamPaths(sttServiceId).map(path => upgradeRoute(sttServiceId, path)))
   }
-  const upgradeRoute = (sttServiceId: string): (() => void) =>
+  const upgradeRoute = (sttServiceId: string, streamPath: string): (() => void) =>
     ctx.webServer.registerUpgrade({
-      path: `${SPEECH_PREFIX}/${encodeURIComponent(sttServiceId)}${STT_STREAM_PATH}`,
+      path: `${SPEECH_PREFIX}/${encodeURIComponent(sttServiceId)}${streamPath}`,
       handler: async (req, socket, head) => {
         const rejection = ctx.connection.requestRejection(req)
         if (rejection !== undefined) {

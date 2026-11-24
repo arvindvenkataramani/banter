@@ -1,10 +1,13 @@
 import { create } from 'zustand'
 import type { VoiceSession } from './session'
+import { candidates } from '@platform/shared/apis/select'
+import type { Provision } from '@platform/shared/apis/types'
+import type { Adapter } from '@platform/shared/apis'
 import type { SttTransport } from './human/stt-transport'
-import type { SttModelKind } from './human/stt-transport'
 import { BatchSttTransport } from './human/stt-transport-batch'
 import { StreamingSttTransport, type StreamingCloseInfo } from './human/stt-transport-streaming'
-import type { VoiceConfig, VoiceSelection } from './voice-config'
+import { toService, type ServiceEntry } from './service-calls'
+import type { SttModelEntry, VoiceConfig, VoiceSelection } from './voice-config'
 
 // The voice system's whole lifetime — including the service-level state Chat
 // used to hold as local React state (config, selection, endpoints) — lives
@@ -53,136 +56,68 @@ export function setSttEndpoint(endpoint: string | null): void {
   useVoiceSessionStore.setState({ sttEndpoint: endpoint })
 }
 
-/** What a model's server says about it. Absent fields mean it said nothing. */
-export interface SttModelFacts {
-  kind?: SttModelKind
-  /**
-   * The routes this model is reached over. A set rather than one value: a
-   * model that does both is genuinely served over the transcription endpoint
-   * and the socket.
-   */
-  transport?: Array<'http' | 'websocket'>
-  /** Whether every component the model needs is on disk. */
-  present?: boolean
-  /**
-   * The values of the model's declared `chunkMs` parameter, where it offers a
-   * choice. Where the roster maps each value to a variant, a load giving none
-   * leaves the variant unresolved and is refused: the server will not pick a
-   * latency for the caller.
-   */
-  chunkSizesMs?: number[]
-}
-
-/**
- * Ask the STT service what a model is and how it is reached.
- *
- * Kind and transport are read separately because they are separate facts: one
- * describes the model, the other the route to it. Nothing is inferred from the
- * other's absence — a server that says nothing has not said "batch", and
- * collapsing those two would make a silent default impossible to distinguish
- * from an answer.
- */
-export async function fetchSttModelFacts(endpoint: string, model: string): Promise<SttModelFacts> {
-  try {
-    const res = await fetch(`${endpoint}/v1/models`)
-    if (!res.ok) return {}
-    const body = await res.json() as {
-      data?: Array<{
-        id?: string
-        kind?: string
-        transport?: unknown
-        present?: unknown
-        params?: unknown
-      }>
-    }
-    const entry = body.data?.find((m) => m.id === model)
-    if (!entry) return {}
-
-    const transport = Array.isArray(entry.transport)
-      ? entry.transport.filter((t): t is 'http' | 'websocket' => t === 'http' || t === 'websocket')
-      : undefined
-    const chunkParam = Array.isArray(entry.params)
-      ? (entry.params as Array<{ name?: unknown; values?: unknown }>).find((p) => p?.name === 'chunkMs')
-      : undefined
-    const chunkSizesMs = Array.isArray(chunkParam?.values)
-      ? chunkParam.values.filter((n): n is number => typeof n === 'number')
-      : undefined
-
-    return {
-      kind: entry.kind === 'batch' || entry.kind === 'streaming' || entry.kind === 'both'
-        ? entry.kind
-        : undefined,
-      transport: transport?.length ? transport : undefined,
-      present: typeof entry.present === 'boolean' ? entry.present : undefined,
-      chunkSizesMs: chunkSizesMs?.length ? chunkSizesMs : undefined,
-    }
-  } catch {
-    return {}
+/** The routes a service offers a speech-to-text model: batch, and streaming where the client decides where an utterance ends. */
+function routes(option: ServiceEntry): { batch: boolean; streaming: boolean } {
+  const service = toService(option)
+  return {
+    batch: candidates('transcribe', service, [], []).length > 0,
+    streaming: candidates('transcribeStream', service, ['client-endpointing'], []).length > 0,
   }
 }
 
 /**
  * Which way to bring a model up, and therefore which transport will serve it.
  *
- * A model that does one thing decides this itself. A model capable of both
- * does not pick for itself — the two differ in latency and accuracy, and a
- * silent choice is one nobody can see having been made. `voice.stt.preferStreaming`
- * is where that choice is stated: once, as a standing preference, rather than
- * per model where it would have to be repeated and kept in step.
- *
- * Without it, batch — what this loop did before streaming existed, and the
- * more accurate of the two.
+ * A model that does one thing decides this itself. A model that does both is
+ * decided by the routes the selected service offers, and where it offers both,
+ * by `voice.stt.preferStreaming`: stated once, as a standing preference, because
+ * the two differ in latency and accuracy and a silent choice cannot be seen
+ * having been made. Without it, batch, the more accurate of the two.
  */
 export function resolveSttMode(
-  facts: SttModelFacts,
+  option: ServiceEntry,
+  model: Pick<SttModelEntry, 'kind'> | undefined,
   preferStreaming?: boolean,
 ): 'batch' | 'streaming' {
-  if (facts.kind === 'streaming') return 'streaming'
-  if (facts.kind === 'batch') return 'batch'
-  if (facts.kind === 'both') return preferStreaming ? 'streaming' : 'batch'
-  // The server said nothing about kind. Its transports answer if it gave any:
-  // a model offering only the socket streams, and one offering both routes
-  // without saying what it is falls to the preference, as a `both` kind would.
-  const routes = facts.transport
-  if (routes?.length) {
-    const socket = routes.includes('websocket')
-    const http = routes.includes('http')
-    if (socket && !http) return 'streaming'
-    if (http && !socket) return 'batch'
+  if (model?.kind === 'streaming') return 'streaming'
+  if (model?.kind === 'batch') return 'batch'
+  if (model?.kind === 'both') {
+    const { batch, streaming } = routes(option)
+    if (streaming && !batch) return 'streaming'
+    if (batch && !streaming) return 'batch'
     return preferStreaming ? 'streaming' : 'batch'
   }
-  // Nothing known: a server that answered neither, or one that could not be
-  // reached. Batch is what this loop did before streaming existed.
   return 'batch'
 }
 
 /**
  * What settled `resolveSttMode`'s answer: the `preferStreaming` choice, for a
- * model that can do both; the model, where it does one thing; or nothing
- * known, where the server said neither and batch is the fallback.
+ * model that does both over a service that offers both routes; the model or the
+ * service, where only one way was open; or nothing known, where the roster
+ * declares no such model and batch is the fallback.
  */
-export function sttModeSource(facts: SttModelFacts): 'choice' | 'model' | 'unknown' {
-  if (facts.kind === 'both') return 'choice'
-  if (facts.kind === 'batch' || facts.kind === 'streaming') return 'model'
-  const routes = facts.transport
-  if (!routes?.length) return 'unknown'
-  return routes.includes('websocket') && routes.includes('http') ? 'choice' : 'model'
+export function sttModeSource(option: ServiceEntry, model: Pick<SttModelEntry, 'kind'> | undefined): 'choice' | 'model' | 'unknown' {
+  if (!model) return 'unknown'
+  if (model.kind !== 'both') return 'model'
+  const { batch, streaming } = routes(option)
+  return batch && streaming ? 'choice' : 'model'
 }
 
 /**
- * Which latency tier to load, for a model that offers a choice.
+ * Which latency tier to load, for a model that offers a choice: a value of its
+ * declared `chunkMs` parameter.
  *
  * A model declaring tiers refuses a load naming none, so this always answers
  * where there is something to answer. A configured tier the model does not
- * offer is not silently corrected into a neighbour — it is ignored in favour
+ * offer is not silently corrected into a neighbour: it is ignored in favour
  * of the model's own smallest, and said aloud, because a tier quietly
  * different from the one asked for is a latency nobody can account for.
  */
 export function resolveChunkMs(
-  facts: SttModelFacts,
+  model: Pick<SttModelEntry, 'params'> | undefined,
   configured?: number,
 ): number | undefined {
-  const offered = facts.chunkSizesMs
+  const offered = model?.params?.find((p) => p.name === 'chunkMs')?.values
   if (!offered?.length) return undefined
   if (configured !== undefined && offered.includes(configured)) return configured
   const fallback = Math.min(...offered)
@@ -201,15 +136,21 @@ export function resolveChunkMs(
  * because a streaming socket outlives every utterance on it, and everything in
  * the loop is per-session and dies with it.
  *
- * `mode` is what the load decided, where there was a load — asking the server
- * again would be a second decision, and two decisions can differ. `null` (no
- * model configured) falls back to the batch transport.
+ * `mode` is what the load decided, where there was a load: deciding again would
+ * be a second decision, and two decisions can differ. `null` (no model
+ * configured) falls back to the batch transport. `model` is the serving's key,
+ * and `provision` the one of the selected service that performs the call.
  */
 export async function createSttTransport(opts: {
   endpoint: string
   serviceId?: string
   model?: string
   mode: 'batch' | 'streaming' | null
+  /** The provision selection chose for this call, and for a stream its adapter. */
+  provision: Provision
+  adapter?: Adapter
+  /** The formats the browser may send, most preferred first. */
+  encodings?: ('opus' | 'pcm16')[]
   /** Starts the STT service and returns its endpoint, for the batch transport's retry. */
   ensureServiceReady: (serviceId: string) => Promise<string>
   /** The model's latency tier, for a streaming model that takes one. */
@@ -235,6 +176,7 @@ export async function createSttTransport(opts: {
     if (!opts.model) console.warn('[voice] no voice.stt.model configured — using the batch transport')
     return new BatchSttTransport({
       endpoint: opts.endpoint,
+      provision: opts.provision,
       serviceId: opts.serviceId,
       ensureServiceReady: opts.ensureServiceReady,
       onEndpointChange: setSttEndpoint,
@@ -242,10 +184,14 @@ export async function createSttTransport(opts: {
   }
 
   if (opts.mode === 'streaming') {
+    if (!opts.adapter) throw new Error('No streaming adapter was selected for the transcription service.')
     return new StreamingSttTransport({
       endpoint: opts.endpoint,
       model: opts.model,
       chunkMs: opts.chunkMs,
+      provision: opts.provision,
+      adapter: opts.adapter,
+      encodings: opts.encodings,
       session: opts.sessionId,
       takeover: opts.takeover,
       onPartial: (text) => opts.onPartial?.(text),
@@ -256,6 +202,7 @@ export async function createSttTransport(opts: {
 
   return new BatchSttTransport({
     endpoint: opts.endpoint,
+    provision: opts.provision,
     model: opts.model,
     serviceId: opts.serviceId,
     ensureServiceReady: opts.ensureServiceReady,

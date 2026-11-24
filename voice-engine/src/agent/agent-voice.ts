@@ -4,6 +4,7 @@ import { SpeechChunker } from './speech-chunker'
 import { report } from '../store/turn-manager-store'
 import { registerAudioHalter } from '../audio-halters'
 import type { VoiceSession } from '../session'
+import type { Provision } from '@platform/shared/apis/types'
 import type { VoiceSelection, ChunkStrategy } from '../voice-config'
 import type { ConversationReport } from '../turn-manager'
 import type { SpeechPlayer } from '../system/playback-engine'
@@ -27,6 +28,8 @@ export class AgentVoice {
    * chunk without reattaching. */
   ttsEndpoint: string | null = null
   ttsSelection: VoiceSelection | null = null
+  /** The provision of the speech API the selection chose, pushed with the selection. */
+  ttsProvision: Provision | null = null
   /** Told once per unresolved selection that there is nothing to speak with. */
   onCannotSpeak: ((reason: string) => void) | undefined
   private reportedUnresolved: VoiceSelection | null = null
@@ -43,16 +46,17 @@ export class AgentVoice {
       enqueueChat: async (text) => {
         const sel = this.ttsSelection
         const endpoint = this.ttsEndpoint
-        if (sel && !sel.request && this.reportedUnresolved !== sel) {
+        if (sel && !sel.resolution && this.reportedUnresolved !== sel) {
           this.reportedUnresolved = sel
-          this.onCannotSpeak?.(sel.requestError ?? 'the selection was not resolved')
+          this.onCannotSpeak?.(sel.resolutionError ?? 'the selection was not resolved')
         }
-        if (!sel?.request || !endpoint) return
+        const provision = this.ttsProvision
+        if (!sel?.resolution || !endpoint || !provision) return
         await player.enqueueChat({
           endpoint,
           text,
-          request: sel.request,
-          format: sel.responseFormat,
+          resolution: sel.resolution,
+          provision,
           speed: sel.speed ?? 1.0,
         })
       },

@@ -11,14 +11,15 @@
  * suspect.
  */
 
-import type { AudioFormat } from './stt-socket'
+/** The audio encodings a transcription socket accepts. */
+export type SttFormat = 'opus' | 'pcm16'
 
 const SAMPLE_RATE = 16000
 /** 64 kbit/s is where bandwidth stops constraining the choice. */
 const OPUS_BITRATE = 64000
 
 export interface FrameEncoder {
-  format: AudioFormat
+  format: SttFormat
   encode: (samples: Float32Array) => void
   close: () => void
 }
@@ -98,7 +99,7 @@ function createOpusEncoder(
  * is asked for and unavailable.
  */
 export function createEncoder(
-  format: AudioFormat,
+  format: SttFormat,
   onFrame: (frame: ArrayBuffer) => void,
   onError: (err: Error) => void,
 ): FrameEncoder {

@@ -11,6 +11,7 @@ import { homedir, tmpdir } from 'node:os'
 import { CHUNK_STRATEGIES } from '../../../shared/types'
 import type { Service, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
 import { emptyAssembly, type AssembledRoster } from './roster-assembly'
+import type { Resolution } from '../../../shared/apis/types'
 import { ttsRosterView, type TtsRosterView } from './voice-roster'
 
 export interface ModelChunkingPref {
@@ -558,18 +559,18 @@ export function registerVoiceConfig(
   getAssembly?: () => AssembledRoster,
   neverPolledHosts?: () => string[],
   /** Asks the shard on the selection's runtime host to resolve it. */
-  resolveSelection?: (selection: { voice: string; model: string; serviceId: string }) => Promise<{ ok: true; request: Record<string, unknown> } | { ok: false; error: string }>,
+  resolveSelection?: (selection: { voice: string; model: string; serviceId: string }) => Promise<{ ok: true; resolution: Resolution } | { ok: false; error: string }>,
 ) {
   const getView = (): TtsRosterView => ttsRosterView(getAssembly ? getAssembly() : emptyAssembly())
 
-  // The stored selection with the shard's resolution of it: `request` when the
-  // shard answered, `requestError` otherwise. One resolution per call.
-  const withRequest = async (selection: Record<string, unknown> | undefined) => {
+  // The stored selection with the shard's resolution of it: `resolution` when the
+  // shard answered, `resolutionError` otherwise. One resolution per call.
+  const withResolution = async (selection: Record<string, unknown> | undefined) => {
     const { voice, model, serviceId } = (selection ?? {}) as { voice?: string; model?: string; serviceId?: string }
-    if (!voice || !model || !serviceId) return { ...selection, requestError: 'the selection names no voice, model and runtime' }
-    if (!resolveSelection) return { ...selection, requestError: 'no shard is configured to resolve voices' }
+    if (!voice || !model || !serviceId) return { ...selection, resolutionError: 'the selection names no voice, model and runtime' }
+    if (!resolveSelection) return { ...selection, resolutionError: 'no shard is configured to resolve voices' }
     const result = await resolveSelection({ voice, model, serviceId })
-    return result.ok ? { ...selection, request: result.request } : { ...selection, requestError: result.error }
+    return result.ok ? { ...selection, resolution: result.resolution } : { ...selection, resolutionError: result.error }
   }
 
   app.get('/api/voice', async (c) => {
@@ -577,19 +578,30 @@ export function registerVoiceConfig(
       return c.json({ error: 'Voice not configured' }, 503)
     }
     const view = getView()
-    const assembledProviders = getAssembly ? getAssembly().providers : []
-    const sttOptions = (getServices ? getServices() : [])
+    const assembly = getAssembly ? getAssembly() : emptyAssembly()
+    const services = getServices ? getServices() : []
+    const declared = (serviceId: string) => {
+      const svc = services.find(s => s.id === serviceId)
+      return { ...(svc?.provides !== undefined && { provides: svc.provides }), ...(svc?.models !== undefined && { models: svc.models }) }
+    }
+    const sttOptions = services
       .filter(s => s.capabilityId === 'stt')
       .map(s => ({
         serviceId: s.id,
         name: s.name ?? s.id,
-        sessions: assembledProviders.find(p => p.serviceId === s.id)?.sessions ?? false,
+        ...declared(s.id),
+        serves: (assembly.providers.find(p => p.serviceId === s.id)?.serves ?? []).map(({ model, key }) => ({ model, key })),
       }))
 
     return c.json({
       ...config.voice,
-      tts: { ...(config.voice.tts ?? {}), ...view, selection: await withRequest(config.voice.tts?.selection) },
-      stt: { ...(config.voice.stt ?? {}), options: sttOptions },
+      tts: {
+        ...(config.voice.tts ?? {}),
+        ...view,
+        providers: view.providers.map(p => ({ ...p, ...declared(p.serviceId) })),
+        selection: await withResolution(config.voice.tts?.selection),
+      },
+      stt: { ...(config.voice.stt ?? {}), options: sttOptions, models: assembly.sttModels },
     })
   })
 
@@ -612,7 +624,7 @@ export function registerVoiceConfig(
       const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices, getView, neverPolledHosts)
       return c.json({
         ...updatedVoice,
-        tts: { ...(updatedVoice?.tts ?? {}), selection: await withRequest(updatedVoice?.tts?.selection) },
+        tts: { ...(updatedVoice?.tts ?? {}), selection: await withResolution(updatedVoice?.tts?.selection) },
       })
     } catch (err) {
       if (err instanceof ValidationError) {

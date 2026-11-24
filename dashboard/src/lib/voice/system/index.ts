@@ -6,8 +6,8 @@ import { VoiceSystem } from '@platform/voice-engine/system/voice-system'
 import { acquire, release } from '@platform/voice-engine/devices'
 import { PlaybackEngine } from '@platform/voice-engine/system/playback-engine'
 import { createToneQueue } from '@platform/voice-engine/system/tones'
-import { ensureTtsReady, ensureServiceReady, loadTtsModel, loadSttModel } from '../voice-service'
-import { fetchSttModelFacts, createSttTransport } from '@platform/voice-engine/voice-session-store'
+import { ensureTtsReady, ensureServiceReady } from '../voice-service'
+import { createSttTransport } from '@platform/voice-engine/voice-session-store'
 import { HumanVoice } from '@platform/voice-engine/human/human-voice'
 import { AgentVoice } from '@platform/voice-engine/agent/agent-voice'
 import { SileroVad } from '@platform/voice-engine/human/silero-vad'
@@ -46,9 +46,6 @@ export const voiceSystem = new VoiceSystem({
   services: {
     ensureTtsReady,
     ensureServiceReady,
-    loadTtsModel,
-    loadSttModel,
-    fetchSttModelFacts,
     ping: pingService,
   },
   loadModels,

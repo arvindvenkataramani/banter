@@ -108,29 +108,6 @@ export function createPluginServices(deps: { origin: string; fetch: typeof globa
   }
 }
 
-/** Loads a TTS model on the service behind `endpoint` (the relay's), as the dashboard does (dashboard/src/lib/voice/voice-service.ts). */
-export async function loadTtsModel(endpoint: string, modelName: string): Promise<void> {
-  const res = await fetch(`${endpoint}/v1/models?model_name=${encodeURIComponent(modelName)}`, { method: 'POST' })
-  if (!res.ok) throw new Error(`Failed to load model "${modelName}": ${res.status}`)
-}
-
-/**
- * Loads an STT model before the first utterance. `mode` names which way a
- * model capable of both is brought up; `chunkMs` is its latency tier.
- */
-export async function loadSttModel(endpoint: string, model: string, mode?: 'batch' | 'streaming', chunkMs?: number): Promise<void> {
-  const res = await fetch(`${endpoint}/v1/models/load`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, ...(mode ? { mode } : {}), ...(typeof chunkMs === 'number' ? { chunkMs } : {}) }),
-  })
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null) as { error?: unknown } | null
-    const reason = detail && typeof detail.error === 'string' ? `: ${detail.error}` : ''
-    throw new Error(`Failed to load STT model "${model}" (${res.status})${reason}`)
-  }
-}
-
 /** Reads a configured service's health through the relay, without starting it. */
 export async function checkService(deps: { origin: string; fetch: typeof globalThis.fetch }, serviceId: string): Promise<{ healthy: boolean; detail: string }> {
   const { origin, fetch } = deps

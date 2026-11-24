@@ -226,7 +226,7 @@ OpenClaw gateway URL and token
 Voice configuration (TTS models, providers, voices, selection, options)
 
 **Responses:**
-- **200** — Voice configuration object; `tts.selection.request` is the shard's resolution of the stored selection → [VoiceConfig](#voiceconfig)
+- **200** — Voice configuration object; `tts.selection.resolution` is the shard's resolution of the stored selection → [VoiceConfig](#voiceconfig)
 - **503** — Voice not configured → [Error](#error)
 
 ---
@@ -269,7 +269,7 @@ Update the voice selection and tuning
 **Request body:** → [VoiceSelectionPatch](#voiceselectionpatch)
 
 **Responses:**
-- **200** — Updated voice configuration object; `tts.selection.request` is the shard's resolution of the new selection
+- **200** — Updated voice configuration object; `tts.selection.resolution` is the shard's resolution of the new selection
   - `tts`: object
 - **400** — Invalid JSON body, or the patch failed validation → [Error](#error)
 - **500** — Config path not set → [Error](#error)
@@ -447,8 +447,8 @@ Extends: [Service](#service)
 | `model` | string | no |  |
 | `voice` | string | no |  |
 | `speed` | number | no |  |
-| `request` | object | no | The shard's resolution of this selection: the fields to put into a speech request sent to the runtime unchanged |
-| `requestError` | string | no | Why `request` is absent: the shard refused the selection or could not be reached |
+| `resolution` | object | no | The shard's resolution of this selection: the model as the runtime names it, the voice by name or recording, and the serving's request parameters |
+| `resolutionError` | string | no | Why `resolution` is absent: the shard refused the selection or could not be reached |
 
 ### VoiceSelectionPatch
 

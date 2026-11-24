@@ -344,18 +344,6 @@
           "type": "boolean",
           "description": "Whether this runtime resolves voices itself by reading the registry; otherwise the shard resolves for it. Required on a synthesis provider."
         },
-        "responseFormat": {
-          "description": "The audio format this runtime returns from /v1/audio/speech, the same for every model it serves. Absent means mp3.",
-          "enum": [
-            "mp3",
-            "aac",
-            "wav"
-          ]
-        },
-        "sessions": {
-          "type": "boolean",
-          "description": "Whether this runtime's streaming socket understands session ids and take-over. Absent means no."
-        },
         "defaultModel": {
           "type": "string",
           "description": "The STT model a request naming none loads into an empty slot. Must name a served model that needs no parameter."
@@ -381,7 +369,6 @@
         "hostId",
         "reachable",
         "name",
-        "responseFormat",
         "serves"
       ],
       "additionalProperties": false,
@@ -403,21 +390,9 @@
           "minLength": 1,
           "description": "From the service entry, falling back to the service id."
         },
-        "responseFormat": {
-          "enum": [
-            "mp3",
-            "aac",
-            "wav"
-          ],
-          "description": "The audio format this runtime returns from /v1/audio/speech. mp3 where the roster declares none."
-        },
         "resolvesVoices": {
           "type": "boolean",
           "description": "Whether this runtime resolves voices itself rather than having the shard do it."
-        },
-        "sessions": {
-          "type": "boolean",
-          "description": "Whether this runtime's streaming socket understands session ids and take-over. Absent means no."
         },
         "serves": {
           "type": "array",
@@ -425,6 +400,17 @@
           "items": {
             "$ref": "#/$defs/serving"
           }
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provision"
+          },
+          "description": "The APIs the provider's service serves, with how it departs from each, from its service entry."
+        },
+        "models": {
+          "$ref": "#/$defs/modelLoading",
+          "description": "How the provider's service loads models, from its service entry."
         }
       }
     },

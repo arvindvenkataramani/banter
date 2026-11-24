@@ -1,17 +1,14 @@
 // Merges the node rosters into one (docs/reference/design/model-roster.md, "The assembler").
 // Recordings and preset keys stay on the node that declares them.
 
-import type { NodeRoster, ResponseFormat, Serving, SttModel, TtsModel } from "../../../shared/types";
+import type { NodeRoster, Serving, SttModel, TtsModel } from "../../../shared/types";
 
 export interface AssembledProvider {
   serviceId: string;
   hostId: string;
   reachable: boolean;
   name: string;
-  responseFormat: ResponseFormat;
   resolvesVoices?: boolean;
-  /** Whether this provider's streaming socket understands session ids and take-over. */
-  sessions?: boolean;
   serves: Serving[];
 }
 
@@ -94,9 +91,7 @@ export function assembleRoster(args: AssembleRosterArgs): AssembledRoster {
         hostId: node.hostId,
         reachable: node.reachable,
         name: nameFor(serviceId) ?? serviceId,
-        responseFormat: p.responseFormat ?? "mp3",
         ...(p.resolvesVoices !== undefined && { resolvesVoices: p.resolvesVoices }),
-        ...(p.sessions !== undefined && { sessions: p.sessions }),
         serves: (p.serves ?? []).filter(s => kept.has(s.model)),
       });
     }

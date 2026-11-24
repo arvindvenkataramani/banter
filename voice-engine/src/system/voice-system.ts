@@ -26,9 +26,13 @@ import {
   resolveChunkMs,
   sttModeSource,
 } from '../voice-session-store'
-import type { SttModelFacts } from '../voice-session-store'
+import { candidates, capabilityHolds, select, type Selection } from '@platform/shared/apis/select'
+import { decideLoad, decideUnload } from '@platform/shared/apis/loading'
+import type { Adapter } from '@platform/shared/apis'
+import type { Provision } from '@platform/shared/apis/types'
+import { perform, streamPreferences, toService } from '../service-calls'
 import { resolveChunkingFor } from '../agent/chunking-setting'
-import type { VoiceConfig, VoiceSelection, ChunkStrategy } from '../voice-config'
+import type { VoiceConfig, VoiceSelection, ChunkStrategy, SttModelEntry, SttOption, TtsProvider } from '../voice-config'
 import type { SttTransport } from '../human/stt-transport'
 import type { SileroVad } from '../human/silero-vad'
 import type { SmartTurn } from '../human/smart-turn'
@@ -64,7 +68,9 @@ export interface AgentSide {
   chunkConfig: { chunkStrategy: ChunkStrategy; minChunkWords: number | undefined; maxChunkWords: number | undefined }
   ttsEndpoint: string | null
   ttsSelection: VoiceSelection | null
-  /** Called once per unresolved selection when an utterance arrives with no request to speak with. */
+  /** The provision of the speech API the selection chose. */
+  ttsProvision?: Provision | null
+  /** Called once per unresolved selection when an utterance arrives with no resolution to speak with. */
   onCannotSpeak?: (reason: string) => void
   attach(session: VoiceSession): void
   detach(): void
@@ -87,17 +93,19 @@ export interface VoiceSystemDeps {
   services: {
     ensureTtsReady(serviceId: string): Promise<string>
     ensureServiceReady(serviceId: string): Promise<string>
-    loadTtsModel(endpoint: string, modelKey: string): Promise<void>
-    loadSttModel(endpoint: string, model: string, mode: 'batch' | 'streaming', chunkMs?: number): Promise<void>
-    fetchSttModelFacts(endpoint: string, model: string): Promise<SttModelFacts>
     ping(serviceId: string): Promise<unknown>
   }
   loadModels(): Promise<{ vad: SileroVad; smartTurn: SmartTurn }>
   createTransport(opts: {
     endpoint: string
     serviceId?: string
+    /** The serving's key for the model. */
     model?: string
     mode: 'batch' | 'streaming' | null
+    /** The provision selection chose for the call, and for a stream its adapter. */
+    provision: Provision
+    adapter?: Adapter
+    encodings?: ('opus' | 'pcm16')[]
     chunkMs?: number
     sessionId?: string
     takeover?: boolean
@@ -127,6 +135,12 @@ function modeFor(phase: VoicePhase, micMuted: boolean): 'off' | 'starting' | 'li
   if (phase === 'live') return micMuted ? 'muted' : 'live'
   if (phase === 'ending') return 'ending'
   return 'off'
+}
+
+/** The provision that speaks for a selection, or null when its provider has none or the selection names none. */
+function speechProvision(config: VoiceConfig | null, selection: VoiceSelection | null): Provision | null {
+  const provider: TtsProvider | undefined = config?.tts.providers.find((p) => p.serviceId === selection?.serviceId)
+  return provider ? candidates('synthesize', toService(provider), [], [])[0]?.provision ?? null : null
 }
 
 export class VoiceSystem {
@@ -164,10 +178,11 @@ export class VoiceSystem {
           maxIntervalMs: state.voiceConfig?.stt?.reveal?.maxIntervalMs,
         })
       }
-      if (state.voiceSelection !== prev.voiceSelection || state.ttsEndpoint !== prev.ttsEndpoint) {
+      if (state.voiceSelection !== prev.voiceSelection || state.ttsEndpoint !== prev.ttsEndpoint || state.voiceConfig !== prev.voiceConfig) {
         if (this.agent) {
           this.agent.ttsSelection = state.voiceSelection
           this.agent.ttsEndpoint = state.ttsEndpoint
+          this.agent.ttsProvision = speechProvision(state.voiceConfig, state.voiceSelection)
         }
       }
       if (state.session !== prev.session && state.session !== null) {
@@ -228,10 +243,11 @@ export class VoiceSystem {
       if (!config || !selection || !provider) {
         throw new Error('Voice not configured')
       }
-      const ttsModel = selection.request?.model
-      if (typeof ttsModel !== 'string') {
-        throw new Error(`Voice cannot speak: ${selection.requestError ?? 'the selection was not resolved'}`)
+      if (!selection.resolution) {
+        throw new Error(`Voice cannot speak: ${selection.resolutionError ?? 'the selection was not resolved'}`)
       }
+      const speech = select('synthesize', toService(provider), [], [])
+      const preload = config.preload !== false
 
       const [ttsEndpoint, sttEndpoint] = await Promise.all([
         this.deps.services.ensureTtsReady(provider.serviceId),
@@ -240,22 +256,34 @@ export class VoiceSystem {
       if (!this.isCurrent(sessionId)) return
       useVoiceSessionStore.setState({ ttsEndpoint, sttEndpoint })
 
-      let facts: SttModelFacts | null = null
+      // What the roster declares about the model and the selected service's provisions decide the mode
+      // and the call; the server is asked nothing.
+      const sttOption = config.stt?.options?.find(o => o.serviceId === config.stt?.serviceId)
+      const sttModelId = config.stt?.model
+      const sttModel = config.stt?.models?.find(m => m.id === sttModelId)
       let sttMode: 'batch' | 'streaming' | null = null
-      if (sttEndpoint && config.stt?.model) {
-        facts = await this.deps.services.fetchSttModelFacts(sttEndpoint, config.stt.model)
-        if (!this.isCurrent(sessionId)) return
-        sttMode = resolveSttMode(facts, config.stt.preferStreaming)
-        useVoiceSystemStore.setState({ stt: { mode: sttMode, decidedBy: sttModeSource(facts), model: config.stt.model } })
-        if (facts.present === false) {
-          console.warn(`[voice] ${config.stt.model} has no weights on this node yet — loading may be slow or fail`)
+      let sttKey: string | undefined
+      let sttSelection: Selection | undefined
+      if (sttEndpoint) {
+        if (!sttOption) throw new Error(`Voice cannot transcribe: the transcription service "${config.stt?.serviceId}" declares no APIs`)
+        if (sttModelId) {
+          sttMode = resolveSttMode(sttOption, sttModel, config.stt?.preferStreaming)
+          useVoiceSystemStore.setState({ stt: { mode: sttMode, decidedBy: sttModeSource(sttOption, sttModel), model: sttModelId } })
+          sttKey = sttOption.serves?.find(s => s.model === sttModelId)?.key
+          if (sttKey === undefined) throw new Error(`${sttOption.name} does not serve ${sttModelId}`)
         }
+        const service = toService(sttOption)
+        sttSelection = sttMode === 'streaming'
+          ? select('transcribeStream', service, ['client-endpointing'], streamPreferences(config.stt?.encodings))
+          : select('transcribe', service, [], [])
       }
-      const sttChunkMs = sttMode === 'streaming' && facts ? resolveChunkMs(facts, config.stt?.chunkMs) : undefined
+      const sttChunkMs = sttMode === 'streaming' ? resolveChunkMs(sttModel, config.stt?.chunkMs) : undefined
       await Promise.all([
-        this.deps.services.loadTtsModel(ttsEndpoint, ttsModel),
-        sttEndpoint && config.stt?.model && sttMode
-          ? this.deps.services.loadSttModel(sttEndpoint, config.stt.model, sttMode, sttChunkMs)
+        perform(decideLoad(toService(provider), {}, speech, preload), 'load', {
+          endpoint: ttsEndpoint, service: toService(provider), model: selection.resolution.model,
+        }),
+        sttEndpoint && sttOption && sttKey !== undefined && sttSelection && sttMode
+          ? this.loadStt(sttEndpoint, sttOption, sttModel, sttKey, sttSelection, sttMode, sttChunkMs, preload)
           : Promise.resolve(),
       ])
       if (!this.isCurrent(sessionId)) return
@@ -278,6 +306,7 @@ export class VoiceSystem {
       }
       agent.ttsEndpoint = ttsEndpoint
       agent.ttsSelection = selection
+      agent.ttsProvision = speech.provision
       agent.onCannotSpeak = (reason) => this.deps.notify(`Voice cannot speak: ${reason}`)
       agent.attach(session)
       this.agent = agent
@@ -303,15 +332,17 @@ export class VoiceSystem {
         if (!this.isCurrent(sessionId)) return
       }
 
-      // Session ids and take-over are sent only to a service that declares
-      // `sessions: true` — any other STT service is used exactly as before.
-      const declaresSessions = config.stt?.options?.find(o => o.serviceId === config.stt?.serviceId)?.sessions === true
+      // Session ids and take-over are sent only when the selected streaming provision holds take-over.
+      if (!sttSelection) throw new Error('Voice has no transcription service to connect to')
+      const declaresSessions = sttMode === 'streaming' && capabilityHolds(sttSelection.provision, sttSelection.adapter, 'takeover')
       const takeover = declaresSessions && (opts?.takeover === true || config.takeover === 'always')
       const transport = await this.openConnection(
         sessionId,
         sttEndpoint,
         config,
         sttMode,
+        sttSelection,
+        sttKey,
         human,
         declaresSessions ? sessionId : undefined,
         takeover,
@@ -341,11 +372,13 @@ export class VoiceSystem {
     sttEndpoint: string | null,
     config: VoiceConfig,
     sttMode: 'batch' | 'streaming' | null,
+    sttSelection: Selection,
+    sttKey: string | undefined,
     human: HumanSide,
     transportSessionId: string | undefined,
     takeover: boolean,
-    /** Whether this STT service declares `sessions: true`. A `held` close
-     *  from a service that does not is not actionable — take-over cannot be
+    /** Whether the selected provision holds take-over. A `held` close
+     *  from one that does not is not actionable — take-over cannot be
      *  requested without session support — so it is treated as an ordinary
      *  dropped connection rather than routed to the take-over dialog. */
     declaresSessions: boolean,
@@ -369,8 +402,11 @@ export class VoiceSystem {
     const connect = () => this.deps.createTransport({
       endpoint: sttEndpoint!,
       serviceId: config.stt?.serviceId,
-      model: config.stt?.model,
+      model: sttKey,
       mode: sttMode,
+      provision: sttSelection.provision,
+      adapter: sttSelection.adapter,
+      encodings: config.stt?.encodings,
       chunkMs,
       sessionId: transportSessionId,
       takeover,
@@ -388,7 +424,7 @@ export class VoiceSystem {
       acceptedAt = null
       if (code === 'superseded') { endVoice('superseded', reason); return }
       if (code === 'held') {
-        // Actionable only when this service declares sessions — otherwise
+        // Actionable only when the provision holds take-over — otherwise
         // there is no take-over to offer, and this is an ordinary drop.
         if (declaresSessions) { endVoice('held', reason, false); return }
         endVoice('connection-lost', 'another session is using the transcription server')
@@ -456,22 +492,31 @@ export class VoiceSystem {
     })
   }
 
-  /** A saved provider change: ready the TTS service and model, re-aim the heartbeat when a session is live. */
+  /**
+   * A saved provider change: ready the TTS service and model, re-aim the heartbeat when a session is live.
+   * The model being left is read from the session store's selection, so the caller replaces that after this.
+   */
   reconfigure(selection: VoiceSelection, sttServiceId: string | undefined): void {
-    const prev = useVoiceSessionStore.getState().voiceConfig
+    const { voiceConfig: prev, voiceSelection: leaving, ttsEndpoint: leavingEndpoint } = useVoiceSessionStore.getState()
     const provider = prev?.tts.providers.find((p) => p.serviceId === selection.serviceId)
-    if (!provider) return
-    const ttsModel = selection.request?.model
-    if (typeof ttsModel !== 'string') {
-      this.deps.notify(`Voice cannot speak: ${selection.requestError ?? 'the selection was not resolved'}`)
+    if (!prev || !provider) return
+    if (!selection.resolution) {
+      this.deps.notify(`Voice cannot speak: ${selection.resolutionError ?? 'the selection was not resolved'}`)
       return
     }
+    const resolution = selection.resolution
+    const unloading = leaving && leavingEndpoint && leaving.model !== selection.model
+      ? this.unloadLeaving(prev, leaving, leavingEndpoint)
+      : Promise.resolve()
+    const preload = prev?.preload !== false
 
     useVoiceSystemStore.setState({ reconfiguring: true })
     this.deps.services.ensureTtsReady(provider.serviceId)
-      .then((endpoint) => {
+      .then(async (endpoint) => {
         useVoiceSessionStore.setState({ ttsEndpoint: endpoint })
-        return this.deps.services.loadTtsModel(endpoint, ttsModel)
+        await unloading
+        const service = toService(provider)
+        await perform(decideLoad(service, {}, select('synthesize', service, [], []), preload), 'load', { endpoint, service, model: resolution.model })
       })
       .then(() => { useVoiceSystemStore.setState({ reconfiguring: false }) })
       .catch(() => { useVoiceSystemStore.setState({ reconfiguring: false }) })
@@ -484,6 +529,41 @@ export class VoiceSystem {
     if (this.heartbeat) {
       const sttId = sttServiceId ?? prev?.stt?.serviceId
       this.startHeartbeat([provider.serviceId, ...(sttId ? [sttId] : [])])
+    }
+  }
+
+  /** Unloads the model being left from the service that holds it, when that service keeps several. Best effort. */
+  private async unloadLeaving(config: VoiceConfig, leaving: VoiceSelection, endpoint: string): Promise<void> {
+    const provider = config.tts.providers.find((p) => p.serviceId === leaving.serviceId)
+    if (!provider || !leaving.resolution) return
+    const service = toService(provider)
+    try {
+      await perform(decideUnload(service, {}), 'unload', { endpoint, service, model: leaving.resolution.model })
+    } catch (err) {
+      console.warn(`[voice] could not unload ${leaving.resolution.model}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /** Loads the transcription model the declarations call for, in the mode and at the tier chosen. */
+  private async loadStt(
+    endpoint: string,
+    option: SttOption,
+    model: SttModelEntry | undefined,
+    key: string,
+    selected: Selection,
+    mode: 'batch' | 'streaming',
+    chunkMs: number | undefined,
+    preload: boolean,
+  ): Promise<void> {
+    const service = toService(option)
+    // A tier is a variant of the model; the roster names the one whose parameters hold the tier.
+    const variant = chunkMs === undefined
+      ? undefined
+      : model?.variants?.find((v) => v.params.some((p) => p.name === 'chunkMs' && p.value === chunkMs))?.id
+    try {
+      await perform(decideLoad(service, model ?? {}, selected, preload), 'load', { endpoint, service, model: key, mode, variant })
+    } catch (err) {
+      throw new Error(`Failed to load the transcription model: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

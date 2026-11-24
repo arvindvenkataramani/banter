@@ -1,3 +1,6 @@
+import { adapterFor } from '@platform/shared/apis'
+import type { Provision } from '@platform/shared/apis/types'
+
 // Serialize all transcription requests — Parakeet does not handle concurrent requests gracefully
 let queue: Promise<unknown> = Promise.resolve()
 
@@ -8,7 +11,7 @@ export function setSaveMicSamples(enabled: boolean): void {
   saveMicSamples = enabled
 }
 
-export async function transcribeAudio(endpoint: string, wavBuffer: ArrayBuffer, model?: string): Promise<string> {
+export async function transcribeAudio(endpoint: string, provision: Provision, wavBuffer: ArrayBuffer, model?: string): Promise<string> {
   if (saveMicSamples) {
     // Fire-and-forget tee — never block STT, never throw
     fetch('/api/debug/mic-sample', {
@@ -17,43 +20,28 @@ export async function transcribeAudio(endpoint: string, wavBuffer: ArrayBuffer, 
       body: wavBuffer,
     }).catch(() => {})
   }
-  const result = queue.then(() => _transcribe(endpoint, wavBuffer, model))
+  const result = queue.then(() => _transcribe(endpoint, provision, wavBuffer, model))
   // Swallow errors in the chain so a failed request doesn't block subsequent ones
   queue = result.catch(() => {})
   return result
 }
 
-async function _transcribe(endpoint: string, wavBuffer: ArrayBuffer, model?: string): Promise<string> {
-  const form = new FormData()
-  form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav')
-  if (model) form.append('model', model)
-
-  const url = `${endpoint}/audio/transcriptions`
-
-  let res: Response
+async function _transcribe(endpoint: string, provision: Provision, wavBuffer: ArrayBuffer, model?: string): Promise<string> {
   try {
-    res = await fetch(url, { method: 'POST', body: form })
+    return await adapterFor(provision.api)!.transcribe!({ endpoint, provision, audio: wavBuffer, model })
   } catch (err) {
     // A rejected fetch carries no status and no reason. The browser withholds
     // both deliberately for a blocked cross-origin request, so a service that
     // is up and answers curl perfectly fails here indistinguishably from one
     // that is down. Name what we do know instead of guessing at the cause.
-    const detail = err instanceof Error ? err.message : String(err)
-    const sameOrigin = url.startsWith(window.location.origin)
-    const hint = sameOrigin
-      ? 'The service may be down or unreachable.'
-      : `This page is ${window.location.origin}; check that origin is in the service's CORS allowlist.`
-    throw new Error(`STT request to ${url} was rejected by the browser (${detail}). ${hint}`)
+    if (err instanceof TypeError) {
+      const sameOrigin = endpoint.startsWith(window.location.origin)
+      const hint = sameOrigin
+        ? 'The service may be down or unreachable.'
+        : `This page is ${window.location.origin}; check that origin is in the service's CORS allowlist.`
+      throw new Error(`STT request to ${endpoint} was rejected by the browser (${err.message}). ${hint}`)
+    }
+    // The adapter's error carries the status and the server's own text.
+    throw new Error(`STT request failed: ${err instanceof Error ? err.message : String(err)}`)
   }
-
-  if (!res.ok) {
-    // Include the body — model servers put the actual complaint there, and the
-    // status alone rarely says which of several things went wrong.
-    const body = await res.text().catch(() => '')
-    const suffix = body ? ` — ${body.slice(0, 300)}` : ''
-    throw new Error(`STT request failed: ${res.status} ${res.statusText}${suffix}`)
-  }
-
-  const data = await res.json() as { text: string }
-  return data.text ?? ''
 }

@@ -3,6 +3,7 @@
 // come from the host's own fetch, never from the page.
 
 import type { VoiceConfig } from '@platform/voice-engine/voice-config'
+import { streamPaths } from '@platform/voice-engine/service-calls'
 import { engineConfig, selectedServices } from './settings.ts'
 
 export type ConfigAnswer = { status: 200; config: VoiceConfig } | { status: 404 | 502; reason: string }
@@ -19,6 +20,8 @@ export interface VoiceConfigSource {
   check(): Promise<ConfigAnswer>
   /** The services the last successful load recorded, or null before one. */
   selected(): SelectedServices | null
+  /** The WebSocket paths, below the service's endpoint, that its streaming provisions use, as the last load that named the service recorded them. */
+  streamPaths(sttServiceId: string): string[]
   /** The selection the current one replaced, or null. */
   previous(): SelectedServices | null
   /**
@@ -38,6 +41,7 @@ const FETCH_TIMEOUT_MS = 5000
 export function createVoiceConfigSource(deps: { controlPlaneUrl: () => string; fetch: typeof globalThis.fetch }): VoiceConfigSource {
   let selected: SelectedServices | null = null
   let previous: SelectedServices | null = null
+  const paths = new Map<string, string[]>()
   const listeners = new Set<() => void>()
   /** Loads are numbered; one that started before the latest recorded load, or before a clear, records nothing. */
   let started = 0
@@ -69,7 +73,11 @@ export function createVoiceConfigSource(deps: { controlPlaneUrl: () => string; f
       if (body === undefined || id < recorded || id <= clearedAt) return answer
       recorded = id
       const next = selectedServices(body)
-      const changed = selected === null || selected.sttServiceId !== next.sttServiceId || selected.ttsServiceId !== next.ttsServiceId
+      const option = body.stt?.options?.find((o) => o.serviceId === next.sttServiceId)
+      const nextPaths = option ? streamPaths(option) : []
+      const pathsChanged = JSON.stringify(paths.get(next.sttServiceId) ?? []) !== JSON.stringify(nextPaths)
+      paths.set(next.sttServiceId, nextPaths)
+      const changed = selected === null || selected.sttServiceId !== next.sttServiceId || selected.ttsServiceId !== next.ttsServiceId || pathsChanged
       if (changed) {
         previous = selected
         selected = next
@@ -81,6 +89,7 @@ export function createVoiceConfigSource(deps: { controlPlaneUrl: () => string; f
       return (await fetchConfig()).answer
     },
     selected: () => selected,
+    streamPaths: (sttServiceId) => paths.get(sttServiceId) ?? [],
     previous: () => previous,
     allowed() {
       const ids = [selected?.sttServiceId, selected?.ttsServiceId, previous?.sttServiceId, previous?.ttsServiceId]
@@ -89,6 +98,7 @@ export function createVoiceConfigSource(deps: { controlPlaneUrl: () => string; f
     clear() {
       selected = null
       previous = null
+      paths.clear()
       clearedAt = started
     },
     onChange(listener) {

@@ -21,7 +21,7 @@ const sttSchema = z.object({
   preferStreaming: z.boolean().optional(),
   encodings: z.array(z.enum(["opus", "pcm16"])).optional(),
   chunkMs: z.number().optional(),
-  options: z.array(z.object({ serviceId: z.string(), name: z.string(), sessions: z.boolean().optional() })).optional(),
+  options: z.array(z.object({ serviceId: z.string(), name: z.string() })).optional(),
   maxRecordingMs: z.number().optional(),
   settleOnStopMs: z.number().optional(),
   pauseFlushMs: z.number().optional(),
@@ -226,8 +226,6 @@ const serving = z.object({
 
 const provider = z.object({
   resolvesVoices: z.boolean().optional(),
-  responseFormat: z.enum(["mp3", "aac", "wav"]).optional(),
-  sessions: z.boolean().optional(),
   defaultModel: z.string().optional(),
   idleUnloadMs: z.number().optional(),
   serves: z.array(serving),

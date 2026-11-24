@@ -98,3 +98,52 @@ export interface SelectableService {
   provides?: Provision[];
   models?: ModelLoading;
 }
+
+/** What a synthesis call names: the model on the wire, and a voice by name or by recording. */
+export interface Resolution {
+  model: string;
+  voice: { name: string } | { recording: string; transcript?: string };
+  params?: Record<string, unknown>;
+}
+
+/** An audio format the playback engine decodes. */
+export type AudioFormat = "mp3" | "aac" | "wav";
+
+/** The callbacks every `transcribeStream` adapter reports through. */
+export interface StreamCallbacks {
+  /** A transcript that may still change. Carries the whole utterance so far. */
+  onPartial: (text: string) => void;
+  /** The settled transcript for one finalize, with the milliseconds waited since it was sent, or null if none was outstanding. */
+  onFinal: (text: string, finalizeWaitMs: number | null) => void;
+  /** The session is open and the server accepted it. */
+  onReady: (model: string, format: string) => void;
+  /** The session is over. Fires once. `code` is the protocol's error code when the server named one. */
+  onClosed: (reason: string, code: string | null) => void;
+}
+
+/** What a `transcribeStream` adapter is asked to open. */
+export interface StreamCall {
+  endpoint: string;
+  provision: Provision;
+  /** The serving's key. */
+  model: string;
+  format: "opus" | "pcm16";
+  /** The model's latency tier, so a server holding no model can load it. */
+  chunkMs?: number;
+  /** This connection's session id, sent only to a provision that implements sessions. */
+  session?: string;
+  /** Take the slot from whoever holds it. Only meaningful alongside `session`. */
+  takeover?: boolean;
+}
+
+/** An open transcription session. */
+export interface StreamSession {
+  readonly isOpen: boolean;
+  /** Dropped while sending is off. */
+  sendAudio(frame: ArrayBuffer): void;
+  /** Stops and resumes transmission; keep-alive continues either way. */
+  setSending(sending: boolean): void;
+  /** End of one utterance: the settled transcript follows and the session stays open. */
+  finalize(): void;
+  close(): void;
+}
