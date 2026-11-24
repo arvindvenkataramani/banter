@@ -360,30 +360,27 @@ describe("the registries the repo ships", () => {
     expect(() => validateRoster(registry.roster, registry.services)).not.toThrow();
   });
 
-  // Spec section 12, step T1. Staged copies under rails/S1 and rails/S2 replace this test as the example changes.
-  it("[T1] the fluid servers state exactly the T1 provisions of the spec", () => {
+  // Spec section 12, step S1.
+  it("[S1] the fluid servers state exactly the S1 provisions of the spec", () => {
     const services = readJson("services/fluid/registry.fluid.example.json").services as any[];
     const of = (id: string) => services.find(s => s.id === id);
+    const index = (api: string) => readJson(`shared/apis/parts/${api}.json`).parts as string[];
+    const paramsExcept = (api: string, keep: string[]) => index(api).filter(p => p.startsWith("parameter:") && !keep.includes(p.slice(10)));
     const sorted = (provides: any[]) => provides.map(p => ({
       ...p,
       ...(p.omits && { omits: [...p.omits].sort() }),
+      ...(p.only && { only: [...p.only].sort() }),
       ...(p.extends && { extends: [...p.extends].sort() }),
     })).sort((a, b) => a.api.localeCompare(b.api));
+    void paramsExcept;
     expect(sorted(of("fluid-stt").provides)).toEqual(sorted([
       { api: "fluid.stt.stream" },
-      {
-        api: "openai.audio.transcriptions",
-        omits: ["parameter:language", "parameter:languages", "parameter:keywords", "parameter:prompt", "parameter:temperature", "parameter:include", "parameter:stream", "parameter:chunking_strategy", "parameter:known_speaker_names", "parameter:known_speaker_references"],
-        restricts: { response_format: ["json", "text", "verbose_json"] },
-      },
+      { api: "openai.audio.transcriptions", omits: ["parameter:language","parameter:languages","parameter:keywords","parameter:prompt","parameter:temperature","parameter:include","parameter:stream","parameter:chunking_strategy","parameter:known_speaker_names","parameter:known_speaker_references"], restricts: { response_format: ["json", "text", "verbose_json"] } },
+      { api: "triton.model-repository", extends: ["resident-slot"] },
     ]));
     expect(sorted(of("fluid-tts").provides)).toEqual(sorted([
-      {
-        api: "openai.audio.speech",
-        omits: ["parameter:instructions", "parameter:stream_format"],
-        restricts: { response_format: ["aac", "wav", "pcm"] },
-        extends: ["stream-flag", "cloning-reference"],
-      },
+      { api: "openai.audio.speech", omits: ["parameter:instructions"], restricts: { response_format: ["aac", "wav", "pcm"] }, extends: ["cloning-reference"] },
+      { api: "triton.model-repository", extends: ["resident-slot"] },
     ]));
     for (const id of ["fluid-stt", "fluid-tts"]) {
       expect(of(id).models).toEqual({ loading: "required", autoLoad: "always", resident: "one" });

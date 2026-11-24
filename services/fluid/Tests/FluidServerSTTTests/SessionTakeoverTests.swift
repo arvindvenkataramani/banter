@@ -43,20 +43,23 @@ final class SessionTakeoverTests: XCTestCase {
         return resident
     }
 
-    func testAConnectionExpectingAnotherModelLeavesTheLiveSessionAlone() async throws {
+    /// Nothing displaces a session's model while the session lasts, whatever
+    /// the newcomer names and even with a different session id.
+    func testS1_AConnectionNamingAnotherModelIsRefusedAtOnceAndLeavesTheLiveSessionAlone() async throws {
         let resident = try await makeResident()
         let told = Told()
         let live = try await resident.beginSession(
             expecting: "nemotron", session: "a", onDisplaced: { await told.record($0) })
 
+        let started = ContinuousClock.now
         do {
             try await resident.beginSession(expecting: "tdt", session: "b")
-            XCTFail("a connection expecting a model that is not loaded should be refused")
-        } catch FluidServerSTTError.modelMismatch(let requested, let loaded) {
-            XCTAssertEqual(requested, "tdt")
-            XCTAssertEqual(loaded, "nemotron")
-        }
+            XCTFail("a connection naming another model must not displace the live session's")
+        } catch {}
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(1), "refused at once, not after the deadline")
 
+        let loaded = await resident.loadedId
+        XCTAssertEqual(loaded, "nemotron")
         let reasons = await told.reasons
         XCTAssertTrue(reasons.isEmpty, "the refused connection should not have taken the session")
         let stillHeld = await resident.endSession(token: live.token, claim: live.claim)

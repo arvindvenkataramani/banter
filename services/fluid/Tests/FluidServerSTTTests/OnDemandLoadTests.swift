@@ -5,8 +5,9 @@ import XCTest
 
 @testable import FluidServerSTT
 
-/// A request loads its model into an empty slot and never replaces a resident
-/// one; the model is unloaded after an idle interval.
+/// A request loads its model into an empty slot, replaces an idle resident one
+/// once the work in flight ends, and is refused at once while a session holds
+/// the server; the model is unloaded after an idle interval.
 ///
 /// Models are built by a stand-in builder: managers constructed without their
 /// weights, which is enough to occupy the slot, report modes and reset a
@@ -27,6 +28,12 @@ final class OnDemandLoadTests: XCTestCase {
             waiters.forEach { $0.resume() }
             waiters.removeAll()
         }
+    }
+
+    /// Records why the connection holding the session was displaced, if it was.
+    private actor DisplacedLog {
+        private(set) var reasons: [DisplacedReason] = []
+        func record(_ reason: DisplacedReason) { reasons.append(reason) }
     }
 
     /// Counts builder calls, so a test can tell one load from two.
@@ -142,22 +149,83 @@ final class OnDemandLoadTests: XCTestCase {
         await resident.endSession(token: session.token, claim: session.claim)
     }
 
-    func testANamedRequestForAnotherModelIsRefusedAndTheResidentModelStays() async throws {
+    func testS1_ANamedRequestForAnotherModelReplacesTheIdleResidentModel() async throws {
         let calls = Calls()
         let resident = try makeResident(calls: calls)
         try await resident.ensure(named: "tdt", mode: .batch)
 
-        do {
-            try await resident.ensure(named: "unified", mode: .batch)
-            XCTFail("a request naming a model other than the resident one should be refused")
-        } catch FluidServerSTTError.modelMismatch(let requested, let loaded) {
-            XCTAssertEqual(requested, "unified")
-            XCTAssertEqual(loaded, "tdt")
-        }
+        let served = try await resident.ensure(named: "unified", mode: .batch)
+
+        XCTAssertEqual(served, "unified")
         let loaded = await resident.loadedId
         let loads = await calls.loads
-        XCTAssertEqual(loaded, "tdt")
-        XCTAssertEqual(loads, 1)
+        XCTAssertEqual(loaded, "unified")
+        XCTAssertEqual(loads, 2)
+    }
+
+    /// A variant is a different model for this rule (spec section 9).
+    func testS1_ARequestNamingAnotherVariantOfTheIdleResidentModelReplacesIt() async throws {
+        let calls = Calls()
+        let resident = try makeResident(calls: calls)
+        try await resident.ensure(
+            named: "nemotron", mode: .streaming, params: [ParamBinding(name: "chunkMs", value: 1120)])
+
+        try await resident.ensure(
+            named: "nemotron", mode: .streaming, params: [ParamBinding(name: "chunkMs", value: 560)])
+
+        let loads = await calls.loads
+        XCTAssertEqual(loads, 2)
+    }
+
+    /// Requests run one at a time, so the replacing load starts only after the
+    /// work already in flight has finished.
+    func testS1_AReplacementStartsOnlyAfterTheWorkInFlightEnds() async throws {
+        let calls = Calls()
+        let gate = Gate()
+        let resident = try makeResident(calls: calls)
+        try await resident.ensure(named: "tdt", mode: .batch)
+        let work = Task { try await resident.slot.withModel(.batch) { _ in await gate.wait() } }
+        try await Task.sleep(for: .milliseconds(50))
+
+        let replacing = Task { try await resident.ensure(named: "unified", mode: .batch) }
+        try await Task.sleep(for: .milliseconds(200))
+        let during = await resident.loadedId
+        let loadsDuring = await calls.loads
+        XCTAssertEqual(during, "tdt", "the model in use must not be replaced under its work")
+        XCTAssertEqual(loadsDuring, 1)
+
+        await gate.release()
+        try await work.value
+        let served = try await replacing.value
+        XCTAssertEqual(served, "unified")
+        let loaded = await resident.loadedId
+        XCTAssertEqual(loaded, "unified")
+    }
+
+    /// Refused at once, whatever the request names: what is asserted is that it
+    /// fails fast, builds nothing, and leaves the holder and its model alone.
+    func testS1_ARequestNamingAnotherModelIsRefusedAtOnceWhileASessionHoldsTheServer() async throws {
+        let calls = Calls()
+        let resident = try makeResident(calls: calls)
+        let told = DisplacedLog()
+        let live = try await resident.beginSession(
+            expecting: "unified", session: "a", onDisplaced: { await told.record($0) })
+
+        let started = ContinuousClock.now
+        do {
+            try await resident.ensure(named: "tdt", mode: .batch)
+            XCTFail("a request must not displace the model a session is using")
+        } catch {}
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(1), "refused at once, not after the deadline")
+
+        let loads = await calls.loads
+        let loaded = await resident.loadedId
+        let reasons = await told.reasons
+        XCTAssertEqual(loads, 1, "nothing is built for a refused request")
+        XCTAssertEqual(loaded, "unified")
+        XCTAssertTrue(reasons.isEmpty, "the holder is not displaced")
+        let stillHeld = await resident.endSession(token: live.token, claim: live.claim)
+        XCTAssertTrue(stillHeld)
     }
 
     func testANamelessRequestUsesTheResidentModelRatherThanLoadingTheDefault() async throws {
@@ -261,9 +329,7 @@ final class OnDemandLoadTests: XCTestCase {
         await resident.endSession(token: session.token, claim: session.claim)
     }
 
-    func testTwoRequestsNamingDifferentModelsOnAnEmptySlotLeaveTheFirstResidentAndRefuseTheSecond()
-        async throws
-    {
+    func testS1_ASecondRequestNamingAnotherModelDuringALoadWaitsForItThenReplacesIt() async throws {
         let calls = Calls()
         let gate = Gate()
         let resident = try makeResident(calls: calls, gate: gate)
@@ -274,19 +340,14 @@ final class OnDemandLoadTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         await gate.release()
 
-        let served = try await first.value
-        XCTAssertEqual(served, "unified")
-        do {
-            _ = try await second.value
-            XCTFail("the second model must not replace the first")
-        } catch FluidServerSTTError.modelMismatch(let requested, let loaded) {
-            XCTAssertEqual(requested, "tdt")
-            XCTAssertEqual(loaded, "unified")
-        }
+        let servedFirst = try await first.value
+        let servedSecond = try await second.value
+        XCTAssertEqual(servedFirst, "unified")
+        XCTAssertEqual(servedSecond, "tdt")
         let loaded = await resident.loadedId
         let loads = await calls.loads
-        XCTAssertEqual(loaded, "unified")
-        XCTAssertEqual(loads, 1)
+        XCTAssertEqual(loaded, "tdt")
+        XCTAssertEqual(loads, 2)
     }
 
     func testTheSlotsLoadIfEmptyNeverReplacesAResidentModel() async throws {
@@ -402,23 +463,6 @@ final class OnDemandLoadTests: XCTestCase {
         let variant = await resident.loadedVariant
         XCTAssertEqual(variant, "1120ms")
         await resident.endSession(token: session.token, claim: session.claim)
-    }
-
-    func testARequestForAnotherTierOfTheResidentModelIsRefused() async throws {
-        let calls = Calls()
-        let resident = try makeResident(calls: calls)
-        try await resident.ensure(
-            named: "nemotron", mode: .streaming, params: [ParamBinding(name: "chunkMs", value: 1120)])
-
-        do {
-            try await resident.ensure(
-                named: "nemotron", mode: .streaming, params: [ParamBinding(name: "chunkMs", value: 560)])
-            XCTFail("another tier is other weights, and a request never replaces the resident model")
-        } catch FluidServerSTTError.modelMismatch {}
-        let variant = await resident.loadedVariant
-        let loads = await calls.loads
-        XCTAssertEqual(variant, "1120ms")
-        XCTAssertEqual(loads, 1)
     }
 
     func testAnExplicitLoadOfAnotherModelDuringASessionIsRefusedAtOnce() async throws {

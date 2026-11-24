@@ -422,6 +422,11 @@ struct Roster: Sendable {
         models.first { $0.id == id }
     }
 
+    /// The model a serving's runtime key names, as the model repository routes address it.
+    func model(key: String) -> ValidatedModel? {
+        models.first { $0.entry.key == key }
+    }
+
     /// Parse and validate. Every failure names the offending model, because a
     /// roster that is wrong should say which line is wrong.
     static func validate(

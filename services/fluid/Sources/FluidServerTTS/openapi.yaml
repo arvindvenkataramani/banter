@@ -25,8 +25,8 @@ info:
     either reject a field some backend needs or document a shape no backend
     implements. Both are described in BUILD.md.
 
-    What /v1/audio/speech returns: one container per response, whether or not
-    `stream` is set. `response_format` selects `aac` (the default, AAC-LC in
+    What /v1/audio/speech returns: one container per response, streamed as
+    synthesis produces it. `response_format` selects `aac` (the default, AAC-LC in
     ADTS), `wav`, or `pcm`, and anything else is refused rather than silently
     substituted. `pcm` is headerless 16-bit mono at 24 kHz, as OpenAI defines
     it, whatever rate the model produces: a client cannot be told the rate of
@@ -39,10 +39,17 @@ info:
     the roster does not hold is passed to the model as its own. A request that
     sends `ref_audio` has chosen its recording and nothing is looked up. The
     socket's `speak` frame follows the same rule. The rule is stated in
-    docs/reference/design/model-roster.md, "Resolving a voice". With `stream: true` the body arrives in pieces as synthesis
-    produces them; without it, in one piece. A backend that cannot stream is
-    served whole either way, so a client never branches on which model it is
-    talking to.
+    docs/reference/design/model-roster.md, "Resolving a voice". The body
+    arrives in pieces as synthesis produces them, with no flag asked; a backend
+    that cannot stream is served whole, so a client never branches on which
+    model it is talking to. `stream_format: "sse"` sends the same audio as
+    server-sent events instead: `speech.audio.delta` events carrying base64
+    audio, then `speech.audio.done`.
+
+    Explicit loading is Triton's model repository extension, with fluid's
+    `resident-slot` departures: a load of what is resident changes nothing, a
+    load replaces the one resident model, and a load takes no parameters.
+    Models are named by their roster id.
 
 servers:
   - url: http://127.0.0.1:8769
@@ -144,8 +151,106 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v2/repository/index:
+    post:
+      operationId: repositoryIndex
+      summary: Every roster model, and which one is resident.
+      description: |
+        The resident model is READY and every other UNAVAILABLE. With
+        `ready: true` only the READY one is listed.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryIndexRequest"
+      responses:
+        "200":
+          description: The index.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RepositoryIndexEntry"
+
+  /v2/repository/models/{name}/load:
+    post:
+      operationId: repositoryLoad
+      summary: Make a model resident, replacing whatever was.
+      description: |
+        A load of the resident model changes nothing. Waits behind work in
+        flight, and is refused once the wait outlasts the slot's deadline.
+        Any parameter is refused.
+      parameters:
+        - $ref: "#/components/parameters/RepositoryModelName"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryRequest"
+      responses:
+        "200":
+          description: The model is loaded and ready.
+        "400":
+          description: The name is unknown, or a parameter was given.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work in flight outlasted the wait.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Building the model failed; nothing is resident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v2/repository/models/{name}/unload:
+    post:
+      operationId: repositoryUnload
+      summary: Release a model, naming it.
+      description: |
+        Drops the model if it is the resident one; naming another is a no-op.
+      parameters:
+        - $ref: "#/components/parameters/RepositoryModelName"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryRequest"
+      responses:
+        "200":
+          description: The model is not resident.
+        "400":
+          description: The name is unknown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   parameters:
+    RepositoryModelName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: A roster model id.
     ModelName:
       name: model_name
       in: query
@@ -309,6 +414,33 @@ components:
         model:
           type: string
           description: A model id, as listed by /v1/models.
+
+    RepositoryIndexRequest:
+      type: object
+      properties:
+        ready:
+          type: boolean
+          description: List only the models that are READY.
+
+    RepositoryIndexEntry:
+      type: object
+      required: [name, state, reason]
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+          enum: [READY, UNAVAILABLE]
+        reason:
+          type: string
+          description: Why the model is in its state; empty when it is READY.
+
+    RepositoryRequest:
+      type: object
+      properties:
+        parameters:
+          type: object
+          additionalProperties: true
 
     Error:
       type: object

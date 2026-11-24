@@ -127,6 +127,64 @@ struct APIHandlers: APIProtocol {
         return .loaded
     }
 
+    // MARK: - Model repository
+
+    func repositoryIndex(_ input: Operations.repositoryIndex.Input) async throws
+        -> Operations.repositoryIndex.Output
+    {
+        var readyOnly = false
+        if case .json(let body) = input.body { readyOnly = body.ready ?? false }
+        let loaded = await ctx.resident.currentModel
+        let entries = ctx.roster.models.map { model in
+            Components.Schemas.RepositoryIndexEntry(
+                name: model.id,
+                state: model.key == loaded ? .READY : .UNAVAILABLE,
+                reason: model.key == loaded ? "" : "not resident; one model is resident at a time")
+        }
+        return .ok(.init(body: .json(readyOnly ? entries.filter { $0.state == .READY } : entries)))
+    }
+
+    func repositoryLoad(_ input: Operations.repositoryLoad.Input) async throws
+        -> Operations.repositoryLoad.Output
+    {
+        if case .json(let body) = input.body,
+            let given = body.parameters?.additionalProperties.value.keys.sorted(), !given.isEmpty
+        {
+            let error = "unsupported load parameters: \(given.joined(separator: ", ")); a load takes none"
+            return .badRequest(.init(body: .json(.init(error: error))))
+        }
+        guard let key = ctx.roster.key(for: input.path.name) else {
+            return .badRequest(.init(body: .json(.init(error: TtsError.unknownModel(input.path.name).description))))
+        }
+        do {
+            try await ctx.resident.load(key)
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
+        } catch let error as TtsError {
+            if case .unknownModel = error { return .badRequest(.init(body: .json(.init(error: error.description)))) }
+            return .conflict(.init(body: .json(.init(error: error.description))))
+        } catch {
+            return .serviceUnavailable(
+                .init(body: .json(.init(error: "loading \(input.path.name) failed: \(error)"))))
+        }
+        return .ok(.init())
+    }
+
+    func repositoryUnload(_ input: Operations.repositoryUnload.Input) async throws
+        -> Operations.repositoryUnload.Output
+    {
+        guard let key = ctx.roster.key(for: input.path.name) else {
+            return .badRequest(.init(body: .json(.init(error: TtsError.unknownModel(input.path.name).description))))
+        }
+        guard await ctx.resident.currentModel == key else { return .ok(.init()) }
+        do {
+            try await ctx.resident.unload()
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
+        }
+        return .ok(.init())
+    }
+
     func unloadModel(_ input: Operations.unloadModel.Input) async throws
         -> Operations.unloadModel.Output
     {

@@ -51,8 +51,8 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
     let wsRouter = Router(context: BasicWebSocketRequestContext.self)
 
     wsRouter.ws("/v1/audio/stream") { inbound, outbound, wsCtx in
-        // The model the caller wants: loaded into an empty slot, refused if
-        // another is resident, never switched.
+        // The model the caller wants: loaded, or replacing an idle one, as
+        // `ResidentModel.beginSession` describes.
         let expecting = wsCtx.request.uri.queryParameters["model"].map(String.init)
         let formatName = wsCtx.request.uri.queryParameters["format"].map(String.init) ?? "opus"
         let session = wsCtx.request.uri.queryParameters["session"].map(String.init)

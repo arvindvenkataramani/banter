@@ -148,6 +148,72 @@ struct APIHandlers: APIProtocol {
         return .ok(.init())
     }
 
+    // MARK: - Model repository
+
+    func repositoryIndex(_ input: Operations.repositoryIndex.Input) async throws
+        -> Operations.repositoryIndex.Output
+    {
+        var readyOnly = false
+        if case .json(let body) = input.body { readyOnly = body.ready ?? false }
+        let loaded = await ctx.resident.loadedId
+        let entries = ctx.resident.roster.models.map { model in
+            Components.Schemas.RepositoryIndexEntry(
+                name: model.entry.key,
+                state: model.id == loaded ? .READY : .UNAVAILABLE,
+                reason: model.id == loaded ? "" : "not resident; one model is resident at a time")
+        }
+        return .ok(.init(body: .json(readyOnly ? entries.filter { $0.state == .READY } : entries)))
+    }
+
+    func repositoryLoad(_ input: Operations.repositoryLoad.Input) async throws
+        -> Operations.repositoryLoad.Output
+    {
+        var parameters: Components.Schemas.RepositoryLoadParameters?
+        if case .json(let body) = input.body { parameters = body.parameters }
+        if let extra = parameters?.additionalProperties.value.keys.sorted(), !extra.isEmpty {
+            let error = "unsupported load parameters: \(extra.joined(separator: ", ")); expected mode or variant"
+            return .badRequest(.init(body: .json(.init(error: error))))
+        }
+        guard let model = ctx.resident.roster.model(key: input.path.name) else {
+            let error = FluidServerSTTError.unknownModel(input.path.name).description
+            return .badRequest(.init(body: .json(.init(error: error))))
+        }
+        do {
+            try await ctx.resident.load(
+                id: model.id, mode: parameters?.mode.map { LoadMode(rawValue: $0.rawValue) ?? .batch },
+                variant: parameters?.variant, params: [])
+        } catch let error as FluidServerSTTError {
+            let payload = Components.Schemas._Error(error: error.description)
+            switch error.status {
+            case .conflict: return .conflict(.init(body: .json(payload)))
+            case .serviceUnavailable: return .serviceUnavailable(.init(body: .json(payload)))
+            default: return .badRequest(.init(body: .json(payload)))
+            }
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
+        }
+        return .ok(.init())
+    }
+
+    func repositoryUnload(_ input: Operations.repositoryUnload.Input) async throws
+        -> Operations.repositoryUnload.Output
+    {
+        guard let model = ctx.resident.roster.model(key: input.path.name) else {
+            let error = FluidServerSTTError.unknownModel(input.path.name).description
+            return .badRequest(.init(body: .json(.init(error: error))))
+        }
+        do {
+            try await ctx.resident.unload(id: model.id)
+        } catch let error as FluidServerSTTError {
+            let payload = Components.Schemas._Error(error: error.description)
+            return error.status == .conflict
+                ? .conflict(.init(body: .json(payload))) : .badRequest(.init(body: .json(payload)))
+        } catch let error as SlotError {
+            return .conflict(.init(body: .json(.init(error: error.description))))
+        }
+        return .ok(.init())
+    }
+
     // MARK: - Failure mapping
     //
     // Each operation gets its own union of responses from the spec, so the same

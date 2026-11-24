@@ -40,6 +40,7 @@ struct FluidServerSTT {
         // indistinguishable from a healthy server whose models have all gone,
         // and that ambiguity is the whole defect this replaces.
         let roster: Roster
+        let provisions: Provisions
         do {
             guard let path = args.registryPath, let provider = args.providerId else {
                 throw RosterError.missing
@@ -48,6 +49,9 @@ struct FluidServerSTT {
             logger.info(
                 "roster \(path.path) [\(provider)]: \(roster.models.map(\.id).joined(separator: ", "))"
             )
+            // An entry claiming more than this build serves stops startup.
+            provisions = try Provisions.load(registry: path, provider: provider)
+            logger.info("provides: \(provisions.declared.map(\.api).joined(separator: ", "))")
         } catch {
             logger.critical("\(error)")
             throw error
@@ -58,7 +62,7 @@ struct FluidServerSTT {
         let resident = ResidentModel(roster: roster, logger: logger)
         let ctx = AppContext(
             resident: resident, logger: logger, identity: identity,
-            temporaryDirectory: locations.temporary)
+            temporaryDirectory: locations.temporary, provisions: provisions)
 
         if roster.idleUnloadRejected != nil {
             logger.warning(
@@ -98,4 +102,6 @@ struct AppContext: Sendable {
     /// Where this server's own temp files go — the upload in
     /// `handleTranscribe`, not FluidAudio's model cache.
     let temporaryDirectory: URL
+    /// What this server's registry entry declares it provides; routes read their defaults here.
+    var provisions: Provisions = .none
 }

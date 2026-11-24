@@ -70,6 +70,12 @@
               "verbose_json"
             ]
           }
+        },
+        {
+          "api": "triton.model-repository",
+          "extends": [
+            "resident-slot"
+          ]
         }
       ],
       "models": {
@@ -126,8 +132,7 @@
         {
           "api": "openai.audio.speech",
           "omits": [
-            "parameter:instructions",
-            "parameter:stream_format"
+            "parameter:instructions"
           ],
           "restricts": {
             "response_format": [
@@ -137,8 +142,13 @@
             ]
           },
           "extends": [
-            "stream-flag",
             "cloning-reference"
+          ]
+        },
+        {
+          "api": "triton.model-repository",
+          "extends": [
+            "resident-slot"
           ]
         }
       ],
@@ -234,8 +244,6 @@
     "providers": {
       "fluid-tts": {
         "resolvesVoices": true,
-        "responseFormat": "aac",
-        "sessions": true,
         "serves": [
           {
             "model": "pocket-tts",
@@ -258,7 +266,6 @@
         ]
       },
       "fluid-stt": {
-        "sessions": true,
         "defaultModel": "parakeet-unified-0.6b",
         "idleUnloadMs": 1800000,
         "serves": [

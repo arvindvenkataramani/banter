@@ -76,6 +76,7 @@ public enum TtsError: Error, CustomStringConvertible {
     case unsupported(String)
     case busy
     case unknownFormat(String)
+    case unknownStreamFormat(String)
     /// A roster voice asked of a model she is not offered on. Passing her id
     /// through would be answered with the runtime's default voice and no error.
     case voiceNotOffered(voice: String, model: String)
@@ -99,6 +100,8 @@ public enum TtsError: Error, CustomStringConvertible {
         case .unsupported(let m): return m
         case .unknownFormat(let f):
             return "unknown response_format '\(f)'; expected aac, wav or pcm"
+        case .unknownStreamFormat(let f):
+            return "unknown stream_format '\(f)'; expected sse or audio"
         case .busy:
             return "the model is busy with another request; one runs at a time"
         }
@@ -117,7 +120,7 @@ extension TtsError: SocketCoded {
             return .modelMismatch
         case .busy:
             return .busy
-        case .unknownFormat:
+        case .unknownFormat, .unknownStreamFormat:
             return .badFormat
         case .missingReference, .unsupported, .voiceNotOffered, .noUsableReference, .noModelNamed:
             return .failed
@@ -157,6 +160,12 @@ actor PocketTtsDriver: TtsBackendDriver {
 
     func load() async throws {
         try await manager.initialize()
+        // CoreML's first prediction in a process costs seconds; pay it here, not in the first
+        // request. An empty voice prefills nothing, so no voice file is read or fetched.
+        _ = try? await manager.synthesize(
+            text: "Hello.", voiceData: PocketTtsVoiceData(audioPrompt: [], promptLength: 0),
+            temperature: PocketTtsConstants.temperature, deEss: false,
+            maxTokensPerChunk: PocketTtsConstants.maxTokensPerChunk)
     }
 
     func synthesize(_ request: SynthesisRequest) async throws -> SynthesisResult {

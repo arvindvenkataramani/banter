@@ -60,8 +60,8 @@ func handleTranscribe(
     struct Form: Decodable {
         var file: MultipartFile
         var response_format: String?
-        /// Names the model the caller believes is loaded. A mismatch is refused
-        /// rather than switched — see ResidentModel.transcribe.
+        /// Names the model to transcribe with, loaded or replacing an idle one
+        /// as `ResidentModel.transcribe` describes.
         var model: String?
         /// OpenAI sends this field name with the brackets included, and clients
         /// repeat it once per granularity. Both spellings are accepted so a

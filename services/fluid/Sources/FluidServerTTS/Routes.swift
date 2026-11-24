@@ -19,7 +19,8 @@ struct SpeechRequest: Decodable {
     let speed: Float?
     let temperature: Float?
     let response_format: String?
-    let stream: Bool?
+    /// `sse` for server-sent events; `audio`, or none, for the audio itself.
+    let stream_format: String?
     /// Seconds of audio per emission. Named as mlx-audio's server names it, so
     /// one bench.yaml can sweep the interval against either.
     let streaming_interval: Double?
@@ -54,7 +55,8 @@ extension TtsError: FluidServerKit.FluidServerError {
     /// other must not find them disagreeing.
     public var status: HTTPResponse.Status {
         switch self {
-        case .unknownModel, .unknownFormat, .voiceNotOffered, .noModelNamed: return .badRequest
+        case .unknownModel, .unknownFormat, .unknownStreamFormat, .voiceNotOffered, .noModelNamed:
+            return .badRequest
         case .busy, .notLoaded, .modelMismatch: return .conflict
         case .missingReference, .unsupported, .noUsableReference: return .internalServerError
         }
@@ -173,33 +175,22 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
         // A format the server cannot produce is refused here rather than served
         // as something else: a caller that asks for mp3 and receives WAV with a
         // 200 discovers the mismatch as audio that will not play.
-        guard let format = AudioFormat(requested: body.response_format) else {
-            return errorResponse(
-                TtsError.unknownFormat(body.response_format ?? ""), ctx: ctx)
+        let requestedFormat = body.response_format ?? ctx.provisions.speechFormat
+        guard let format = AudioFormat(requested: requestedFormat) else {
+            return errorResponse(TtsError.unknownFormat(requestedFormat ?? ""), ctx: ctx)
+        }
+        let events: Bool
+        switch body.stream_format {
+        case nil, "audio": events = false
+        case "sse": events = true
+        case let other?:
+            return errorResponse(TtsError.unknownStreamFormat(other), ctx: ctx)
         }
 
-        if body.stream == true {
-            return try await streamingResponse(
-                synthesisRequest, format: format,
-                interval: body.streaming_interval ?? defaultStreamingInterval,
-                ctx: ctx)
-        }
-
-        // Synthesis failures carry the backend's own diagnosis (a phoneme-chunk
-        // limit, a fixed-shape mismatch). Losing it to a bare 500 makes every
-        // failure look alike, so it is logged and returned.
-        let result: SynthesisResult
-        do {
-            result = try await ctx.resident.synthesize(synthesisRequest)
-        } catch {
-            return errorResponse(error, ctx: ctx)
-        }
-        do {
-            return try wholeResponse(
-                samples: result.samples, sampleRate: result.sampleRate, format: format)
-        } catch {
-            return errorResponse(error, ctx: ctx)
-        }
+        return try await streamingResponse(
+            synthesisRequest, format: format,
+            interval: body.streaming_interval ?? defaultStreamingInterval,
+            events: events, ctx: ctx)
     }
 
     return router
@@ -223,7 +214,18 @@ func wholeResponse(samples: [Float], sampleRate: Int, format: AudioFormat) throw
     return response
 }
 
-/// Serve an utterance as one encoded stream, emitted as it is generated.
+/// One server-sent event of the speech route, as OpenAI's `stream_format: "sse"` names them.
+private func speechEvent(_ type: String, audio: Data? = nil) -> ByteBuffer {
+    var event: [String: String] = ["type": type]
+    if let audio { event["audio"] = audio.base64EncodedString() }
+    let json = (try? JSONSerialization.data(withJSONObject: event, options: [.sortedKeys])) ?? Data()
+    return ByteBuffer(string: "data: \(String(decoding: json, as: UTF8.self))\n\n")
+}
+
+private let eventStreamType = "text/event-stream"
+
+/// Serve an utterance as one encoded stream, emitted as it is generated, as
+/// the audio itself or, with `events`, as server-sent events carrying it.
 ///
 /// One encoder for the whole response: a container per interval would repeat
 /// its header at every seam, and for a codec with encoder delay and end padding
@@ -231,19 +233,30 @@ func wholeResponse(samples: [Float], sampleRate: Int, format: AudioFormat) throw
 /// in the same container rather than failing, so a client never branches on
 /// which model it is talking to.
 private func streamingResponse(
-    _ request: SynthesisRequest, format: AudioFormat, interval: Double, ctx: TtsAppContext
+    _ request: SynthesisRequest, format: AudioFormat, interval: Double, events: Bool,
+    ctx: TtsAppContext
 ) async throws -> Response {
     let begun: (token: UInt64, stream: AsyncThrowingStream<[Float], Error>, sampleRate: Int)
     do {
         begun = try await ctx.resident.beginStream(request)
     } catch let error as TtsError {
-        // A backend with no streaming path is served whole, so `stream: true`
-        // stays a request for a shape rather than for a capability.
+        // A backend with no streaming path is served whole.
         guard case .unsupported = error else { return errorResponse(error, ctx: ctx) }
         do {
             let result = try await ctx.resident.synthesize(request)
-            return try wholeResponse(
-                samples: result.samples, sampleRate: result.sampleRate, format: format)
+            guard events else {
+                return try wholeResponse(
+                    samples: result.samples, sampleRate: result.sampleRate, format: format)
+            }
+            let encoder = try makeEncoder(format: format, sampleRate: result.sampleRate)
+            var audio = try encoder.encode(result.samples)
+            audio.append(try encoder.finish())
+            var body = audio.isEmpty ? ByteBuffer() : speechEvent("speech.audio.delta", audio: audio)
+            var done = speechEvent("speech.audio.done")
+            body.writeBuffer(&done)
+            var response = Response(status: .ok, body: .init(byteBuffer: body))
+            response.headers[.contentType] = eventStreamType
+            return response
         } catch {
             return errorResponse(error, ctx: ctx)
         }
@@ -272,6 +285,10 @@ private func streamingResponse(
     // drains to the producer's own end and releases the slot there. Draining
     // costs the remaining synthesis time; stopping it early is what the
     // WebSocket's cancellation buys.
+    //
+    // `started` carries the outcome of the first chunk: the response waits for
+    // it, so a failure before any audio is still a status the caller can read.
+    let (started, signal) = AsyncStream<(any Error)?>.makeStream()
     let buffers = AsyncThrowingStream<ByteBuffer, Error> { continuation in
         Task {
             // Ordering: the slot is released before the body finishes, so a
@@ -279,30 +296,49 @@ private func streamingResponse(
             // the model and starts the next arm the moment a response ends,
             // and finishing first would race that against the slot clearing.
             defer { continuation.finish() }
+            var signalled = false
+            var failure: (any Error)?
             do {
                 let encoder = try makeEncoder(format: format, sampleRate: begun.sampleRate)
                 for try await chunk in bufferedChunks(
                     begun.stream, interval: interval, sampleRate: begun.sampleRate)
                 {
                     let encoded = try encoder.encode(chunk)
-                    if !encoded.isEmpty { continuation.yield(ByteBuffer(data: encoded)) }
+                    if !encoded.isEmpty {
+                        continuation.yield(
+                            events ? speechEvent("speech.audio.delta", audio: encoded) : ByteBuffer(data: encoded))
+                    }
+                    if !signalled {
+                        signal.yield(nil)
+                        signalled = true
+                    }
                 }
                 // Flushes the encoder's tail, which for a packet-based codec is
                 // the last fraction of a second of the utterance.
                 let tail = try encoder.finish()
-                if !tail.isEmpty { continuation.yield(ByteBuffer(data: tail)) }
+                if !tail.isEmpty {
+                    continuation.yield(
+                        events ? speechEvent("speech.audio.delta", audio: tail) : ByteBuffer(data: tail))
+                }
+                if events { continuation.yield(speechEvent("speech.audio.done")) }
             } catch {
-                // The status and headers left with the first chunk, so a
-                // failure here can only truncate. Inventing a trailer no client
-                // parses would help nobody.
-                ctx.logger.error("streaming synthesis failed mid-utterance: \(error)")
+                // After the first chunk the status has left, so a failure can
+                // only truncate; before it, the response becomes the error.
+                failure = error
+                ctx.logger.error("streaming synthesis failed: \(error)")
             }
             await ctx.resident.endStream(token: begun.token)
+            if !signalled { signal.yield(failure) }
+            signal.finish()
         }
     }
 
+    for await outcome in started {
+        if let failure = outcome { return errorResponse(failure, ctx: ctx) }
+        break
+    }
     var response = Response(status: .ok, body: .init(asyncSequence: buffers))
-    response.headers[.contentType] = format.contentType
+    response.headers[.contentType] = events ? eventStreamType : format.contentType
     return response
 }
 

@@ -34,6 +34,7 @@ struct FluidServerTTS {
         // A missing or invalid one stops startup: serving nothing would be
         // indistinguishable from a healthy server whose models have all gone.
         let roster: TtsRoster
+        let provisions: Provisions
         do {
             guard let path = args.registryPath, let provider = args.providerId else {
                 throw TtsRosterError.missing
@@ -42,6 +43,9 @@ struct FluidServerTTS {
             logger.info(
                 "roster \(path.path) [\(provider)]: \(roster.models.map(\.id).joined(separator: ", "))"
             )
+            // An entry claiming more than this build serves stops startup.
+            provisions = try Provisions.load(registry: path, provider: provider)
+            logger.info("provides: \(provisions.declared.map(\.api).joined(separator: ", "))")
         } catch {
             logger.critical("\(error)")
             throw error
@@ -53,7 +57,8 @@ struct FluidServerTTS {
             modelsDirectory: args.modelsDirectory, temporaryDirectory: locations.temporary,
             logger: logger)
         let ctx = TtsAppContext(
-            resident: resident, roster: roster, logger: logger, identity: identity)
+            resident: resident, roster: roster, logger: logger, identity: identity,
+            provisions: provisions)
 
         let modelsPath = args.modelsDirectory?.path ?? "FluidAudio default"
         logger.info(
@@ -84,4 +89,6 @@ struct TtsAppContext: Sendable {
     let roster: TtsRoster
     let logger: Logger
     let identity: AppIdentity
+    /// What this server's registry entry declares it provides; routes read their defaults here.
+    var provisions: Provisions = .none
 }

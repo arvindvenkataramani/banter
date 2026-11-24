@@ -9,7 +9,6 @@ import Hummingbird
 /// answer the same condition the same way.
 enum FluidServerSTTError: FluidServerError {
     case unknownModel(String)
-    case modelMismatch(requested: String, loaded: String)
     case noModelLoaded
     case notStreamable(String)
     /// The model is resident, but not in the mode this request needs. A
@@ -33,9 +32,6 @@ enum FluidServerSTTError: FluidServerError {
         switch self {
         case .unknownModel(let id):
             return "unknown model: \(id)"
-        case .modelMismatch(let requested, let loaded):
-            return
-                "requested model \(requested) is not loaded; \(loaded) is. Models are not switched automatically"
         case .noModelLoaded:
             return "no model is loaded"
         case .notStreamable(let id):
@@ -64,15 +60,15 @@ enum FluidServerSTTError: FluidServerError {
         }
     }
 
-    /// A mismatch is 409 rather than 400: the request is well formed and the id
+    /// A state conflict is 409 rather than 400: the request is well formed and the id
     /// is real, but the server's state does not satisfy it.
     var status: HTTPResponse.Status {
         switch self {
         case .unknownModel: return .badRequest
-        case .modelMismatch, .noModelLoaded, .streamBusy: return .conflict
+        case .noModelLoaded, .streamBusy: return .conflict
         case .notStreamable: return .badRequest
         // The request is well formed and the model is real; the server's state
-        // does not satisfy it, which is the same shape as a mismatch.
+        // does not satisfy it.
         case .modeNotLoaded: return .conflict
         case .roster: return .badRequest
         case .streamingModelSelected: return .conflict
@@ -88,7 +84,7 @@ extension FluidServerSTTError: SocketCoded {
         switch self {
         case .noModelLoaded, .modeNotLoaded, .notStreamable, .loadFailed:
             return .modelNotLoaded
-        case .unknownModel, .modelMismatch, .streamingModelSelected, .roster:
+        case .unknownModel, .streamingModelSelected, .roster:
             return .modelMismatch
         case .streamBusy:
             return .busy

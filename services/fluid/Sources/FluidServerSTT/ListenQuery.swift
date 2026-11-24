@@ -13,7 +13,13 @@ struct ListenQuery: Sendable {
     var interimResults = true
 
     static func parse(_ params: [String: String]) throws -> ListenQuery {
+        try parse(params, provisions: .none)
+    }
+
+    /// Reads the query, taking the endpointing default from the server's provisions.
+    static func parse(_ params: [String: String], provisions: Provisions) throws -> ListenQuery {
         var query = ListenQuery()
+        query.endpointingMs = provisions.listenEndpointingMs
         query.model = params["model"]
         query.language = params["language"]
 

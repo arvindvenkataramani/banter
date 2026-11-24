@@ -374,7 +374,8 @@ Both fluid servers state `models: { loading: "required", autoLoad: "always", res
 
 **S2:**
 - **`fluid-stt`:**
-  - `openai.audio.transcriptions` loses the `parameter:stream` omission.
+  - `openai.audio.transcriptions` loses the `parameter:stream` omission and gains `value:timestamp_granularities=segment` (the build never returns segments).
+  - `triton.model-repository` omits `field:index.version`, on both servers.
   - `deepgram.listen.prerecorded` omits every query parameter in its index except `model`, `encoding` and `sample_rate`.
   - `deepgram.listen.live`:
     - omits every query parameter except `model`, `encoding`, `sample_rate`, `channels`, `interim_results` and `endpointing`;
@@ -384,6 +385,7 @@ Both fluid servers state `models: { loading: "required", autoLoad: "always", res
     - extends `session-claim`, `finalize-answered`, `endpointing-off` and `opus-packets`.
   - `openai.realtime`, with `only` the client and server messages in section 9 plus `mode:transcription`, extending `opus-input`.
 - **`fluid-tts`:**
+  - `openai.audio.speech` declares `defaults: { response_format: "aac" }`, where the spec's default is mp3.
   - `deepgram.speak`: omits every query parameter except `model`, `encoding`, `container`, `sample_rate` and `speed`; restricts `encoding` to `["aac", "linear16"]`; extends `voice-param` and `cloning-reference`.
   - `deepgram.speak.live`: restricts `encoding` to `["linear16"]`; extends `voice-param`, `cloning-reference` and `session-claim`.
   - `openai.realtime`, with `only` the messages in section 9 plus `mode:conversation`, extending `verbatim-speech`.

@@ -75,9 +75,9 @@ Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directo
 
 ### Loading
 
-- **A request loads only into an empty slot.** The first request that needs a model loads the one it names, or the roster's `defaultModel` when it names none, in the mode its route needs: streaming for a WebSocket, batch for a transcription. Requests arriving during a load share it. A request never replaces a resident model: naming another one is a 409, and a nameless request uses whatever is resident. Only the load endpoints switch models.
+- **A request loads the model it names.** The first request that needs a model loads the one it names, or the roster's `defaultModel` when it names none, in the mode its route needs: streaming for a WebSocket, batch for a transcription. Requests arriving during a load share it. A request naming another model, or another variant of the resident one, replaces it once the work in flight ends; a nameless request uses whatever is resident.
 - **A request never downloads.** It loads only weights already on the machine; an absent model is refused, and the load endpoints are what fetch one. A failed build is a 503 naming the model.
-- **A model that needs a parameter loads on a request only when the request carries it.** Nemotron's chunk size comes from the stream socket's `chunkMs`; another tier of the resident model is a 409 like any other model.
+- **A model that needs a parameter loads on a request only when the request carries it.** Nemotron's chunk size comes from the stream socket's `chunkMs`; another tier of the resident model replaces it like any other model.
 - **The model unloads when idle.** After the roster's `idleUnloadMs` without work (30 minutes when absent or not positive), the model is released, whichever way it was loaded. Health checks and model listings aren't work, and an open session is never unloaded. This is separate from the control plane's idle stop, which ends the process.
 - **A model of kind `both` needs `mode` on every load.** There is no default, because the wrong choice would surface as unexplained latency rather than as an error. `mode` can be `batch`, `streaming` or `both`.
 - **Loading the same id with a new mode grows what is resident** instead of reloading it. Parakeet Unified's two encoders share one decoder, joint and vocabulary, so adding the streaming encoder to a resident batch one is cheaper than a reload.
@@ -96,7 +96,7 @@ Build with `scripts/fluid-build.sh`, or `swift build -c release` in this directo
 | `POST /v1/models?model_name=<id>` | The spelling mlx-audio answers. Carries no mode or variant, so a model that needs one is refused here |
 | `POST /v1/models/unload` | `{"model"}`. Drops it if resident; otherwise a no-op |
 | `DELETE /v1/models` | Drops whatever is resident. Unlike every other route, refuses at once rather than waiting when work is in flight |
-| `POST /v1/audio/transcriptions`, `POST /audio/transcriptions` | Multipart, `file` required, capped at 200 MB. Loads the named model, or the default, into an empty slot. 409 when the named model isn't the resident one or a streaming session holds the service; 503 when the load fails; 415 for a non-multipart body |
+| `POST /v1/audio/transcriptions`, `POST /audio/transcriptions` | Multipart, `file` required, capped at 200 MB. Loads the named model, or the default, replacing an idle resident one. 409 when a streaming session holds the service; 503 when the load fails; 415 for a non-multipart body |
 | `POST /listen`, `POST /v1/listen` | Deepgram batch: the audio file as the raw body, a Deepgram response back. See below |
 
 Error bodies are `{"error": "<what is wrong>"}`.
@@ -106,7 +106,7 @@ Error bodies are `{"error": "<what is wrong>"}`.
 The shared protocol is in the [speech server API](../../docs/reference/speech-server-api.md#streaming-transcription). What is specific to this server:
 
 - `done` is accepted as a synonym for `Finalize`. A text frame of any other type, or one that isn't valid JSON, is ignored.
-- The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, refused if another model is resident. Audio arriving during the load waits in the socket. `chunkMs` picks Nemotron's tier.
+- The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, replacing the resident one if another is named and no session holds the server. Audio arriving during the load waits in the socket. `chunkMs` picks Nemotron's tier.
 - The model check runs before the claim, so a connection refused for its model can't displace a live session on its way out.
 - A replace or takeover waits up to two seconds for the previous holder's in-flight work. Past that, the newcomer is refused `busy` and the holder keeps the socket.
 - Every session starts from a clean decoder, and every exit resets it before the model is released: `Finalize`, `CloseStream`, a dropped socket, a decode failure, a takeover. A client that never sends `Finalize` still leaves the model clean for the next one.
@@ -135,7 +135,7 @@ The boundary rule is written against parakeet-mlx's own tokenizer behaviour, whi
 ## fluid-tts
 
 - **Responses are AAC by default**, in ADTS framing. `wav` and `pcm` (headerless 16-bit mono at 24 kHz) are the other `response_format` values; anything else is refused rather than substituted. A streamed response is one encoded stream, not one file per interval, so there's no gap at the seams.
-- **Streaming is a capability, not a special case.** Only Pocket TTS streams today (`TtsStreamingDriver`). A backend that can't stream, asked for `stream: true`, returns the whole utterance in the same container, so a client never branches on which model it's talking to.
+- **Streaming is a capability, not a special case.** Only Pocket TTS streams today (`TtsStreamingDriver`). `/v1/audio/speech` streams with no flag asked, and `stream_format: "sse"` sends the same audio as `speech.audio.delta` events and a closing `speech.audio.done`. A backend that can't stream returns the whole utterance in the same container, so a client never branches on which model it's talking to.
 - **Streamed audio is emitted in fixed-duration chunks**, every 2 s of generated audio by default (mlx-audio's default and field name), overridable per request with `streaming_interval`. Below about 1 s the time to first audio stops tracking the interval and settles near 0.3 s, so 0.5 s is the useful floor. Set it per model with the roster's `requestParams`.
 - **Long text is split for backends with a hard input cap**, at sentence and clause boundaries rather than between words.
 - **`ref_audio` and `ref_text`** are accepted on synthesis for models that take a voice from reference audio, under the names mlx-audio uses.

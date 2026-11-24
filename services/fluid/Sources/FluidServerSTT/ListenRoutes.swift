@@ -31,7 +31,8 @@ func registerListenBatch(on router: Router<BasicRequestContext>, ctx: AppContext
         router.post(RouterPath(path)) { request, _ -> Response in
             let query: ListenQuery
             do {
-                query = try ListenQuery.parse(queryDictionary(request.uri.queryParameters))
+                query = try ListenQuery.parse(
+                    queryDictionary(request.uri.queryParameters), provisions: ctx.provisions)
             } catch let error as FluidServerSTTError {
                 return errorResponse(error)
             }
@@ -76,7 +77,8 @@ func registerListenStream(on wsRouter: Router<BasicWebSocketRequestContext>, ctx
             let sink = WebSocketSink(outbound)
             let query: ListenQuery
             do {
-                query = try ListenQuery.parse(queryDictionary(wsCtx.request.uri.queryParameters))
+                query = try ListenQuery.parse(
+                    queryDictionary(wsCtx.request.uri.queryParameters), provisions: ctx.provisions)
             } catch {
                 await sink.fail(error)
                 return

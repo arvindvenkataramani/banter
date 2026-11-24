@@ -35,14 +35,19 @@
 #              second client, closes an utterance on a pause and answers
 #              CloseStream (fluid-smoke-listen.ts); the default unloads after
 #              the scratch roster's short idleUnloadMs; every
-#              other roster model whose weights are present loads, transcribes
-#              the same sentence if it serves HTTP transcription, and unloads.
-#   fluid-tts  every roster model whose weights are present loads, synthesizes
+#              other roster model whose weights are present loads through the
+#              Triton routes, shows READY in the index, transcribes the same
+#              sentence if it serves HTTP transcription, and unloads.
+#   fluid-tts  every roster model whose weights are present loads through the
+#              Triton routes, shows READY in the index, synthesizes
 #              the sentence as WAV, and that audio transcribes back to the
 #              expected word through the scratch fluid-stt, in one voice: the
 #              first roster voice with a preset on the model, else the first
 #              that clones under it, named by id alone, so the server's own
-#              choice of preset key or recording is what gets heard.
+#              choice of preset key or recording is what gets heard. A model
+#              the roster marks `streaming` answers a speech request that
+#              carries no stream flag progressively: its first audio arrives
+#              well before its last.
 #
 # Never downloads, and proves it: the servers cannot reach the network, so a
 # build that wants a file this machine lacks fails its load here instead of
@@ -156,6 +161,25 @@ skip() {
   exit 3
 }
 
+# The Triton model repository routes both servers provide. `triton_post URL PATH
+# BODY [TIMEOUT]` echoes the status and leaves the response in triton.json.
+triton_post() {
+  curl -s -m "${4:-300}" -o "$SCRATCH/triton.json" -w '%{http_code}' -X POST \
+    -H "Content-Type: application/json" -d "$3" "$1$2"
+}
+
+# Succeeds when the repository index of URL shows the model NAME as READY.
+triton_ready() {
+  curl -sf -m 10 -X POST -H "Content-Type: application/json" -d '{}' "$1/v2/repository/index" \
+    | "$JQ" -e --arg n "$2" 'any(.[]; .name == $n and .state == "READY")' >/dev/null
+}
+
+# The name a fluid-stt load is addressed by: the roster's key for the model.
+stt_key() {
+  "$JQ" -r --arg m "$1" '.roster.providers["fluid-stt"].serves[] | select(.model == $m) | .key' \
+    "$SCRATCH/fluid-stt.registry.json"
+}
+
 model_files() {
   local root
   for root in "${MODEL_ROOTS[@]}"; do
@@ -250,10 +274,13 @@ transcribe() {
 }
 
 stt_unload() {
-  curl -sf -m 30 -X POST -H "Content-Type: application/json" -d "{\"model\":\"$1\"}" \
-    "$STT_URL/v1/models/unload" >/dev/null || fail "fluid-stt: POST /v1/models/unload was refused for $1"
+  local code key
+  key="$(stt_key "$1")"
+  code="$(triton_post "$STT_URL" "/v2/repository/models/$key/unload" '{}' 30)"
+  [[ "$code" == 200 ]] || fail "fluid-stt: unloading $1 returned $code: $(head -c 300 "$SCRATCH/triton.json")"
   "$JQ" -e '.model == null' <<<"$(curl -sf -m 5 "$STT_URL/healthz")" >/dev/null \
-    || fail "fluid-stt: $1 was still resident after POST /v1/models/unload"
+    || fail "fluid-stt: $1 was still resident after its unload"
+  if triton_ready "$STT_URL" "$key"; then fail "fluid-stt: the index still shows $1 READY after its unload"; fi
 }
 
 check_stt() {
@@ -294,14 +321,15 @@ check_stt() {
     fi
     # A load never defaults a choice the model offers: a model serving both
     # modes is asked for batch, and one with variants for its first.
-    code="$("$JQ" -c --arg m "$model" '.data[] | select(.id == $m)
-          | {model: .id}
-            + (if .kind == "both" then {mode: "batch"} else {} end)
-            + (if (.variants // []) | length > 0 then {variant: .variants[0].id} else {} end)' <<<"$models" \
-      | curl -s -m 300 -o "$SCRATCH/load.json" -w '%{http_code}' -X POST \
-        -H "Content-Type: application/json" -d @- "$STT_URL/v1/models/load")"
+    local key body
+    key="$(stt_key "$model")"
+    body="$("$JQ" -c --arg m "$model" '.data[] | select(.id == $m)
+          | {parameters: ((if .kind == "both" then {mode: "batch"} else {} end)
+            + (if (.variants // []) | length > 0 then {variant: .variants[0].id} else {} end))}' <<<"$models")"
+    code="$(triton_post "$STT_URL" "/v2/repository/models/$key/load" "$body")"
     [[ "$code" == 200 ]] \
-      || fail "fluid-stt: loading $model returned $code: $(tr -d '\n' < "$SCRATCH/load.json" | head -c 300)"
+      || fail "fluid-stt: loading $model returned $code: $(tr -d '\n' < "$SCRATCH/triton.json" | head -c 300)"
+    triton_ready "$STT_URL" "$key" || fail "fluid-stt: the index does not show $model READY after its load"
     if "$JQ" -e --arg m "$model" '.data[] | select(.id == $m) | .transport | index("http")' <<<"$models" >/dev/null; then
       text="$(transcribe "$wav" "$model")" || fail "fluid-stt: $model refused the transcription"
       grep -qi "$EXPECTED" <<<"$text" || fail "fluid-stt: $model transcribed \"$text\", without \"$EXPECTED\""
@@ -334,6 +362,39 @@ voice_fields() {
     ] | first // empty | {voice: .id}' "$registry"
 }
 
+# Echoes `FIRST TOTAL BYTES` for a long speech request that carries no stream
+# flag: seconds until the first audio byte, seconds until the last, and how many
+# bytes arrived. Raw PCM, so the first byte of the body is audio, not a header.
+speech_timing() {
+  local text="$SENTENCE $SENTENCE $SENTENCE $SENTENCE $SENTENCE $SENTENCE"
+  "$JQ" -n --arg m "$1" --arg t "$text" --argjson f "$2" \
+      '{model: $m, input: $t, response_format: "pcm"} + $f' \
+    | curl -sN -m 300 -H "Content-Type: application/json" -d @- "$TTS_URL/v1/audio/speech" \
+    | perl -MTime::HiRes=time -e 'binmode STDIN; my $t0 = time; my $n = read(STDIN, my $b, 1);
+        my $first = time - $t0; my $bytes = $n;
+        while (my $r = read(STDIN, my $c, 65536)) { $bytes += $r }
+        printf "%.3f %.3f %d\n", $first, time - $t0, $bytes;'
+}
+
+# INVENTED: the first audio must arrive in under half of the whole response's
+# time. A server that renders everything before it sends anything delivers its
+# first byte at about the whole time, so this fails for it; a streaming one
+# sends its first half second of audio long before the end of a long text.
+check_progressive() {
+  local model="$1" fields="$2" timing first total bytes
+  timing="$(speech_timing "$model" "$fields")" \
+    || fail "fluid-tts: $model dropped the connection during a long speech request"
+  read -r first total bytes <<<"$timing"
+  [[ "${bytes:-0}" -gt 0 ]] || fail "fluid-tts: $model answered a long speech request with no audio"
+  if awk -v t="$total" 'BEGIN { exit !(t < 1.0) }'; then
+    note_skip "fluid-tts: $model synthesized the long text in ${total}s, too fast to tell streaming from buffering"
+    return
+  fi
+  awk -v f="$first" -v t="$total" 'BEGIN { exit !(f < t * 0.5) }' \
+    || fail "fluid-tts: $model sent its first audio after ${first}s of ${total}s; without a stream flag it should answer progressively"
+  ok "fluid-tts: $model streamed with no stream flag: first audio after ${first}s of ${total}s"
+}
+
 check_tts() {
   local models model voices fields voice wav code text pcm_done
   models="$(curl -sf -m 10 "$TTS_URL/v1/models")" || fail "fluid-tts /v1/models was refused"
@@ -350,9 +411,15 @@ check_tts() {
       continue
     fi
 
-    code="$(curl -s -m 300 -o "$SCRATCH/load.json" -w '%{http_code}' -X POST \
-      -H "Content-Type: application/json" -d "{\"model\":\"$model\"}" "$TTS_URL/v1/models/load")"
-    [[ "$code" == 200 ]] || fail "fluid-tts: loading $model returned $code: $(head -c 300 "$SCRATCH/load.json")"
+    code="$(triton_post "$TTS_URL" "/v2/repository/models/$model/load" '{"parameters":{}}')"
+    [[ "$code" == 200 ]] || fail "fluid-tts: loading $model returned $code: $(head -c 300 "$SCRATCH/triton.json")"
+    triton_ready "$TTS_URL" "$model" || fail "fluid-tts: the index does not show $model READY after its load"
+
+    # A model the roster marks streaming answers progressively, with no flag.
+    if "$JQ" -e --arg m "$model" '.roster.providers["fluid-tts"].serves[] | select(.model == $m and .streaming == true)' \
+        "$SCRATCH/fluid-tts.registry.json" >/dev/null; then
+      check_progressive "$model" "$(head -n 1 <<<"$voices")"
+    fi
 
     while IFS= read -r fields; do
       voice="$("$JQ" -r '.voice' <<<"$fields")"

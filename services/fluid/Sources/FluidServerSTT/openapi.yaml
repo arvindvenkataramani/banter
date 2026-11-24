@@ -12,9 +12,17 @@ info:
 
     A request that finds no model resident loads the one it names, or the
     roster's defaultModel, and a model unloads after idleUnloadMs without work.
-    A request never replaces a resident model: naming another one is refused
-    rather than switched. An open streaming session is the sole occupant of
-    the service, and everything else is refused while it lasts.
+    A request naming another model, or another variant of the resident one,
+    replaces it once the work in flight ends. An open streaming session is the
+    sole occupant of the service, and everything else is refused while it
+    lasts; a take-over is the only way in.
+
+    Explicit loading is Triton's model repository extension, with fluid's
+    `resident-slot` departures: `mode` and `variant` travel in the load's
+    `parameters`, a load of what is resident changes nothing, a load replaces
+    the one resident model, and a load that would change the model, or an
+    unload, is refused with 409 while a session holds it. Models are named by
+    their serving's runtime key.
 
     Two endpoints are deliberately absent, both documented in
     docs/reference/speech-server-api.md and services/fluid/DEVELOPING.md instead. The streaming endpoint is a WebSocket at
@@ -187,8 +195,107 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v2/repository/index:
+    post:
+      operationId: repositoryIndex
+      summary: Every roster model, and which one is resident.
+      description: |
+        The resident model is READY and every other UNAVAILABLE. With
+        `ready: true` only the READY one is listed.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryIndexRequest"
+      responses:
+        "200":
+          description: The index.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RepositoryIndexEntry"
+
+  /v2/repository/models/{name}/load:
+    post:
+      operationId: repositoryLoad
+      summary: Make a model resident, replacing whatever was.
+      description: |
+        Empty `parameters` load a single-mode model in its one mode; a model
+        serving both modes needs `mode`, and a model with variants needs
+        `variant`. A load of the resident model, with the same variant and a
+        mode already up, changes nothing. Any other parameter is refused.
+      parameters:
+        - $ref: "#/components/parameters/RepositoryModelName"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryLoadRequest"
+      responses:
+        "200":
+          description: The model is loaded and ready.
+        "400":
+          description: The name is unknown, or the parameters do not choose what the model offers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A streaming session holds the service, or work in flight outlasted the wait.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Building the model failed; nothing is resident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v2/repository/models/{name}/unload:
+    post:
+      operationId: repositoryUnload
+      summary: Release a model, naming it.
+      description: |
+        Drops the model if it is the resident one; naming another is a no-op.
+      parameters:
+        - $ref: "#/components/parameters/RepositoryModelName"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryUnloadRequest"
+      responses:
+        "200":
+          description: The model is not resident.
+        "400":
+          description: The name is unknown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Work is in flight against the model, or a streaming session holds it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   parameters:
+    RepositoryModelName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: A serving's runtime key.
     ModelName:
       name: model_name
       in: query
@@ -393,6 +500,51 @@ components:
           items:
             $ref: "#/components/schemas/ParamBinding"
           description: The parameter values that select this variant.
+
+    RepositoryIndexRequest:
+      type: object
+      properties:
+        ready:
+          type: boolean
+          description: List only the models that are READY.
+
+    RepositoryIndexEntry:
+      type: object
+      required: [name, state, reason]
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+          enum: [READY, UNAVAILABLE]
+        reason:
+          type: string
+          description: Why the model is in its state; empty when it is READY.
+
+    RepositoryLoadRequest:
+      type: object
+      properties:
+        parameters:
+          $ref: "#/components/schemas/RepositoryLoadParameters"
+
+    RepositoryLoadParameters:
+      type: object
+      additionalProperties: true
+      properties:
+        mode:
+          type: string
+          enum: [batch, streaming, both]
+          description: Which mode to make resident. Required for a model serving both.
+        variant:
+          type: string
+          description: Which of the model's variants to load, by id.
+
+    RepositoryUnloadRequest:
+      type: object
+      properties:
+        parameters:
+          type: object
+          additionalProperties: true
 
     Error:
       type: object

@@ -8,8 +8,8 @@ import Logging
 /// The lifecycle — one model at a time, one operation at a time, a token that
 /// releases the work that took the slot — is `ResidentSlot` in the kit, and the
 /// reasoning lives there. What is here is what transcription adds: the manager
-/// shapes, and the rule that a request never switches the model out from under
-/// a caller: only an explicit load replaces one.
+/// shapes, and the on-demand rule: a request naming another model or variant
+/// replaces an idle one, and is refused at once while a session holds the server.
 ///
 /// **Every model loads the same way.** A session manager is weights in memory
 /// exactly as a one-shot manager is; that it is later driven over a socket
@@ -38,9 +38,12 @@ actor ResidentModel {
     /// load already started instead of starting a second one. Set and checked
     /// with no `await` between, which is what makes the check atomic.
     private var inFlight: (seq: UInt64, id: String, kind: InFlightKind, task: Task<String, Error>)?
-    /// A request's load into the empty slot, a request's mode addition, an
-    /// explicit load, or an idle unload.
-    private enum InFlightKind { case load, add, explicit, unload }
+    /// A request's load into the empty slot, a request's replacement of the
+    /// resident model, a request's mode addition, an explicit load, or an idle unload.
+    private enum InFlightKind { case load, replace, add, explicit, unload }
+    /// How many times a request re-loads a model that other requests replaced
+    /// before it could take the slot.
+    private static let attempts = 3
     private var inFlightSeq: UInt64 = 0
     /// When work last touched the model. Reads of what is loaded do not count,
     /// or health probes would keep a model resident forever.
@@ -125,14 +128,8 @@ actor ResidentModel {
         return variant?.id
     }
 
-    /// Make the resident model able to serve a request, loading into an empty
-    /// slot if need be, and return its id.
-    ///
-    /// A request never replaces a resident model: naming another one is a
-    /// mismatch. A nameless request uses what is resident, or loads the
-    /// roster's default into an empty slot. A model resident without the mode
-    /// gains it when its kind serves that mode. A model that needs a load
-    /// parameter loads only when `params` selects one of its variants.
+    /// Make the model a request names (or the resident one, or the default) serve `mode`,
+    /// replacing another model or variant when no session holds the server; returns its id.
     @discardableResult
     func ensure(named: String?, mode: LoadMode, params: [ParamBinding] = []) async throws -> String {
         if let named, roster.model(id: named) == nil {
@@ -144,11 +141,13 @@ actor ResidentModel {
                 do {
                     _ = try await pending.task.value
                 } catch {
-                    // A failed load into the empty slot is this request's
-                    // failure too when it wanted the same model. Anything else
-                    // (a refused explicit load, a failed mode addition this
-                    // request may not need) says nothing about it.
-                    if pending.kind == .load, named == nil || named == pending.id {
+                    // A failed load of the model this request wants is its
+                    // failure too. Anything else (a refused explicit load, a
+                    // failed mode addition this request may not need) says
+                    // nothing about it.
+                    if pending.kind == .load || pending.kind == .replace,
+                        named == nil || named == pending.id
+                    {
                         throw error
                     }
                 }
@@ -161,25 +160,53 @@ actor ResidentModel {
 
             guard let current = resident else {
                 let target = try loadTarget(named: named, mode: mode, params: params)
-                _ = try await track(id: target.model.id, kind: .load) { [slot, builder] in
-                    try await slot.loadIfEmpty(id: target.model.id, variant: target.variant?.id) {
+                let served = try await track(id: target.model.id, kind: .load) { [slot, builder] in
+                    _ = try await slot.loadIfEmpty(id: target.model.id, variant: target.variant?.id) {
                         try await Self.asLoadFailure(id: target.model.id) {
                             try await builder.load(target.model, target.mode, target.variant)
                         }
                     }
+                    return await Self.serving(slot, target.model.id, target.variant?.id, mode)
+                }
+                if served == target.model.id {
+                    lastWork = .now
+                    return served
                 }
                 continue
             }
 
             let residentId = current.id
-            if let named, named != residentId {
-                throw FluidServerSTTError.modelMismatch(requested: named, loaded: residentId)
-            }
-            // Another tier of the same model is another set of weights.
-            if let named, !params.isEmpty {
+            var replacing = named.map { $0 != residentId } ?? false
+            if !replacing, let named, !params.isEmpty {
                 let loadedVariant = await slot.loadedVariant
                 if inFlight != nil { continue }
-                try checkTier(named: named, params: params, loaded: loadedVariant)
+                let wanted: RosterVariant?
+                do {
+                    wanted = try roster.model(id: named)?.resolve(variant: nil, params: params)
+                } catch let error as RosterError {
+                    throw FluidServerSTTError.roster(error)
+                }
+                replacing = wanted != nil && wanted?.id != loadedVariant
+            }
+            if replacing {
+                let target = try loadTarget(named: named, mode: mode, params: params)
+                // Nothing displaces a session's model while the session lasts.
+                if await slot.currentWork == .session { throw SlotError.busy(.session) }
+                if inFlight != nil { continue }
+                let served = try await track(id: target.model.id, kind: .replace) {
+                    [slot, builder] in
+                    try await slot.load(id: target.model.id, variant: target.variant?.id) {
+                        try await Self.asLoadFailure(id: target.model.id) {
+                            try await builder.load(target.model, target.mode, target.variant)
+                        }
+                    }
+                    return await Self.serving(slot, target.model.id, target.variant?.id, mode)
+                }
+                if served == target.model.id {
+                    lastWork = .now
+                    return served
+                }
+                continue
             }
             if current.modes.contains(mode) {
                 lastWork = .now
@@ -226,19 +253,25 @@ actor ResidentModel {
         throw FluidServerSTTError.modeNotLoaded(id: current.id, mode: mode.rawValue)
     }
 
-    /// Refuse a request for a tier other than the one resident, or for a tier
-    /// the model does not offer.
-    private nonisolated func checkTier(named: String, params: [ParamBinding], loaded: String?) throws {
-        guard let model = roster.model(id: named) else { return }
-        let wanted: RosterVariant?
-        do {
-            wanted = try model.resolve(variant: nil, params: params)
-        } catch let error as RosterError {
-            throw FluidServerSTTError.roster(error)
-        }
-        guard let wanted, wanted.id != loaded else { return }
-        throw FluidServerSTTError.modelMismatch(
-            requested: "\(named) (\(wanted.id))", loaded: "\(named) (\(loaded ?? "default"))")
+    /// `id` when the slot holds that model and variant with `mode` up, else empty.
+    private static func serving(
+        _ slot: ResidentSlot<LoadedModel>, _ id: String, _ variant: String?, _ mode: LoadMode
+    ) async -> String {
+        guard await slot.loadedId == id, await slot.loadedVariant == variant,
+            let model = await slot.currentModel, model.modes.contains(mode)
+        else { return "" }
+        return id
+    }
+
+    /// Whether the slot's model is what a request naming `expecting` with
+    /// `params` asked for. A nameless request takes whatever is resident.
+    private func holds(_ id: String, expecting: String?, params: [ParamBinding]) async -> Bool {
+        guard let expecting else { return true }
+        guard id == expecting else { return false }
+        guard !params.isEmpty,
+            let wanted = try? roster.model(id: expecting)?.resolve(variant: nil, params: params)
+        else { return true }
+        return wanted.id == (await slot.loadedVariant)
     }
 
     /// Drop the resident model if no work has touched it for `interval`.
@@ -354,36 +387,33 @@ actor ResidentModel {
         get async { await slot.loadedVariant }
     }
 
-    /// Transcribe on the resident model, loading into an empty slot first.
-    ///
-    /// `expecting` names the model the caller wants. Another model resident is
-    /// a mismatch, never a switch: a switch would make the caller pay load time
-    /// inside a transcription, contaminating every timing figure from that run.
+    /// Transcribe on the model `expecting` names, or the resident one, loading
+    /// or replacing it first as `ensure` does.
     func transcribe(url: URL, expecting: String?) async throws -> TranscriptionOutput {
-        try await ensure(named: expecting, mode: .batch)
         defer { lastWork = .now }
-        return try await slot.withModel(.batch) { model in
-            // Whether a batch path exists, not whether a session does: a model
-            // holding both modes has a session *and* a one-shot call, and
-            // asking about the session would refuse the transcription it can
-            // perfectly well serve.
-            // An explicit load can land between `ensure` and taking the slot.
-            try self.checkExpected(expecting, loaded: model.id)
-            guard model.modes.contains(.batch) else {
-                throw FluidServerSTTError.streamingModelSelected(model.id)
+        for _ in 0..<Self.attempts {
+            try await ensure(named: expecting, mode: .batch)
+            let output: TranscriptionOutput? = try await slot.withModel(.batch) { model in
+                // Another request can replace the model between `ensure` and taking the slot.
+                if let expecting, model.id != expecting { return nil }
+                // Whether a batch path exists, not whether a session does: a
+                // model holding both modes has both.
+                guard model.modes.contains(.batch) else {
+                    throw FluidServerSTTError.streamingModelSelected(model.id)
+                }
+                return try await model.transcribe(url: url)
             }
-            return try await model.transcribe(url: url)
+            if let output { return output }
         }
+        throw SlotError.busy(.batch)
     }
 
     // MARK: - Streaming
 
     /// Take the resident session for the life of a connection.
     ///
-    /// `expecting` names the model the caller wants, as on the transcription
-    /// endpoint: an empty slot loads it (or the roster default when nil), and
-    /// another model resident is a mismatch, so opening a socket never evicts
-    /// a model from under another caller.
+    /// `expecting` loads as in `ensure`; behind a live session only a connection
+    /// the claim admits gets in, ending that session before its model loads.
     ///
     /// Who gets the slot is the claim's decision, by `session` id: nobody
     /// holding it, or the holder's own id reconnecting, grants it; another id
@@ -394,10 +424,8 @@ actor ResidentModel {
     /// Every session starts from a clean decoder: a displaced connection never
     /// reaches the reset its own exit would perform.
     ///
-    /// The model is checked before the claim, so a connection that will be
-    /// refused cannot take the claim on its way out. It is checked again after,
-    /// against the model the slot actually handed over: a load can land
-    /// between the two.
+    /// The model loads before the claim, so a connection refused for it cannot
+    /// take the claim; it is checked again against what the slot hands over.
     ///
     /// The connection owns the claim and the slot until `endSession` runs or it
     /// is displaced. Every caller must pair this with that release on every
@@ -407,18 +435,44 @@ actor ResidentModel {
         expecting: String?, params: [ParamBinding] = [], session: String?, takeover: Bool = false,
         onDisplaced: @escaping @Sendable (DisplacedReason) async -> Void = { _ in }
     ) async throws -> (token: UInt64, claim: ClaimToken, id: String) {
-        try await ensure(named: expecting, mode: .streaming, params: params)
-        lastWork = .now
-        let claimed = try await claim.claim(
-            session: session, takeover: takeover, onDisplaced: onDisplaced)
+        var admitted: ClaimToken?
         do {
-            let begun = try await slot.beginWork(.session, supersedable: true)
+            try await ensure(named: expecting, mode: .streaming, params: params)
+        } catch SlotError.busy(.session) {
+            // Refused unless the claim admits this connection; if it does, the
+            // holder is displaced and its slot taken back before the load.
+            let token = try await claim.claim(
+                session: session, takeover: takeover, onDisplaced: onDisplaced)
+            admitted = token
+            do {
+                let held = try await slot.beginWork(.session, supersedable: true)
+                await slot.end(token: held.token)
+                try await ensure(named: expecting, mode: .streaming, params: params)
+            } catch {
+                await claim.release(token: token)
+                throw error
+            }
+        }
+        lastWork = .now
+        let claimed: ClaimToken
+        if let admitted {
+            claimed = admitted
+        } else {
+            claimed = try await claim.claim(
+                session: session, takeover: takeover, onDisplaced: onDisplaced)
+        }
+        do {
+            var begun = try await slot.beginWork(.session, supersedable: true)
+            var attempt = 1
+            while !(await holds(begun.model.id, expecting: expecting, params: params)) {
+                await slot.end(token: begun.token)
+                guard attempt < Self.attempts else { throw SlotError.busy(.batch) }
+                attempt += 1
+                try await ensure(named: expecting, mode: .streaming, params: params)
+                begun = try await slot.beginWork(.session, supersedable: true)
+            }
             do {
                 let currentId = begun.model.id
-                try checkExpected(expecting, loaded: currentId)
-                if let expecting, !params.isEmpty {
-                    try checkTier(named: expecting, params: params, loaded: await slot.loadedVariant)
-                }
                 guard begun.model.session != nil else {
                     // Streaming-capable but not resident that way is a different
                     // condition from a model that cannot stream at all, and the
@@ -515,17 +569,6 @@ actor ResidentModel {
             try await slot.unload()
             return id
         }
-    }
-
-    /// Refuse a caller whose `expecting` names a model other than `loaded`:
-    /// unknown to the roster, or known but not the resident one. Nil
-    /// `expecting` asserts nothing.
-    private nonisolated func checkExpected(_ expecting: String?, loaded: String?) throws {
-        guard let want = expecting, want != loaded else { return }
-        guard roster.model(id: want) != nil else {
-            throw FluidServerSTTError.unknownModel(want)
-        }
-        throw FluidServerSTTError.modelMismatch(requested: want, loaded: loaded ?? "none")
     }
 
     /// Run `body` against the live session `token` holds, or say why it

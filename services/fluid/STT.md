@@ -70,7 +70,7 @@ Weights are not prefetched by this server. `GET /v1/models` reports `present` fo
 
 **One model is resident at a time, and switching costs around thirteen seconds.** CoreML is not reentrant, so the server holds exactly one model and serialises everything that touches it. A batch request or a load is queued behind whatever holds the slot, refused with 409 only after a two-second wait; a streaming connection that holds the claim takes the slot over instead of queuing, as the streaming section describes.
 
-**A request loads only into an empty slot.** A request naming a model other than the resident one is refused rather than silently switched; only the load endpoints replace a model. An open streaming session is the sole occupant: while it lasts, every other request is refused at once. Outside a session, requests queue for up to two minutes.
+**A request loads the model it names.** A request naming a model other than the resident one, or another variant of it, replaces it once the work in flight ends. An open streaming session is the sole occupant: while it lasts, every other request is refused at once. Outside a session, requests queue for up to two minutes.
 
 **Loading the same id with a new mode grows what is resident instead of reloading it.** Asking to load `parakeet-unified-0.6b` in `streaming` mode while it is already resident in `batch` mode adds the streaming encoder in place, keeping the batch one up — the shared weights make this cheaper than a full reload. Loading the same id and variant that are already resident is a no-op. Loading the same id with a different variant, or a different id entirely, unloads whatever is resident first, so two models or two variants are never held at once. A failed load leaves nothing resident.
 
@@ -114,13 +114,13 @@ Drops whatever is resident, without naming it — the spelling OpenAI-compatible
 
 Multipart upload, OpenAI-compatible. `file` is required. `response_format` takes `text` for plain text, `verbose_json` for word timings, and defaults to JSON. `timestamp_granularities[]=word` (or the unbracketed `timestamp_granularities=word`) adds word timings to a `verbose_json` response.
 
-The optional `model` field names the model the caller wants: loaded if nothing is resident, refused if another model is.
+The optional `model` field names the model the caller wants: loaded if nothing is resident, replacing the resident one if another is, once the work in flight ends.
 
 | Status | When |
 |---|---|
 | 200 | transcript |
 | 400 | `model` names an unknown id |
-| 409 | `model` names a known model that is not the loaded one, or no model is loaded |
+| 409 | no `model` is named, no model is loaded and the roster has no default |
 | 409 | the loaded model is resident only in streaming mode, or is a streaming-only model with no batch path |
 | 409 | a streaming session holds the model |
 | 415 | the request is not `multipart/form-data` |
@@ -132,7 +132,7 @@ The body is capped at 200 MB. Error bodies are `{"error": "<what is wrong>"}`.
 
 `ws://<host>:<port>/v1/audio/stream?model=<id>&format=<opus|pcm16>&session=<id>&takeover=1`
 
-The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, refused if another model is resident. `model` is optional and names the model wanted; `chunkMs` picks the tier of a model that takes one (Nemotron), and another tier of the resident model is refused; `format` defaults to `opus`.
+The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, replacing the resident one if another model is named and no session holds the server. `model` is optional and names the model wanted; `chunkMs` picks the tier of a model that takes one (Nemotron), and another tier of the resident model replaces it the same way; `format` defaults to `opus`. While a session holds the server, a connection that would change the model gets in only as a takeover or the holder's own reconnect: the holder's session ends, then the newcomer's model loads.
 
 `session` and `takeover` say who holds the connection. One streaming session is live at a time, so `session` is the caller's own id: a connection without one has an identity of its own and can never be recognised as a reconnect. `fluid-tts`'s socket takes the same two parameters and follows the identical rule, so a client written against one socket reads the other correctly.
 
@@ -172,7 +172,7 @@ Interim frames carry the whole transcript so far, not a delta: a client renders 
 | `superseded` | 4002 | another client took over this session's slot |
 | `idle` | 4003 | nothing received for thirty minutes |
 | `model_not_loaded` | 4004 | no model loaded, or not resident in a streaming-capable mode |
-| `model_mismatch` | 4005 | the named model is not the loaded one, or not in the roster |
+| `model_mismatch` | 4005 | the named model is not in the roster, or the roster refuses how it is asked for |
 | `busy` | 4006 | the slot is busy with other work |
 | `bad_format` | 4007 | unknown `format` |
 | `bad_audio` | 4008 | a frame could not be decoded |
