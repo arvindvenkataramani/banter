@@ -9,6 +9,7 @@ import { createConfigFeed } from './config-feed.ts'
 import type { DshClientContext, DshSessionSlotProps } from './dsh-types.ts'
 import { createVoiceRuntime } from './runtime.ts'
 import { SettingsCard } from './settings-card.tsx'
+import { removeStyles } from './settings-style.ts'
 import { createShownSession } from './shown-session.ts'
 import { VoiceControls } from './voice-button.tsx'
 
@@ -29,6 +30,8 @@ export function apply(ctx: DshClientContext): void {
     runtime.dispose()
     shown.dispose()
   }, 'dsh-voice: runtime')
+  // The settings card adds its stylesheet to the page on first mount; it goes with the plugin.
+  ctx.effect(() => removeStyles, 'dsh-voice: settings stylesheet')
 
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',

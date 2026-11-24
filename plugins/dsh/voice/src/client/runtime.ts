@@ -270,6 +270,8 @@ export function createVoiceRuntime({ ctx, shown, form, feed, origin }: RuntimeDe
       if (sendNotice !== null && ui.get().notice === sendNotice) patchUi({ notice: null })
     },
     dispose() {
+      // Voice stops with the plugin: nothing would be left on the page to turn it off.
+      system.voiceOff()
       stopSettings()
       stopConfig()
       stopConfigAfterStart()

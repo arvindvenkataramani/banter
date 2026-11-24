@@ -50,6 +50,11 @@ describe('choosing profiles', () => {
 
   it('refuses to guess when no profile exists and none is named', () => {
     expect(chooseProfiles([], []).ok).toBe(false)
+    expect(chooseProfiles(['node_modules'], []).ok).toBe(false)
+  })
+
+  it('skips the shared node_modules folder dsh keeps beside the profiles', () => {
+    expect(chooseProfiles(['web', 'node_modules', 'desktop'], [])).toEqual({ ok: true, profiles: ['desktop', 'web'] })
   })
 })
 

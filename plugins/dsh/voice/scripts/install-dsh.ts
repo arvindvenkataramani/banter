@@ -59,9 +59,10 @@ export function parseArgs(argv: readonly string[]): { ok: true; options: Options
   return { ok: true, options }
 }
 
-/** The profiles to act on: the ones named, or else every profile found. */
-export function chooseProfiles(found: readonly string[], requested: readonly string[]): { ok: true; profiles: string[] } | { ok: false; problem: string } {
+/** The profiles to act on: the ones named, or else every profile found. dsh keeps a shared node_modules beside the profiles, and no profile can have that name. */
+export function chooseProfiles(foundDirs: readonly string[], requested: readonly string[]): { ok: true; profiles: string[] } | { ok: false; problem: string } {
   if (requested.length > 0) return { ok: true, profiles: [...new Set(requested)] }
+  const found = foundDirs.filter(name => name !== 'node_modules')
   if (found.length === 0) {
     return { ok: false, problem: 'no dsh profiles found; open the desktop app or run `dsh web` once, or name one with --profile desktop or --profile web' }
   }

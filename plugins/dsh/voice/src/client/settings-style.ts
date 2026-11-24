@@ -19,5 +19,10 @@ export function ensureStyles(): void {
   document.head.appendChild(style)
 }
 
+/** Takes the stylesheet off the page when the plugin unloads, so a reloaded plugin adds its own. */
+export function removeStyles(): void {
+  document.getElementById(STYLE_ID)?.remove()
+}
+
 /** True while the page cannot write; the Radix controls read it because a disabled fieldset does not reach them. */
 export const ReadOnly = createContext(false)

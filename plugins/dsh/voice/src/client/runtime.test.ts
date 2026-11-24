@@ -105,12 +105,25 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => ({})))
   adapterDeps.clear()
   system.voiceOn.mockClear()
+  system.voiceOff.mockClear()
   system.reconfigure.mockClear()
   useTranscriptStore.setState({ settled: '', pending: [], sent: {} })
 })
 afterEach(() => {
   useVoiceSystemStore.setState({ phase: 'off' })
   vi.unstubAllGlobals()
+})
+
+describe('runtime — unloading', () => {
+  it('turns voice off, so the mic and the speech stream stop with the plugin', () => {
+    const { runtime } = setup()
+    runtime.start('one')
+    useVoiceSystemStore.setState({ phase: 'live' })
+
+    runtime.dispose()
+
+    expect(system.voiceOff).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('runtime — a failed voice send', () => {

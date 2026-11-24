@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import z from '@deepseek-ai/schemastery'
-import { forwardHttp, forwardUpgrade } from './forward.ts'
+import { createRelays } from './forward.ts'
 import {
   CONFIG_CHECK_PATH, CONFIG_PATH, CONTROL_PREFIX, LIVE_PATH, LIVE_TTL_MS, SPEECH_PREFIX, configuredServiceIds, isAllowedControlCall, parseSpeechPath,
   resolveSpeechUpstream, type RelaySettings,
@@ -103,6 +103,11 @@ export function apply(ctx: HostContext, config: Config): void {
     return { ...(source.selected() ?? { sttServiceId: '', ttsServiceId: '' }), alsoServed: source.allowed() }
   }
 
+  // Relayed requests and streams are held by this instance and closed when it unloads,
+  // after the routes go: a live STT stream would otherwise outlive the plugin.
+  const relays = createRelays()
+  ctx.effect(() => () => { relays.closeAll() }, 'dsh-voice: open relays')
+
   // The control plane reports each service's real endpoint; the relay learns it
   // on first use and forgets it when the settings change or an upstream fails.
   const endpoints = new Map<string, string>()
@@ -187,7 +192,7 @@ export function apply(ctx: HostContext, config: Config): void {
         res.writeHead(404).end()
         return
       }
-      forwardHttp(req, res, upstream, () => { endpoints.delete(serviceId ?? '') })
+      relays.http(req, res, upstream, () => { endpoints.delete(serviceId ?? '') })
     },
   }), 'dsh-voice: speech relay')
 
@@ -202,7 +207,7 @@ export function apply(ctx: HostContext, config: Config): void {
         res.writeHead(404).end()
         return
       }
-      forwardHttp(req, res, new URL(`${url.replace(/\/+$/, '')}${apiPath}`))
+      relays.http(req, res, new URL(`${url.replace(/\/+$/, '')}${apiPath}`))
     },
   }), 'dsh-voice: control-plane relay')
 
@@ -267,7 +272,7 @@ export function apply(ctx: HostContext, config: Config): void {
           socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
           return
         }
-        forwardUpgrade(req, socket, head, upstream, () => { endpoints.delete(sttServiceId) })
+        relays.upgrade(req, socket, head, upstream, () => { endpoints.delete(sttServiceId) })
       },
     })
   ctx.effect(() => source.onChange(registerUpgrade), 'dsh-voice: follow the selected STT service')
