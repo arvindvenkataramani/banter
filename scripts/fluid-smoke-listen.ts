@@ -1,13 +1,16 @@
 // The WebSocket half of fluid-smoke.sh: streams a 16 kHz mono WAV to a running
-// fluid-stt's Deepgram /listen socket and checks what comes back.
+// fluid-stt's Deepgram /v1/listen socket and checks what comes back.
 //
 //   bun scripts/fluid-smoke-listen.ts <ws://host:port> <file.wav> <expected word>
 //
 // Checks, in order: the socket opens; a second socket opened during the session
 // is refused without displacing the first; a pause after speech closes the
 // utterance with a final that contains the expected word; CloseStream answers
-// with Metadata. Prints one line per check and exits non-zero on the first
-// failure.
+// with Metadata; on a new socket, a Finalize sent with no audio is answered by
+// exactly one empty result marked from_finalize, and with endpointing=false a
+// pause longer than the 700 ms of the first socket leaves the utterance open
+// until the client finalizes it. Prints one line per check and exits non-zero
+// on the first failure.
 
 const [base, wavPath, expected] = process.argv.slice(2);
 if (!base || !wavPath || !expected) {
@@ -67,7 +70,7 @@ const pcm = pcmOf(new Uint8Array(await Bun.file(wavPath).arrayBuffer()));
 const frameBytes = (SAMPLE_RATE * 2 * FRAME_MS) / 1000;
 const silence = new Uint8Array(frameBytes);
 
-const first = await open(`${base}/listen?${QUERY}`).catch(e => fail(String(e)));
+const first = await open(`${base}/v1/listen?${QUERY}`).catch(e => fail(String(e)));
 pass("socket opened");
 
 // Speech at roughly real time, so the server sees what a live client sends.
@@ -94,7 +97,7 @@ if (!(await sendSilenceUntil(() => first.messages.some(m => m.type === "Results"
 
 // Only now, with the session provably held, is a second socket a second client
 // rather than a rival for an unclaimed session.
-const second = await open(`${base}/listen?${QUERY}`).catch(() => undefined);
+const second = await open(`${base}/v1/listen?${QUERY}`).catch(() => undefined);
 if (second) {
   const code = await within(second.closed, 5000);
   if (code === undefined) {
@@ -127,3 +130,48 @@ if (!first.messages.some(m => m.type === "Metadata")) fail("CloseStream got no M
 first.ws.close();
 await within(first.closed, 5000);
 pass("CloseStream answered with Metadata");
+
+// A new socket with the segmenter off, so only the client ends an utterance.
+// Its model is already resident, but a load would only delay the first answer.
+await sleep(500); // the first socket's session is released as its connection ends
+const MANUAL = `encoding=linear16&sample_rate=${SAMPLE_RATE}&channels=1&endpointing=false`;
+const manual = await open(`${base}/v1/listen?${MANUAL}`).catch(e => fail(String(e)));
+const answers = () => manual.messages.filter(m => m.type === "Results" && m.from_finalize === true);
+const transcriptOf = (m: Message) => m.channel?.alternatives?.[0]?.transcript ?? "";
+
+manual.ws.send(JSON.stringify({ type: "Finalize" }));
+const emptyDeadline = Date.now() + 90000;
+while (answers().length === 0 && Date.now() < emptyDeadline) await sleep(100);
+if (answers().length === 0) fail("a Finalize with no audio was never answered");
+await sleep(1500);
+if (answers().length !== 1) fail(`a Finalize with no audio was answered ${answers().length} times, not once`);
+if (transcriptOf(answers()[0]) !== "") fail(`the answer to an empty Finalize carried "${transcriptOf(answers()[0])}"`);
+pass("a Finalize with no audio was answered by one empty from_finalize result");
+
+for (let at = 0; at < pcm.byteLength; at += frameBytes) {
+  manual.ws.send(pcm.subarray(at, at + frameBytes));
+  await sleep(FRAME_MS / 2);
+}
+// Two seconds of silence at real time, almost three times what closes an utterance
+// on the first socket, whether the segmenter counts samples or wall-clock time.
+// Partial results may come; a final may not.
+for (let i = 0; i < 20; i++) {
+  manual.ws.send(silence);
+  await sleep(FRAME_MS);
+}
+await sleep(500);
+if (manual.messages.some(isFinal)) fail("the server closed an utterance on a pause although endpointing=false");
+pass("endpointing=false left the utterance open through a pause longer than 700 ms");
+
+manual.ws.send(JSON.stringify({ type: "Finalize" }));
+const finalDeadline = Date.now() + 30000;
+while (answers().length < 2 && Date.now() < finalDeadline) await sleep(100);
+if (answers().length < 2) fail("the Finalize after the pause was never answered");
+const settled = transcriptOf(answers()[1]);
+if (!settled.toLowerCase().includes(expected.toLowerCase())) {
+  fail(`the Finalize after the pause answered "${settled}", without "${expected}"`);
+}
+pass(`Finalize settled the open utterance: "${settled}"`);
+
+manual.ws.close();
+await within(manual.closed, 5000);

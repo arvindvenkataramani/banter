@@ -53,7 +53,7 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
     wsRouter.ws("/v1/audio/stream") { inbound, outbound, wsCtx in
         // The model the caller wants: loaded, or replacing an idle one, as
         // `ResidentModel.beginSession` describes.
-        let expecting = wsCtx.request.uri.queryParameters["model"].map(String.init)
+        let named = wsCtx.request.uri.queryParameters["model"].map(String.init)
         let formatName = wsCtx.request.uri.queryParameters["format"].map(String.init) ?? "opus"
         let session = wsCtx.request.uri.queryParameters["session"].map(String.init)
         let takeover = wsCtx.request.uri.queryParameters["takeover"].map(String.init) == "1"
@@ -70,6 +70,14 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
         let decoder: AudioDecoder
         do {
             decoder = try AudioDecoder(format: format)
+        } catch {
+            await sink.fail(error)
+            return
+        }
+        // Named on the wire by the serving's key.
+        let expecting: String?
+        do {
+            expecting = try named.map { try ctx.resident.roster.id(forKey: $0) }
         } catch {
             await sink.fail(error)
             return
@@ -108,7 +116,8 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
         do {
             ended = try await runSession(
                 inbound: inbound, outbound: outbound, sink: sink, ctx: ctx, token: token,
-                decoder: decoder, model: activeModel, format: format)
+                decoder: decoder,
+                model: ctx.resident.roster.model(id: activeModel)?.entry.key ?? activeModel, format: format)
         } catch {
             await ctx.resident.endSession(token: token, claim: claimToken)
             ctx.logger.info(
@@ -123,6 +132,7 @@ func buildStreamRouter(ctx: AppContext) -> Router<BasicWebSocketRequestContext> 
     }
 
     registerListenStream(on: wsRouter, ctx: ctx)
+    registerRealtimeTranscription(on: wsRouter, ctx: ctx)
     return wsRouter
 }
 

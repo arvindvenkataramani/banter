@@ -26,7 +26,7 @@ type Doc = { services: any[]; roster: any };
 const speech = { api: "openai.audio.speech" };
 const transcriptions = { api: "openai.audio.transcriptions" };
 const liveStream = { api: "fluid.stt.stream" };
-const triton = { api: "triton.model-repository", extends: ["resident-slot"] };
+const triton = { api: "triton.model-repository", omits: ["field:index.version"], extends: ["resident-slot"] };
 const declaredLoad = { method: "POST", path: "/v1/models", query: { model_name: "{model}" } };
 
 /** One synthesis service and one speech-to-text service, each with the smallest valid provision. */
@@ -360,8 +360,8 @@ describe("the registries the repo ships", () => {
     expect(() => validateRoster(registry.roster, registry.services)).not.toThrow();
   });
 
-  // Spec section 12, step S1.
-  it("[S1] the fluid servers state exactly the S1 provisions of the spec", () => {
+  // Spec section 12, step S2.
+  it("[S2] the fluid servers state exactly the S2 provisions of the spec", () => {
     const services = readJson("services/fluid/registry.fluid.example.json").services as any[];
     const of = (id: string) => services.find(s => s.id === id);
     const index = (api: string) => readJson(`shared/apis/parts/${api}.json`).parts as string[];
@@ -375,12 +375,25 @@ describe("the registries the repo ships", () => {
     void paramsExcept;
     expect(sorted(of("fluid-stt").provides)).toEqual(sorted([
       { api: "fluid.stt.stream" },
-      { api: "openai.audio.transcriptions", omits: ["parameter:language","parameter:languages","parameter:keywords","parameter:prompt","parameter:temperature","parameter:include","parameter:stream","parameter:chunking_strategy","parameter:known_speaker_names","parameter:known_speaker_references"], restricts: { response_format: ["json", "text", "verbose_json"] } },
-      { api: "triton.model-repository", extends: ["resident-slot"] },
+      { api: "openai.audio.transcriptions", omits: ["value:timestamp_granularities=segment","parameter:language","parameter:languages","parameter:keywords","parameter:prompt","parameter:temperature","parameter:include","parameter:chunking_strategy","parameter:known_speaker_names","parameter:known_speaker_references"], restricts: { response_format: ["json", "text", "verbose_json"] } },
+      { api: "triton.model-repository", omits: ["field:index.version"], extends: ["resident-slot"] },
+      { api: "deepgram.listen.prerecorded", omits: paramsExcept("deepgram.listen.prerecorded", ["model", "encoding", "sample_rate"]), restricts: { encoding: ["linear16", "flac"] } },
+      {
+        api: "deepgram.listen.live",
+        omits: [...paramsExcept("deepgram.listen.live", ["model", "encoding", "sample_rate", "channels", "interim_results", "endpointing"]), "client-message:Configure", "server-message:ConfigureSuccess", "server-message:ConfigureFailure", "server-message:UtteranceEnd", "server-message:SpeechStarted"],
+        restricts: { encoding: ["opus", "linear16"] },
+        defaults: { endpointing: 700 },
+        extends: ["session-claim", "finalize-answered", "endpointing-off", "opus-packets"],
+      },
+      { api: "openai.realtime", only: ["mode:transcription","client-message:session.update","client-message:input_audio_buffer.append","client-message:input_audio_buffer.commit","client-message:input_audio_buffer.clear","server-message:session.created","server-message:session.updated","server-message:input_audio_buffer.committed","server-message:input_audio_buffer.cleared","server-message:conversation.item.input_audio_transcription.delta","server-message:conversation.item.input_audio_transcription.completed","server-message:error"], omits: ["parameter:audio.input.noise_reduction","parameter:audio.output.format","parameter:audio.output.voice","parameter:include","value:audio.input.format=audio/pcmu","value:audio.input.format=audio/pcma","value:audio.input.turn_detection=server_vad","value:audio.input.turn_detection=semantic_vad"], extends: ["opus-input"] },
     ]));
     expect(sorted(of("fluid-tts").provides)).toEqual(sorted([
-      { api: "openai.audio.speech", omits: ["parameter:instructions"], restricts: { response_format: ["aac", "wav", "pcm"] }, extends: ["cloning-reference"] },
-      { api: "triton.model-repository", extends: ["resident-slot"] },
+      { api: "openai.audio.speech", omits: ["parameter:instructions"], restricts: { response_format: ["aac", "wav", "pcm"] }, defaults: { response_format: "aac" }, extends: ["cloning-reference"] },
+      { api: "triton.model-repository", omits: ["field:index.version"], extends: ["resident-slot"] },
+      { api: "deepgram.speak", omits: paramsExcept("deepgram.speak", ["model", "encoding", "container", "sample_rate", "speed"]), restricts: { encoding: ["aac", "linear16"], container: ["none", "wav"] }, extends: ["voice-param", "cloning-reference"] },
+      { api: "deepgram.speak.live", restricts: { encoding: ["linear16"] }, extends: ["voice-param", "cloning-reference", "session-claim"] },
+      { api: "openai.realtime", only: ["mode:conversation","client-message:session.update","client-message:response.create","client-message:response.cancel","server-message:session.created","server-message:session.updated","server-message:response.created","server-message:response.output_audio.delta","server-message:response.output_audio.done","server-message:response.done","server-message:error"], omits: ["parameter:intent","parameter:audio.input.format","parameter:audio.input.transcription","parameter:audio.input.noise_reduction","parameter:audio.input.turn_detection","parameter:include"], extends: ["verbatim-speech"] },
+      { api: "fluid.tts.stream" },
     ]));
     for (const id of ["fluid-stt", "fluid-tts"]) {
       expect(of(id).models).toEqual({ loading: "required", autoLoad: "always", resident: "one" });

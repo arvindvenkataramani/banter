@@ -32,7 +32,7 @@ final class LiveServer: @unchecked Sendable {
         let box = PortBox()
         let app = Application(
             router: router,
-            server: .http1WebSocketUpgrade(webSocketRouter: webSockets),
+            server: .http1WebSocketUpgrade(webSocketRouter: webSockets, configuration: .init(maxFrameSize: 1 << 20)),
             configuration: .init(address: .hostname("127.0.0.1", port: 0), serverName: "test"),
             onServerRunning: { channel in await box.set(channel.localAddress?.port) })
         let task = Task { try await app.runService() }

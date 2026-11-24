@@ -33,12 +33,15 @@ enum LoadedModel {
     /// identity: three tiers are one model, and each is its own encoder bundle
     /// so holding all three would cost three encoders for a choice made once.
     case nemotron(id: String, manager: StreamingNemotronAsrManager, chunkMs: Int)
+    /// A stand-in with no weights; see `ScriptedModel`.
+    case scripted(id: String, model: ScriptedModel)
 
     var id: String {
         switch self {
         case .batchTdt(let id, _, _): return id
         case .unified(let id, _, _): return id
         case .nemotron(let id, _, _): return id
+        case .scripted(let id, _): return id
         }
     }
 
@@ -48,6 +51,7 @@ enum LoadedModel {
         switch self {
         case .batchTdt: return [.batch]
         case .nemotron: return [.streaming]
+        case .scripted: return [.batch, .streaming]
         case .unified(_, let offline, let streaming):
             var m: [LoadMode] = []
             if offline != nil { m.append(.batch) }
@@ -65,6 +69,8 @@ enum LoadedModel {
             return .nemotron(manager)
         case .batchTdt:
             return nil
+        case .scripted(_, let model):
+            return .scripted(model)
         }
     }
 
@@ -151,6 +157,13 @@ enum LoadedModel {
         case .nemotron(let id, _, _):
             throw FluidServerSTTError.streamingModelSelected(id)
 
+        case .scripted(_, let model):
+            let bytes = (try? Data(contentsOf: url).count) ?? 0
+            await model.hear(bytes > 0 ? [0] : [])
+            let text = await model.answer
+            await model.reset()
+            return TranscriptionOutput(text: text, duration: nil, tokenTimings: [])
+
         case .batchTdt(_, let manager, let layers):
             var state = TdtDecoderState.make(decoderLayers: layers)
             let result = try await manager.transcribe(url, decoderState: &state)
@@ -202,6 +215,8 @@ enum LoadedModel {
             await streaming?.cleanup()
         case .nemotron(_, let manager, _):
             await manager.cleanup()
+        case .scripted:
+            break
         }
     }
 }

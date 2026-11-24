@@ -52,13 +52,13 @@
         {
           "api": "openai.audio.transcriptions",
           "omits": [
+            "value:timestamp_granularities=segment",
             "parameter:language",
             "parameter:languages",
             "parameter:keywords",
             "parameter:prompt",
             "parameter:temperature",
             "parameter:include",
-            "parameter:stream",
             "parameter:chunking_strategy",
             "parameter:known_speaker_names",
             "parameter:known_speaker_references"
@@ -73,8 +73,139 @@
         },
         {
           "api": "triton.model-repository",
+          "omits": [
+            "field:index.version"
+          ],
           "extends": [
             "resident-slot"
+          ]
+        },
+        {
+          "api": "deepgram.listen.prerecorded",
+          "omits": [
+            "parameter:callback",
+            "parameter:callback_method",
+            "parameter:extra",
+            "parameter:sentiment",
+            "parameter:summarize",
+            "parameter:tag",
+            "parameter:topics",
+            "parameter:custom_topic",
+            "parameter:custom_topic_mode",
+            "parameter:intents",
+            "parameter:custom_intent",
+            "parameter:custom_intent_mode",
+            "parameter:detect_entities",
+            "parameter:detect_language",
+            "parameter:diarize",
+            "parameter:diarize_model",
+            "parameter:dictation",
+            "parameter:filler_words",
+            "parameter:keyterm",
+            "parameter:keywords",
+            "parameter:language",
+            "parameter:language_hint",
+            "parameter:measurements",
+            "parameter:multichannel",
+            "parameter:numerals",
+            "parameter:paragraphs",
+            "parameter:profanity_filter",
+            "parameter:punctuate",
+            "parameter:redact",
+            "parameter:redact_usage",
+            "parameter:replace",
+            "parameter:search",
+            "parameter:smart_format",
+            "parameter:utterances",
+            "parameter:utt_split",
+            "parameter:version",
+            "parameter:mip_opt_out"
+          ],
+          "restricts": {
+            "encoding": [
+              "linear16",
+              "flac"
+            ]
+          }
+        },
+        {
+          "api": "deepgram.listen.live",
+          "omits": [
+            "parameter:callback",
+            "parameter:callback_method",
+            "parameter:detect_entities",
+            "parameter:diarize",
+            "parameter:diarize_model",
+            "parameter:dictation",
+            "parameter:extra",
+            "parameter:keyterm",
+            "parameter:keywords",
+            "parameter:language",
+            "parameter:language_hint",
+            "parameter:mip_opt_out",
+            "parameter:multichannel",
+            "parameter:numerals",
+            "parameter:profanity_filter",
+            "parameter:punctuate",
+            "parameter:redact",
+            "parameter:redact_usage",
+            "parameter:replace",
+            "parameter:search",
+            "parameter:smart_format",
+            "parameter:tag",
+            "parameter:utterance_end_ms",
+            "parameter:vad_events",
+            "parameter:version",
+            "client-message:Configure",
+            "server-message:ConfigureSuccess",
+            "server-message:ConfigureFailure",
+            "server-message:UtteranceEnd",
+            "server-message:SpeechStarted"
+          ],
+          "restricts": {
+            "encoding": [
+              "opus",
+              "linear16"
+            ]
+          },
+          "defaults": {
+            "endpointing": 700
+          },
+          "extends": [
+            "session-claim",
+            "finalize-answered",
+            "endpointing-off",
+            "opus-packets"
+          ]
+        },
+        {
+          "api": "openai.realtime",
+          "only": [
+            "mode:transcription",
+            "client-message:session.update",
+            "client-message:input_audio_buffer.append",
+            "client-message:input_audio_buffer.commit",
+            "client-message:input_audio_buffer.clear",
+            "server-message:session.created",
+            "server-message:session.updated",
+            "server-message:input_audio_buffer.committed",
+            "server-message:input_audio_buffer.cleared",
+            "server-message:conversation.item.input_audio_transcription.delta",
+            "server-message:conversation.item.input_audio_transcription.completed",
+            "server-message:error"
+          ],
+          "omits": [
+            "parameter:audio.input.noise_reduction",
+            "parameter:audio.output.format",
+            "parameter:audio.output.voice",
+            "parameter:include",
+            "value:audio.input.format=audio/pcmu",
+            "value:audio.input.format=audio/pcma",
+            "value:audio.input.turn_detection=server_vad",
+            "value:audio.input.turn_detection=semantic_vad"
+          ],
+          "extends": [
+            "opus-input"
           ]
         }
       ],
@@ -141,15 +272,88 @@
               "pcm"
             ]
           },
+          "defaults": {
+            "response_format": "aac"
+          },
           "extends": [
             "cloning-reference"
           ]
         },
         {
           "api": "triton.model-repository",
+          "omits": [
+            "field:index.version"
+          ],
           "extends": [
             "resident-slot"
           ]
+        },
+        {
+          "api": "deepgram.speak",
+          "omits": [
+            "parameter:callback",
+            "parameter:callback_method",
+            "parameter:mip_opt_out",
+            "parameter:tag",
+            "parameter:bit_rate"
+          ],
+          "restricts": {
+            "encoding": [
+              "aac",
+              "linear16"
+            ],
+            "container": [
+              "none",
+              "wav"
+            ]
+          },
+          "extends": [
+            "voice-param",
+            "cloning-reference"
+          ]
+        },
+        {
+          "api": "deepgram.speak.live",
+          "restricts": {
+            "encoding": [
+              "linear16"
+            ]
+          },
+          "extends": [
+            "voice-param",
+            "cloning-reference",
+            "session-claim"
+          ]
+        },
+        {
+          "api": "openai.realtime",
+          "only": [
+            "mode:conversation",
+            "client-message:session.update",
+            "client-message:response.create",
+            "client-message:response.cancel",
+            "server-message:session.created",
+            "server-message:session.updated",
+            "server-message:response.created",
+            "server-message:response.output_audio.delta",
+            "server-message:response.output_audio.done",
+            "server-message:response.done",
+            "server-message:error"
+          ],
+          "omits": [
+            "parameter:intent",
+            "parameter:audio.input.format",
+            "parameter:audio.input.transcription",
+            "parameter:audio.input.noise_reduction",
+            "parameter:audio.input.turn_detection",
+            "parameter:include"
+          ],
+          "extends": [
+            "verbatim-speech"
+          ]
+        },
+        {
+          "api": "fluid.tts.stream"
         }
       ],
       "models": {

@@ -427,6 +427,12 @@ struct Roster: Sendable {
         models.first { $0.entry.key == key }
     }
 
+    /// The roster id for a model a request names on the wire, by its serving's key.
+    func id(forKey key: String) throws -> String {
+        guard let model = model(key: key) else { throw FluidServerSTTError.unknownModel(key) }
+        return model.id
+    }
+
     /// Parse and validate. Every failure names the offending model, because a
     /// roster that is wrong should say which line is wrong.
     static func validate(

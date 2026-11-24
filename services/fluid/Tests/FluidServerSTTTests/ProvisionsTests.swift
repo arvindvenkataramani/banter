@@ -100,7 +100,7 @@ final class ProvisionsTests: XCTestCase {
     /// implements is accepted, so S2's Realtime provisions can use it.
     func testS1_StartupAcceptsAnEntryWhoseOnlyLeavesOutWhatTheBuildLacks() throws {
         let file = try registry(editing: "openai.audio.transcriptions") { provision in
-            provision.removeValue(forKey: "omits")
+            provision["omits"] = ["value:timestamp_granularities=segment"]
             provision["only"] = [
                 "parameter:file", "parameter:model", "parameter:response_format",
                 "parameter:timestamp_granularities",
@@ -111,7 +111,7 @@ final class ProvisionsTests: XCTestCase {
 
     func testS1_StartupRefusesAnEntryWhoseOnlyIncludesAPartTheBuildLacks() throws {
         let file = try registry(editing: "openai.audio.transcriptions") { provision in
-            provision.removeValue(forKey: "omits")
+            provision["omits"] = ["value:timestamp_granularities=segment"]
             provision["only"] = [
                 "parameter:file", "parameter:model", "parameter:response_format",
                 "parameter:timestamp_granularities", "parameter:keywords",

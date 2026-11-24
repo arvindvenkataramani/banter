@@ -77,6 +77,8 @@ public enum TtsError: Error, CustomStringConvertible {
     case busy
     case unknownFormat(String)
     case unknownStreamFormat(String)
+    /// A Deepgram parameter at a value this server does not produce.
+    case unsupportedValue(String)
     /// A roster voice asked of a model she is not offered on. Passing her id
     /// through would be answered with the runtime's default voice and no error.
     case voiceNotOffered(voice: String, model: String)
@@ -102,6 +104,8 @@ public enum TtsError: Error, CustomStringConvertible {
             return "unknown response_format '\(f)'; expected aac, wav or pcm"
         case .unknownStreamFormat(let f):
             return "unknown stream_format '\(f)'; expected sse or audio"
+        case .unsupportedValue(let v):
+            return "unsupported value: \(v)"
         case .busy:
             return "the model is busy with another request; one runs at a time"
         }
@@ -120,7 +124,7 @@ extension TtsError: SocketCoded {
             return .modelMismatch
         case .busy:
             return .busy
-        case .unknownFormat, .unknownStreamFormat:
+        case .unknownFormat, .unknownStreamFormat, .unsupportedValue:
             return .badFormat
         case .missingReference, .unsupported, .voiceNotOffered, .noUsableReference, .noModelNamed:
             return .failed

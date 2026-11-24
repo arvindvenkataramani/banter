@@ -376,19 +376,19 @@ Both fluid servers state `models: { loading: "required", autoLoad: "always", res
 - **`fluid-stt`:**
   - `openai.audio.transcriptions` loses the `parameter:stream` omission and gains `value:timestamp_granularities=segment` (the build never returns segments).
   - `triton.model-repository` omits `field:index.version`, on both servers.
-  - `deepgram.listen.prerecorded` omits every query parameter in its index except `model`, `encoding` and `sample_rate`.
+  - `deepgram.listen.prerecorded` omits every query parameter in its index except `model`, `encoding` and `sample_rate`, and restricts `encoding` to `["linear16", "flac"]`.
   - `deepgram.listen.live`:
     - omits every query parameter except `model`, `encoding`, `sample_rate`, `channels`, `interim_results` and `endpointing`;
     - omits `client-message:Configure`, `server-message:ConfigureSuccess`, `server-message:ConfigureFailure`, `server-message:UtteranceEnd` and `server-message:SpeechStarted`;
     - restricts `encoding` to `["opus", "linear16"]`;
     - `defaults: { endpointing: 700 }`;
     - extends `session-claim`, `finalize-answered`, `endpointing-off` and `opus-packets`.
-  - `openai.realtime`, with `only` the client and server messages in section 9 plus `mode:transcription`, extending `opus-input`.
+  - `openai.realtime`, with `only` the client and server messages in section 9 plus `mode:transcription`, extending `opus-input`, and omitting `parameter:audio.input.noise_reduction`, `parameter:audio.output.format`, `parameter:audio.output.voice`, `parameter:include`, `value:audio.input.format=audio/pcmu`, `value:audio.input.format=audio/pcma`, `value:audio.input.turn_detection=server_vad` and `value:audio.input.turn_detection=semantic_vad`.
 - **`fluid-tts`:**
   - `openai.audio.speech` declares `defaults: { response_format: "aac" }`, where the spec's default is mp3.
-  - `deepgram.speak`: omits every query parameter except `model`, `encoding`, `container`, `sample_rate` and `speed`; restricts `encoding` to `["aac", "linear16"]`; extends `voice-param` and `cloning-reference`.
+  - `deepgram.speak`: omits every query parameter except `model`, `encoding`, `container`, `sample_rate` and `speed`; restricts `encoding` to `["aac", "linear16"]` and `container` to `["none", "wav"]`; extends `voice-param` and `cloning-reference`.
   - `deepgram.speak.live`: restricts `encoding` to `["linear16"]`; extends `voice-param`, `cloning-reference` and `session-claim`.
-  - `openai.realtime`, with `only` the messages in section 9 plus `mode:conversation`, extending `verbatim-speech`.
+  - `openai.realtime`, with `only` the messages in section 9 plus `mode:conversation`, extending `verbatim-speech`, and omitting `parameter:intent`, `parameter:audio.input.format`, `parameter:audio.input.transcription`, `parameter:audio.input.noise_reduction`, `parameter:audio.input.turn_detection` and `parameter:include`.
   - `fluid.tts.stream`.
 
 At S2 the Swift builder confirms each of these against its build. Any difference goes to a brief, never a silent edit.

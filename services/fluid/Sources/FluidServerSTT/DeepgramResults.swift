@@ -29,10 +29,11 @@ enum DeepgramResults {
     }
 
     /// The `Metadata` message Deepgram sends as a stream closes.
-    static func streamClosed(duration: Double, channels: Int, requestId: String) -> String {
+    static func streamClosed(duration: Double, channels: Int, requestId: String, sha256: String) -> String {
         encode([
-            "type": "Metadata", "request_id": requestId,
-            "created": ISO8601DateFormatter().string(from: Date()),
+            // INVENTED: the deprecated `transaction_key` value, and `sha256` over the audio bytes received.
+            "type": "Metadata", "transaction_key": "deprecated", "request_id": requestId,
+            "sha256": sha256, "created": ISO8601DateFormatter().string(from: Date()),
             "duration": duration, "channels": channels,
         ])
     }

@@ -114,17 +114,16 @@ The shared protocol is in the [speech server API](../../docs/reference/speech-se
 
 ### Deepgram-compatible `/listen`
 
-`fluid-stt` also answers Deepgram's `/listen` (and `/v1/listen`), so a client written for Deepgram can use it by changing a base URL. Anarlog's Custom speech provider is the one it was built for. `POST /listen` takes the audio file as the raw body; a WebSocket on `/listen` takes `linear16` PCM at the declared `sample_rate` and returns `Results` messages. The `Authorization` header isn't checked, so any non-empty key satisfies a client that requires one.
+`fluid-stt` also answers Deepgram's `/listen` (and `/v1/listen`), so a client written for Deepgram can use it by changing a base URL. Anarlog's Custom speech provider is the one it was built for. `POST /v1/listen` takes the audio file as the raw body, or raw `linear16` at `sample_rate` when `encoding=linear16`; a WebSocket on `/v1/listen` takes `linear16` PCM at the declared `sample_rate`, or one raw Opus packet per message with `encoding=opus`, and returns `Results` messages. `model` names a serving by its key, as on the stream socket. The `Authorization` header isn't checked, so any non-empty key satisfies a client that requires one.
 
-Unlike the dashboard's stream, where the client decides when an utterance ends, the server decides here: a pause of `endpointing` milliseconds (700 by default) after speech closes the utterance and sends a final. A Deepgram client expects finals as it goes, and would otherwise see one growing interim and lose it on a dropped socket. The silence gate is an energy threshold over 10 ms windows (0.01 RMS, about -40 dBFS, not yet measured against real recordings), so silence before any speech closes nothing. A client `Finalize` also closes the open utterance, and sets `from_finalize` on that result.
+Unlike the dashboard's stream, where the client decides when an utterance ends, the server decides here: a pause of `endpointing` milliseconds after speech closes the utterance and sends a final. Its default is the `deepgram.listen.live` provision's `defaults.endpointing` (700 in the example registry), else Deepgram's 10; `endpointing=false` turns the segmenter off and leaves every utterance to the client. A Deepgram client expects finals as it goes, and would otherwise see one growing interim and lose it on a dropped socket. The silence gate is an energy threshold over 10 ms windows (0.01 RMS, about -40 dBFS, not yet measured against real recordings), so silence before any speech closes nothing. Every `Finalize` is answered by exactly one result with `from_finalize: true`, including an empty one when nothing was heard; only a result with text is marked `is_final`.
 
-The socket claims the model with a generated session and no takeover, so a second concurrent client is refused rather than displacing a call in progress. A `/listen` POST is a batch request outside any session.
+`session` and `takeover` claim the socket as on the stream socket. A refusal or displacement closes with its 4001–4010 code and sends no frame; a text message the server cannot parse is answered with an `Error` message and the stream stays open. A `/listen` POST is a batch request outside any session.
 
 Limits:
 - Multi-channel audio is averaged to mono, so the client can't tell the microphone from the other participants.
 - There's no cap on utterance length: a speaker who never pauses for `endpointing` gets one growing interim and no final.
 - Confidence is always 1.0. Diarization, filler words, numerals and keyword boosting are ignored.
-- The contract is Anarlog's parser (`crates/owhisper-client/src/adapter/deepgram/` in `fastrepl/anarlog`); Deepgram's own specification hasn't been checked.
 
 ### Word timings
 
@@ -134,7 +133,7 @@ The boundary rule is written against parakeet-mlx's own tokenizer behaviour, whi
 
 ## fluid-tts
 
-- **Responses are AAC by default**, in ADTS framing. `wav` and `pcm` (headerless 16-bit mono at 24 kHz) are the other `response_format` values; anything else is refused rather than substituted. A streamed response is one encoded stream, not one file per interval, so there's no gap at the seams.
+- **Responses are AAC by default**, in ADTS framing, as the registry entry declares under `defaults.response_format`. `wav` and `pcm` (headerless 16-bit mono at 24 kHz) are the other `response_format` values; anything else is refused rather than substituted. A streamed response is one encoded stream, not one file per interval, so there's no gap at the seams.
 - **Streaming is a capability, not a special case.** Only Pocket TTS streams today (`TtsStreamingDriver`). `/v1/audio/speech` streams with no flag asked, and `stream_format: "sse"` sends the same audio as `speech.audio.delta` events and a closing `speech.audio.done`. A backend that can't stream returns the whole utterance in the same container, so a client never branches on which model it's talking to.
 - **Streamed audio is emitted in fixed-duration chunks**, every 2 s of generated audio by default (mlx-audio's default and field name), overridable per request with `streaming_interval`. Below about 1 s the time to first audio stops tracking the interval and settles near 0.3 s, so 0.5 s is the useful floor. Set it per model with the roster's `requestParams`.
 - **Long text is split for backends with a hard input cap**, at sentence and clause boundaries rather than between words.

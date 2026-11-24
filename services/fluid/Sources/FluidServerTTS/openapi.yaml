@@ -26,9 +26,10 @@ info:
     implements. Both are described in BUILD.md.
 
     What /v1/audio/speech returns: one container per response, streamed as
-    synthesis produces it. `response_format` selects `aac` (the default, AAC-LC in
-    ADTS), `wav`, or `pcm`, and anything else is refused rather than silently
-    substituted. `pcm` is headerless 16-bit mono at 24 kHz, as OpenAI defines
+    synthesis produces it. `response_format` selects `aac` (AAC-LC in ADTS), `wav`,
+    or `pcm`, and anything else is refused rather than silently substituted.
+    With none named, the default is the one the server's registry entry
+    declares for `openai.audio.speech`. `pcm` is headerless 16-bit mono at 24 kHz, as OpenAI defines
     it, whatever rate the model produces: a client cannot be told the rate of
     raw samples, so a 44.1 or 48 kHz model is resampled.
 

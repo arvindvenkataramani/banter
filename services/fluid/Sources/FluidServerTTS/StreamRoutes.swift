@@ -117,6 +117,8 @@ func buildStreamRouter(ctx: TtsAppContext) -> Router<BasicWebSocketRequestContex
         await claim.release(token: claimToken)
     }
 
+    registerSpeakLive(on: wsRouter, ctx: ctx, claim: claim)
+    registerRealtimeSpeech(on: wsRouter, ctx: ctx)
     return wsRouter
 }
 

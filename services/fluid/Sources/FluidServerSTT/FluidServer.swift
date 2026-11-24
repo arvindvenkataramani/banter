@@ -83,7 +83,9 @@ struct FluidServerSTT {
 
         let app = Application(
             router: buildRouter(ctx: ctx),
-            server: .http1WebSocketUpgrade(webSocketRouter: buildStreamRouter(ctx: ctx)),
+            // Realtime appends and Deepgram audio messages run past the 16 KiB default frame.
+            server: .http1WebSocketUpgrade(
+                webSocketRouter: buildStreamRouter(ctx: ctx), configuration: .init(maxFrameSize: 1 << 20)),
             configuration: .init(
                 address: .hostname(args.host, port: args.port),
                 serverName: "fluid-stt"

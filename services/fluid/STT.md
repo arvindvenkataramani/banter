@@ -114,12 +114,12 @@ Drops whatever is resident, without naming it — the spelling OpenAI-compatible
 
 Multipart upload, OpenAI-compatible. `file` is required. `response_format` takes `text` for plain text, `verbose_json` for word timings, and defaults to JSON. `timestamp_granularities[]=word` (or the unbracketed `timestamp_granularities=word`) adds word timings to a `verbose_json` response.
 
-The optional `model` field names the model the caller wants: loaded if nothing is resident, replacing the resident one if another is, once the work in flight ends.
+The optional `model` field names the model the caller wants, by its serving's key: loaded if nothing is resident, replacing the resident one if another is, once the work in flight ends.
 
 | Status | When |
 |---|---|
 | 200 | transcript |
-| 400 | `model` names an unknown id |
+| 400 | `model` names no serving's key |
 | 409 | no `model` is named, no model is loaded and the roster has no default |
 | 409 | the loaded model is resident only in streaming mode, or is a streaming-only model with no batch path |
 | 409 | a streaming session holds the model |
@@ -132,7 +132,7 @@ The body is capped at 200 MB. Error bodies are `{"error": "<what is wrong>"}`.
 
 `ws://<host>:<port>/v1/audio/stream?model=<id>&format=<opus|pcm16>&session=<id>&takeover=1`
 
-The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, replacing the resident one if another model is named and no session holds the server. `model` is optional and names the model wanted; `chunkMs` picks the tier of a model that takes one (Nemotron), and another tier of the resident model replaces it the same way; `format` defaults to `opus`. While a session holds the server, a connection that would change the model gets in only as a takeover or the holder's own reconnect: the holder's session ends, then the newcomer's model loads.
+The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, replacing the resident one if another model is named and no session holds the server. `model` is optional and names the model wanted, by its serving's key; `chunkMs` picks the tier of a model that takes one (Nemotron), and another tier of the resident model replaces it the same way; `format` defaults to `opus`. While a session holds the server, a connection that would change the model gets in only as a takeover or the holder's own reconnect: the holder's session ends, then the newcomer's model loads.
 
 `session` and `takeover` say who holds the connection. One streaming session is live at a time, so `session` is the caller's own id: a connection without one has an identity of its own and can never be recognised as a reconnect. `fluid-tts`'s socket takes the same two parameters and follows the identical rule, so a client written against one socket reads the other correctly.
 

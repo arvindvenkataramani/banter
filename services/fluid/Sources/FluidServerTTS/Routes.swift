@@ -55,7 +55,8 @@ extension TtsError: FluidServerKit.FluidServerError {
     /// other must not find them disagreeing.
     public var status: HTTPResponse.Status {
         switch self {
-        case .unknownModel, .unknownFormat, .unknownStreamFormat, .voiceNotOffered, .noModelNamed:
+        case .unknownModel, .unknownFormat, .unknownStreamFormat, .unsupportedValue, .voiceNotOffered,
+            .noModelNamed:
             return .badRequest
         case .busy, .notLoaded, .modelMismatch: return .conflict
         case .missingReference, .unsupported, .noUsableReference: return .internalServerError
@@ -175,9 +176,10 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
         // A format the server cannot produce is refused here rather than served
         // as something else: a caller that asks for mp3 and receives WAV with a
         // 200 discovers the mismatch as audio that will not play.
-        let requestedFormat = body.response_format ?? ctx.provisions.speechFormat
+        // With none named, the provision's declared default, else OpenAI's own mp3, which is refused.
+        let requestedFormat = body.response_format ?? ctx.provisions.speechFormat ?? "mp3"
         guard let format = AudioFormat(requested: requestedFormat) else {
-            return errorResponse(TtsError.unknownFormat(requestedFormat ?? ""), ctx: ctx)
+            return errorResponse(TtsError.unknownFormat(requestedFormat), ctx: ctx)
         }
         let events: Bool
         switch body.stream_format {
@@ -188,11 +190,12 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
         }
 
         return try await streamingResponse(
-            synthesisRequest, format: format,
+            synthesisRequest, output: .format(format),
             interval: body.streaming_interval ?? defaultStreamingInterval,
             events: events, ctx: ctx)
     }
 
+    registerSpeak(on: router, ctx: ctx)
     return router
 }
 
@@ -204,13 +207,23 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
 /// accepts, so one `bench.yaml` drives both and a sweep sets it explicitly.
 let defaultStreamingInterval = 0.5
 
+/// How a response encodes audio: its content type, and an encoder for a model's sample rate.
+struct OutputEncoding: Sendable {
+    let contentType: String
+    let make: @Sendable (Int) throws -> any StreamingAudioEncoder
+
+    static func format(_ format: AudioFormat) -> OutputEncoding {
+        OutputEncoding(contentType: format.contentType) { try makeEncoder(format: format, sampleRate: $0) }
+    }
+}
+
 /// Encode a whole utterance as one response body.
-func wholeResponse(samples: [Float], sampleRate: Int, format: AudioFormat) throws -> Response {
-    let encoder = try makeEncoder(format: format, sampleRate: sampleRate)
+func wholeResponse(samples: [Float], sampleRate: Int, output: OutputEncoding) throws -> Response {
+    let encoder = try output.make(sampleRate)
     var data = try encoder.encode(samples)
     data.append(try encoder.finish())
     var response = Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
-    response.headers[.contentType] = format.contentType
+    response.headers[.contentType] = output.contentType
     return response
 }
 
@@ -232,8 +245,8 @@ private let eventStreamType = "text/event-stream"
 /// put a gap there too. A backend that cannot stream serves the whole utterance
 /// in the same container rather than failing, so a client never branches on
 /// which model it is talking to.
-private func streamingResponse(
-    _ request: SynthesisRequest, format: AudioFormat, interval: Double, events: Bool,
+func streamingResponse(
+    _ request: SynthesisRequest, output: OutputEncoding, interval: Double, events: Bool,
     ctx: TtsAppContext
 ) async throws -> Response {
     let begun: (token: UInt64, stream: AsyncThrowingStream<[Float], Error>, sampleRate: Int)
@@ -246,9 +259,9 @@ private func streamingResponse(
             let result = try await ctx.resident.synthesize(request)
             guard events else {
                 return try wholeResponse(
-                    samples: result.samples, sampleRate: result.sampleRate, format: format)
+                    samples: result.samples, sampleRate: result.sampleRate, output: output)
             }
-            let encoder = try makeEncoder(format: format, sampleRate: result.sampleRate)
+            let encoder = try output.make(result.sampleRate)
             var audio = try encoder.encode(result.samples)
             audio.append(try encoder.finish())
             var body = audio.isEmpty ? ByteBuffer() : speechEvent("speech.audio.delta", audio: audio)
@@ -270,7 +283,7 @@ private func streamingResponse(
     // because an encoder is a reference type and crossing into the task with it
     // would be sending mutable state across isolation.
     do {
-        _ = try makeEncoder(format: format, sampleRate: begun.sampleRate)
+        _ = try output.make(begun.sampleRate)
     } catch {
         await ctx.resident.endStream(token: begun.token)
         return errorResponse(error, ctx: ctx)
@@ -299,7 +312,7 @@ private func streamingResponse(
             var signalled = false
             var failure: (any Error)?
             do {
-                let encoder = try makeEncoder(format: format, sampleRate: begun.sampleRate)
+                let encoder = try output.make(begun.sampleRate)
                 for try await chunk in bufferedChunks(
                     begun.stream, interval: interval, sampleRate: begun.sampleRate)
                 {
@@ -338,7 +351,7 @@ private func streamingResponse(
         break
     }
     var response = Response(status: .ok, body: .init(asyncSequence: buffers))
-    response.headers[.contentType] = events ? eventStreamType : format.contentType
+    response.headers[.contentType] = events ? eventStreamType : output.contentType
     return response
 }
 
@@ -349,7 +362,7 @@ private func streamingResponse(
 /// The synthesis routes build the response here rather than rethrowing, because
 /// a failure part-way through the streaming decision still has to produce a
 /// whole-utterance response on the fallback path.
-private func errorResponse(_ error: any Error, ctx: TtsAppContext) -> Response {
+func errorResponse(_ error: any Error, ctx: TtsAppContext) -> Response {
     ctx.logger.error("synthesis failed: \(String(describing: error))")
     // Both the server's own errors and the slot's carry their status, so a busy
     // model answers 409 here exactly as it does from a route that rethrows.

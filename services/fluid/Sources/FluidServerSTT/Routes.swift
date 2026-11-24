@@ -63,6 +63,8 @@ func handleTranscribe(
         /// Names the model to transcribe with, loaded or replacing an idle one
         /// as `ResidentModel.transcribe` describes.
         var model: String?
+        /// `true` answers as server-sent events.
+        var stream: String?
         /// OpenAI sends this field name with the brackets included, and clients
         /// repeat it once per granularity. Both spellings are accepted so a
         /// caller using either convention gets timestamps rather than silence.
@@ -110,10 +112,13 @@ func handleTranscribe(
 
     let result: TranscriptionOutput
     do {
-        result = try await appCtx.resident.transcribe(url: tempURL, expecting: form.model)
+        let expecting = try form.model.map { try appCtx.resident.roster.id(forKey: $0) }
+        result = try await appCtx.resident.transcribe(url: tempURL, expecting: expecting)
     } catch let error as FluidServerSTTError {
         return errorResponse(error)
     }
+
+    if form.stream == "true" { return transcriptEvents(result.text) }
 
     if (form.response_format ?? "json") == "text" {
         return Response(
@@ -201,4 +206,20 @@ struct CORSMiddleware<Context: RequestContext>: RouterMiddleware {
         }
         return response
     }
+}
+
+/// A finished transcript as OpenAI's streamed transcription events: the text as
+/// one `transcript.text.delta`, then `transcript.text.done`.
+func transcriptEvents(_ text: String) -> Response {
+    func event(_ object: [String: String]) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+        return "data: \(String(decoding: data, as: UTF8.self))\n\n"
+    }
+    var body = ""
+    if !text.isEmpty { body += event(["type": "transcript.text.delta", "delta": text]) }
+    body += event(["type": "transcript.text.done", "text": text])
+    return Response(
+        status: .ok,
+        headers: [.contentType: "text/event-stream"],
+        body: ResponseBody(byteBuffer: ByteBuffer(string: body)))
 }

@@ -31,9 +31,12 @@
 #
 #   fluid-stt  a nameless transcription of a sentence spoken with `say` contains
 #              an expected word and leaves the roster default resident;
-#              Deepgram's POST /listen answers; the /listen socket refuses a
-#              second client, closes an utterance on a pause and answers
-#              CloseStream (fluid-smoke-listen.ts); the default unloads after
+#              Deepgram's POST /v1/listen answers; the /v1/listen socket refuses
+#              a second client, closes an utterance on a pause, answers
+#              CloseStream, answers a Finalize sent with no audio by one empty
+#              from_finalize result, and with endpointing=false leaves an
+#              utterance open through a pause longer than the 700 ms it closes
+#              on otherwise (fluid-smoke-listen.ts); the default unloads after
 #              the scratch roster's short idleUnloadMs; every
 #              other roster model whose weights are present loads through the
 #              Triton routes, shows READY in the index, transcribes the same
@@ -294,13 +297,13 @@ check_stt() {
     || fail "fluid-stt: a nameless transcription did not leave the roster default $default resident"
   ok "fluid-stt: $default, the roster default, transcribed \"$text\""
 
-  text="$(curl -sf -m 60 -H "Content-Type: audio/wav" --data-binary "@$wav" "$STT_URL/listen" \
-    | "$JQ" -r '.results.channels[0].alternatives[0].transcript')" || fail "fluid-stt: POST /listen was refused"
-  grep -qi "$EXPECTED" <<<"$text" || fail "fluid-stt: POST /listen \"$text\" does not contain \"$EXPECTED\""
-  ok "fluid-stt: POST /listen: \"$text\""
+  text="$(curl -sf -m 60 -H "Content-Type: audio/wav" --data-binary "@$wav" "$STT_URL/v1/listen" \
+    | "$JQ" -r '.results.channels[0].alternatives[0].transcript')" || fail "fluid-stt: POST /v1/listen was refused"
+  grep -qi "$EXPECTED" <<<"$text" || fail "fluid-stt: POST /v1/listen \"$text\" does not contain \"$EXPECTED\""
+  ok "fluid-stt: POST /v1/listen: \"$text\""
 
   "$BUN" "$REPO/scripts/fluid-smoke-listen.ts" "ws://127.0.0.1:$STT_PORT" "$wav" "$EXPECTED" \
-    || fail "fluid-stt: the /listen socket"
+    || fail "fluid-stt: the /v1/listen socket"
 
   local unloaded=false
   for _ in $(seq 1 30); do

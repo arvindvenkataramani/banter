@@ -18,6 +18,7 @@ enum StreamEvent: Sendable {
 enum StreamingSession {
     case unified(StreamingUnifiedAsrManager)
     case nemotron(StreamingNemotronAsrManager)
+    case scripted(ScriptedModel)
 
     /// Feed one buffer of 16 kHz mono float samples and process whatever whole
     /// chunks it completes. The updated transcript is read separately via
@@ -31,6 +32,8 @@ enum StreamingSession {
             try await manager.processBufferedAudio()
         case .nemotron(let manager):
             _ = try await manager.process(audioBuffer: buffer)
+        case .scripted(let model):
+            await model.hear(samples)
         }
     }
 
@@ -38,6 +41,7 @@ enum StreamingSession {
         switch self {
         case .unified(let manager): return await manager.getPartialTranscript()
         case .nemotron(let manager): return await manager.getPartialTranscript()
+        case .scripted(let model): return await model.answer
         }
     }
 
@@ -57,6 +61,9 @@ enum StreamingSession {
         case .nemotron(let manager):
             let result = try await manager.finishWithTokenTimings()
             return (result.text, mergeTokensIntoWords(result.timings))
+
+        case .scripted(let model):
+            return (await model.answer, [])
         }
     }
 
@@ -70,6 +77,7 @@ enum StreamingSession {
         switch self {
         case .unified(let manager): try await manager.reset()
         case .nemotron(let manager): await manager.reset()
+        case .scripted(let model): await model.reset()
         }
     }
 
@@ -78,6 +86,7 @@ enum StreamingSession {
         switch self {
         case .unified(let manager): await manager.cleanup()
         case .nemotron(let manager): await manager.cleanup()
+        case .scripted: break
         }
     }
 

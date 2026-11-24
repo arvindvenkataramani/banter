@@ -85,7 +85,7 @@ public func makeEncoder(format: AudioFormat, sampleRate: Int) throws -> any Stre
     }
 }
 
-/// 16-bit PCM with no header, at `AudioFormat.pcmSampleRate`.
+/// 16-bit PCM with no header, at `targetRate` (`AudioFormat.pcmSampleRate` unless asked otherwise).
 ///
 /// A model already at that rate has its samples written as they are. Any other
 /// is resampled by one converter held for the whole response: a converter per
@@ -96,8 +96,8 @@ public final class PcmStreamEncoder: StreamingAudioEncoder {
     private let targetFormat: AVAudioFormat?
     private let ratio: Double
 
-    public init(sampleRate: Int) throws {
-        guard sampleRate != AudioFormat.pcmSampleRate else {
+    public init(sampleRate: Int, targetRate: Int = AudioFormat.pcmSampleRate) throws {
+        guard sampleRate != targetRate else {
             converter = nil
             sourceFormat = nil
             targetFormat = nil
@@ -109,30 +109,30 @@ public final class PcmStreamEncoder: StreamingAudioEncoder {
                 commonFormat: .pcmFormatFloat32, sampleRate: Double(sampleRate),
                 channels: 1, interleaved: false),
             let target = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32, sampleRate: Double(AudioFormat.pcmSampleRate),
+                commonFormat: .pcmFormatFloat32, sampleRate: Double(targetRate),
                 channels: 1, interleaved: false),
             let converter = AVAudioConverter(from: source, to: target)
         else {
             throw AudioEncodingError.unsupported(
-                "could not resample \(sampleRate) Hz to \(AudioFormat.pcmSampleRate) Hz")
+                "could not resample \(sampleRate) Hz to \(targetRate) Hz")
         }
         self.converter = converter
         sourceFormat = source
         targetFormat = target
-        ratio = Double(AudioFormat.pcmSampleRate) / Double(sampleRate)
+        ratio = Double(targetRate) / Double(sampleRate)
     }
 
     public func encode(_ samples: [Float]) throws -> Data {
         guard converter != nil else { return WavStreamEncoder.pcm(samples) }
         guard !samples.isEmpty else { return Data() }
-        return WavStreamEncoder.pcm(try resample(samples, ending: false))
+        return WavStreamEncoder.pcm(try resampled(samples, ending: false))
     }
 
     /// Flushes what the resampler's filter is still holding: without it every
     /// utterance from a resampled model loses its last few milliseconds.
     public func finish() throws -> Data {
         guard converter != nil else { return Data() }
-        return WavStreamEncoder.pcm(try resample([], ending: true))
+        return WavStreamEncoder.pcm(try resampled([], ending: true))
     }
 
     /// Feeds `samples` to the converter and collects everything it yields.
@@ -140,7 +140,8 @@ public final class PcmStreamEncoder: StreamingAudioEncoder {
     /// The input block hands the samples over once. After that it reports that
     /// no more is available yet, or, when `ending`, that the stream is over,
     /// which is what makes the converter release its tail.
-    private func resample(_ samples: [Float], ending: Bool) throws -> [Float] {
+    /// Also usable on its own, to resample floats for another encoder.
+    public func resampled(_ samples: [Float], ending: Bool) throws -> [Float] {
         guard let converter, let sourceFormat, let targetFormat else { return samples }
 
         var pending: AVAudioPCMBuffer?
