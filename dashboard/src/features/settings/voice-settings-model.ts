@@ -167,6 +167,17 @@ export function selectionErrors(draft: Draft): SelectionErrors {
   return errors
 }
 
+/** The STT picker's entries: every STT service, with one that declares no API to transcribe through
+ *  labelled and disabled. The draft's own service stays enabled, so the field still shows it; its
+ *  selection error says why it fails. */
+export function sttPickerOptions(draft: Draft): { value: string; label: string; disabled: boolean }[] {
+  return (draft.config.stt?.options ?? []).map(o => ({
+    value: o.serviceId,
+    label: o.unavailable ? `${o.name} (no usable API)` : o.name,
+    disabled: o.unavailable !== undefined && o.serviceId !== draft.sttServiceId,
+  }))
+}
+
 // ── Edits ────────────────────────────────────────────────────────────────
 
 export function setProvider(draft: Draft, serviceId: string): Draft {

@@ -401,6 +401,11 @@ const VoiceTtsSchema = z.object({
 }).passthrough().openapi("VoiceTts");
 
 const VoiceSttSchema = z.object({
+  options: z.array(z.object({
+    serviceId: z.string(),
+    name: z.string(),
+    unavailable: z.string().optional().openapi({ description: "Present when the service declares no API to transcribe through, in batch or streaming: why it cannot be selected. The settings picker lists it disabled" }),
+  }).passthrough()).optional().openapi({ description: "Every STT service in the registry, for the settings picker" }),
   selectionError: z.string().optional().openapi({ description: "Present while the stored STT selection fails the selection check: its service declares no candidate provision for what the selected model needs" }),
 }).passthrough().openapi("VoiceStt");
 

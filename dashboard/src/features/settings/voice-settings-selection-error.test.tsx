@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { VoiceConfig } from '@platform/voice-engine/voice-config'
-import { seedDraft, selectionErrors, setProvider, setSttService } from './voice-settings-model'
+import { seedDraft, selectionErrors, setProvider, setSttService, sttPickerOptions } from './voice-settings-model'
 import { ListeningPanel, SpeechPanel } from './voice-settings-panels'
 
 const TTS_ERROR = 'tts-a cannot synthesize: it provides openai.audio.transcriptions'
@@ -85,5 +85,29 @@ describe('the voice settings panels', () => {
     speech(config({ stt: STT_ERROR }))
     listening(config({ tts: TTS_ERROR }))
     expect(screen.queryAllByRole('alert')).toEqual([])
+  })
+})
+
+// An STT service that declares no API to transcribe through is listed, labelled and
+// disabled, with the reason GET /api/voice served as `unavailable`.
+describe('sttPickerOptions', () => {
+  const withUnavailable = (stored: string) => {
+    const cfg = config()
+    const stt = cfg.stt as unknown as { serviceId: string; options: { serviceId: string; name: string; unavailable?: string }[] }
+    stt.serviceId = stored
+    stt.options.push({ serviceId: 'stt-c', name: 'STT C', unavailable: 'stt-c cannot transcribe or transcribeStream: it provides no API' })
+    return draftOf(cfg)
+  }
+
+  it('lists an unavailable service disabled and labelled, and leaves usable ones as they are', () => {
+    expect(sttPickerOptions(withUnavailable('stt-a'))).toEqual([
+      { value: 'stt-a', label: 'STT A', disabled: false },
+      { value: 'stt-b', label: 'STT B', disabled: false },
+      { value: 'stt-c', label: 'STT C (no usable API)', disabled: true },
+    ])
+  })
+
+  it('keeps an unavailable service enabled while the draft names it, so the field still shows it', () => {
+    expect(sttPickerOptions(withUnavailable('stt-c')).find(o => o.value === 'stt-c')).toEqual({ value: 'stt-c', label: 'STT C (no usable API)', disabled: false })
   })
 })

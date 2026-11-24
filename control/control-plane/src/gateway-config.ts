@@ -615,6 +615,16 @@ export function registerVoiceConfig(
       const svc = services.find(s => s.id === serviceId)
       return { ...(svc?.provides !== undefined && { provides: svc.provides }), ...(svc?.models !== undefined && { models: svc.models }) }
     }
+    // An option the picker offers but cannot select: the service declares no API to
+    // transcribe through, in batch or streaming. A throw marks nothing.
+    const unavailable = (s: Service): { unavailable?: string } => {
+      try {
+        const refused = sttSelectionError(s, undefined)
+        return refused === undefined ? {} : { unavailable: refused }
+      } catch {
+        return {}
+      }
+    }
     const sttOptions = services
       .filter(s => s.capabilityId === 'stt')
       .map(s => ({
@@ -622,6 +632,7 @@ export function registerVoiceConfig(
         name: s.name ?? s.id,
         ...declared(s.id),
         serves: (assembly.providers.find(p => p.serviceId === s.id)?.serves ?? []).map(({ model, key }) => ({ model, key })),
+        ...unavailable(s),
       }))
 
     return c.json({

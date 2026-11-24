@@ -1,6 +1,6 @@
 # Publishes a Banter release when a tag v<version> is pushed. <version> must
 # equal the version in the root package.json. The release carries notes
-# generated from the commits since the last release, and the dsh voice plugin
+# listing the commits since the last release, and the dsh voice plugin
 # built from the tagged commit, which installs with
 # `dsh plugin --profile <profile> add ./<file>.tgz`.
 name: Release
@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # the whole history and tags, for the list of changes since the last release
 
       - uses: oven-sh/setup-bun@v2
 
@@ -52,7 +54,19 @@ jobs:
 
           **DeepSeek Harness plugin.** \`${tarball}\` is Banter's voice mode for DeepSeek Harness, built from this release; it needs a Banter server. Download it, fully quit the desktop app, then run \`dsh plugin --profile desktop add ./${tarball}\` (or \`--profile web\` for \`dsh web\`), start dsh, and set the Banter server URL on the plugin's page in Plugins. See the [plugin setup guide](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/guide/plugins/dsh-voice/setup.md).
           EOF
+          # The changes: every commit since the previous release tag, by its summary line.
+          # Changes land on main directly, so there are no pull requests to list.
+          previous="$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          {
+            echo
+            echo "## Changes"
+            echo
+            git log --no-merges --format='- %s' "${previous:+${previous}..}${GITHUB_REF_NAME}"
+            if [ -n "$previous" ]; then
+              echo
+              echo "**Full changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${previous}...${GITHUB_REF_NAME}"
+            fi
+          } >> notes.md
           gh release create "${GITHUB_REF_NAME}" "${tarball}" \
             --title "Banter ${GITHUB_REF_NAME}" \
-            --notes-file notes.md \
-            --generate-notes
+            --notes-file notes.md

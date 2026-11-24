@@ -186,6 +186,33 @@ describe("a control plane with a shard", () => {
   });
 });
 
+// The settings picker lists every STT service, and one it cannot select is marked
+// `unavailable` with the reason, whatever the stored selection.
+describe("the STT options", () => {
+  it("[T2] mark a service that declares no API to transcribe through as unavailable, naming why, and leave a usable one unmarked", async () => {
+    const app = await plane({
+      tts: "tts-local", stt: "stt-local",
+      services: [local("tts-local", "tts", 9301, SPEECH), local("stt-local", "stt", 9302, TRANSCRIBE), local("stt-bare", "stt", 9303)],
+    });
+
+    const options = (await getVoice(app)).stt.options as { serviceId: string; unavailable?: string }[];
+    expect(options.map(o => o.serviceId).sort()).toEqual(["stt-bare", "stt-local"]);
+    expect(options.find(o => o.serviceId === "stt-bare")!.unavailable).toContain("stt-bare cannot");
+    expect(options.find(o => o.serviceId === "stt-local")).not.toHaveProperty("unavailable");
+  });
+
+  it("[T2] mark nothing for a service the check cannot read, and still serve the options", async () => {
+    const app = await plane({
+      tts: "tts-local", stt: "stt-local",
+      services: [local("tts-local", "tts", 9301, SPEECH), local("stt-local", "stt", 9302, TRANSCRIBE), local("stt-broken", "stt", 9303, TRANSCRIBE)],
+      unreadable: "stt-broken",
+    });
+
+    const options = (await getVoice(app)).stt.options as { serviceId: string; unavailable?: string }[];
+    expect(options.find(o => o.serviceId === "stt-broken")).not.toHaveProperty("unavailable");
+  });
+});
+
 describe("a check that throws", () => {
   const services = () => [local("tts-local", "tts", 9301, SPEECH), local("stt-local", "stt", 9302, TRANSCRIBE), local("stt-broken", "stt", 9303, TRANSCRIBE)];
   const failedLogged = () => selectionLog().some(l => l.includes("the check of the stored selections failed"));

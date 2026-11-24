@@ -22,7 +22,7 @@ import { describeSttInUse } from '@platform/voice-engine/stt-mode-text'
 import { Section, FieldProvenance } from './voice-settings-parts'
 import {
   TUNING_FIELDS, chunkingView, editChunking, resetChunking, resetTuning, roster, setModel, setProvider,
-  selectionErrors, setPreferStreaming, setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
+  selectionErrors, sttPickerOptions, setPreferStreaming, setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
 } from './voice-settings-model'
 
 export type Edit = (change: (current: Draft) => Draft) => void
@@ -346,7 +346,7 @@ export function ListeningPanel({ draft, edit }: PanelProps) {
             <SelectField
               id="stt-provider"
               value={draft.sttServiceId}
-              options={view.sttOptions.map(o => ({ value: o.serviceId, label: o.name }))}
+              options={sttPickerOptions(draft)}
               onChange={value => { edit(d => setSttService(d, value)) }}
             />
             <Help>

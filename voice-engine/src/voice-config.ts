@@ -96,6 +96,8 @@ export interface SttOption {
   models?: ModelLoading
   /** What the service serves, by roster id and by the name it knows each by. */
   serves?: { model: string; key: string }[]
+  /** Present when the service declares no API to transcribe through: why it cannot be selected. */
+  unavailable?: string
 }
 
 /** A speech-to-text model, as the roster declares it. */

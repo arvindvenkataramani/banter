@@ -480,6 +480,7 @@ Extends: [Service](#service)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `options` | object[] | no | Every STT service in the registry, for the settings picker |
 | `selectionError` | string | no | Present while the stored STT selection fails the selection check: its service declares no candidate provision for what the selected model needs |
 
 ### VoiceSelectionPatch
