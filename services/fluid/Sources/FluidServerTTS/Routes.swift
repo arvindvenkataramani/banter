@@ -132,7 +132,8 @@ func buildRouter(ctx: TtsAppContext) -> Router<BasicRequestContext> {
     // handlers cannot diverge from openapi.yaml without failing to compile —
     // which is what keeps this server and the transcription server answering
     // them identically.
-    try! APIHandlers(ctx: ctx).registerHandlers(on: router)
+    // An empty body sent as JSON reads as `{}`, so optional bodies are optional.
+    try! APIHandlers(ctx: ctx).registerHandlers(on: router, middlewares: [EmptyJSONBodyMiddleware()])
 
     router.post("/v1/audio/speech") { request, context -> Response in
         let body = try await request.decode(as: SpeechRequest.self, context: context)

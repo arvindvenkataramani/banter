@@ -40,6 +40,8 @@ export function applySavedVoiceSettings(
       ...(updatedVoice.stt?.vad && { vad: updatedVoice.stt.vad }),
       ...(updatedVoice.stt?.turnTaking && { turnTaking: updatedVoice.stt.turnTaking }),
       ...(updatedVoice.stt?.preferStreaming !== undefined && { preferStreaming: updatedVoice.stt.preferStreaming }),
+      // The response states the check as it stands after the save, so a missing field clears it.
+      selectionError: updatedVoice.stt?.selectionError,
     },
     debug: updatedVoice.debug ?? prev.debug,
   } : prev)

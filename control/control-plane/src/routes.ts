@@ -365,6 +365,7 @@ const VoiceSelectionSchema = z.object({
     params: z.record(z.string(), z.unknown()).optional(),
   }).optional().openapi({ description: "The shard's resolution of this selection: the model as the runtime names it, the voice by name or recording, and the serving's request parameters" }),
   resolutionError: z.string().optional().openapi({ description: "Why `resolution` is absent: the shard refused the selection or could not be reached" }),
+  selectionError: z.string().optional().openapi({ description: "Present while the stored selection fails the selection check: its service declares no candidate provision for synthesis" }),
 }).openapi("VoiceSelection");
 
 const VoiceTtsSchema = z.object({
@@ -399,7 +400,11 @@ const VoiceTtsSchema = z.object({
   selection: VoiceSelectionSchema,
 }).passthrough().openapi("VoiceTts");
 
-const VoiceConfigSchema = z.object({ tts: VoiceTtsSchema }).passthrough().openapi("VoiceConfig");
+const VoiceSttSchema = z.object({
+  selectionError: z.string().optional().openapi({ description: "Present while the stored STT selection fails the selection check: its service declares no candidate provision for what the selected model needs" }),
+}).passthrough().openapi("VoiceStt");
+
+const VoiceConfigSchema = z.object({ tts: VoiceTtsSchema, stt: VoiceSttSchema.optional() }).passthrough().openapi("VoiceConfig");
 
 export const getVoice = createRoute({
   method: "get",

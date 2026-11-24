@@ -7,6 +7,8 @@ import { useVoiceSessionStore, setVoiceConfig, setVoiceSelection, publishSession
 import type { VoiceConfig, VoiceSelection } from '../voice-config'
 import type { SttTransport } from '../human/stt-transport'
 import type { VoiceSession } from '../session'
+import { AgentVoice } from '../agent/agent-voice'
+import type { SpeechPlayer } from './playback-engine'
 
 // Design record: docs/reference/design/voice-system.md. The collaborators are fakes; the
 // turn manager's mode, the mutes and the session store are the real stores. Model
@@ -634,5 +636,56 @@ describe('VoiceSystem model loads', () => {
 
       expect(h.fetchCalls.some((c) => c.method === 'DELETE')).toBe(false)
     })
+  })
+})
+
+// The speak request carries whether the selected serving streams its audio, from the
+// start of a session and after a reconfigure to a serving with the other value
+// (docs/reference/design/service-apis.md, "Streaming"). The agent side is the real one, driven the
+// way its own test drives it; only the player is a fake.
+describe('VoiceSystem speech requests', () => {
+  const STREAMS = [{ model: 'model-a', key: 'model-a-key', streaming: true }, { model: 'model-c', key: 'model-c-key' }]
+
+  async function liveWithRealAgent(): Promise<{ speak: (text: string) => Promise<void> }> {
+    let agent: AgentVoice | undefined
+    h.fakes.createAgent.mockImplementation((player: unknown) => {
+      agent = new AgentVoice(player as SpeechPlayer)
+      // The session here is a stub with no conversation to follow.
+      agent.attach = () => {}
+      agent.detach = () => {}
+      return agent as unknown as AgentSide
+    })
+    // model-a streams, model-b (tts-2) does not.
+    configure(makeSession(), makeConfig({ ttsProvider: { serves: STREAMS } }))
+    await goLive(h)
+    const cb = (agent as unknown as { chunker: { cb: { enqueueChat(text: string): Promise<void> } } }).chunker.cb
+    return { speak: (text) => cb.enqueueChat(text) }
+  }
+  const lastRequest = () => h.fakes.player.enqueueChat.mock.calls.at(-1)![0] as { streaming?: boolean; resolution: { model: string } }
+
+  it('[T2] a request spoken after start carries streaming true for a serving that declares it', async () => {
+    const { speak } = await liveWithRealAgent()
+    await speak('hello')
+
+    expect(lastRequest().resolution.model).toBe('model-a-key')
+    expect(lastRequest().streaming).toBe(true)
+  })
+
+  it('[T2] a request spoken after the selection changes to a serving that does not declare it carries streaming false, and back to one that does carries true', async () => {
+    const { speak } = await liveWithRealAgent()
+
+    h.sys.reconfigure(selection2, 'stt-1')
+    setVoiceSelection(selection2)
+    await flush()
+    await speak('second')
+    expect(lastRequest().resolution.model).toBe('model-b-key')
+    expect(lastRequest().streaming).toBe(false)
+
+    h.sys.reconfigure(selection, 'stt-1')
+    setVoiceSelection(selection)
+    await flush()
+    await speak('third')
+    expect(lastRequest().resolution.model).toBe('model-a-key')
+    expect(lastRequest().streaming).toBe(true)
   })
 })

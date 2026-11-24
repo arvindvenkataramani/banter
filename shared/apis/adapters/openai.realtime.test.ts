@@ -82,7 +82,7 @@ describe('opening the session', () => {
   it('[T3] announces 48 kHz Opus input only with opus-input, and sends each packet base64-encoded as one append', async () => {
     const { live: session } = await open({ provision: withOpus, format: 'opus' })
 
-    expect(sessionUpdate().session.audio.input.format).toEqual({ type: 'audio/opus', rate: 48000 })
+    expect(sessionUpdate().session.audio.input.format).toEqual({ type: 'audio/opus', rate: 16000 })
     const packet = new Uint8Array([9, 8, 7, 6, 5])
     session.sendAudio(packet.buffer)
     await server.waitFor(() => appends().length === 1)

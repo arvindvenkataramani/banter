@@ -63,6 +63,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             ],
             path: "Sources/FluidServerKit"
         ),

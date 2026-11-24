@@ -32,6 +32,8 @@ export class AgentVoice {
   ttsProvision: Provision | null = null
   /** Why `ttsProvision` is null: the selection's refusal, naming the service and what it provides. */
   ttsProvisionError: string | null = null
+  /** Whether the selected serving declares it streams its audio, pushed with the selection. */
+  ttsStreaming = false
   /** Told once per unresolved selection that there is nothing to speak with. */
   onCannotSpeak: ((reason: string) => void) | undefined
   private reportedUnresolved: VoiceSelection | null = null
@@ -65,6 +67,7 @@ export class AgentVoice {
           resolution: sel.resolution,
           provision,
           speed: sel.speed ?? 1.0,
+          streaming: this.ttsStreaming,
         })
       },
       beginRun: (runId) => player.beginRun(runId),

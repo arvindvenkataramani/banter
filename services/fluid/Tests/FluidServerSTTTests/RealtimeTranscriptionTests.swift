@@ -82,8 +82,11 @@ final class RealtimeTranscriptionTests: XCTestCase {
     func testS2_OpusInputIsAcceptedWhenTheSessionNamesItAndEachAppendIsOnePacket() async throws {
         let h = try await startSttServer()
         let ws = connect(h)
-        try await ws.send(json: sessionUpdate(format: ["type": "audio/opus", "rate": 48000]))
-        _ = try await ws.require(type: "session.updated")
+        try await ws.send(json: sessionUpdate(format: ["type": "audio/opus", "rate": 16000]))
+        let updated = try await ws.require(type: "session.updated")
+        let announced = ((((updated["session"] as? [String: Any])?["audio"] as? [String: Any])?["input"] as? [String: Any])?["format"] as? [String: Any])
+        XCTAssertEqual(announced?["type"] as? String, "audio/opus")
+        XCTAssertEqual(announced?["rate"] as? Int, 16000, "the session names Opus at the 16 kHz the engine encodes")
 
         try await ws.send(json: append(opusSilencePacket))
         try await ws.send(json: append(opusSilencePacket))

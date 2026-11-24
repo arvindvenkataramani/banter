@@ -6,6 +6,7 @@ import { resolveSpeech } from "../../shared/src/speech-request";
 import { createApp } from "../../shared/src/api";
 import { startShardPollLoop } from "./shard-poller";
 import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardPing, fetchShardService, reloadShard, resolveVoiceOnShard } from "./shard-client";
+import { createSelectionLog, storedSelectionErrors, type StoredSelectionErrors } from "./selection-check";
 import { registerGatewayConfig, registerVoiceConfig, registerVoiceDebug, registerConfigReload } from "./gateway-config";
 import { assembleRoster, type AssembledRoster } from "./roster-assembly";
 import * as cpRoutes from "./routes";
@@ -57,7 +58,7 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
 
   let poller: Poller | null = null;
   if (registry.shards && registry.shards.length > 0) {
-    poller = startShardPollLoop(registry.shards, pollIntervalMs);
+    poller = startShardPollLoop(registry.shards, pollIntervalMs, () => recheckSelections());
   }
 
   const shards = registry.shards ?? [];
@@ -128,6 +129,43 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     if (!poller) return shards.map((s) => s.hostId);
     return shards.filter((s) => poller!.getLastPoll(s.hostId) === 0).map((s) => s.hostId);
   }
+
+  // The stored voice selections, checked against the services and roster as
+  // they stand now. Re-run at startup, after each shard poll (only a configured
+  // shard polls) and after a config or registry reload; the log writes only a
+  // new or changed failure. A check that throws reports nothing and stops
+  // nothing. With no shard, neverPolledHosts is empty and the check runs over
+  // the control plane's own services alone.
+  function checkSelections(): StoredSelectionErrors {
+    if (!config?.voice) return {};
+    return storedSelectionErrors(
+      {
+        ttsServiceId: config.voice.tts?.selection?.serviceId,
+        sttServiceId: config.voice.stt?.serviceId,
+        sttModel: config.voice.stt?.model,
+      },
+      [...registry.services, ...allShardServices()],
+      buildAssembly().sttModels,
+      neverPolledHosts(),
+    );
+  }
+  function selectionErrors(): StoredSelectionErrors {
+    try {
+      return checkSelections();
+    } catch {
+      // Logged by the re-check, which runs on every change; reading stays quiet.
+      return {};
+    }
+  }
+  const logSelections = createSelectionLog();
+  function recheckSelections(): void {
+    try {
+      logSelections(checkSelections());
+    } catch (err) {
+      console.warn("selection: the check of the stored selections failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  recheckSelections();
 
   // Helper: is this service in the local registry?
   function isLocal(id: string): boolean {
@@ -359,6 +397,8 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       buildAssembly,
       neverPolledHosts,
       resolveSelection,
+      { errors: selectionErrors, recheck: recheckSelections },
+      () => buildAssembly().sttModels,
     )
     registerConfigReload(app, {
       config,
@@ -369,6 +409,7 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
       shards,
       reloadShard,
       pollShard: (hostId) => poller?.pollShard(hostId) ?? Promise.resolve(),
+      afterReload: recheckSelections,
     })
     registerVoiceDebug(app, config)
   }

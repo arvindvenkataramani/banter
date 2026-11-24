@@ -189,6 +189,45 @@ describe('PlaybackEngine on a streaming backend', () => {
     engine.cancel()
   })
 
+  // Progressive audio is asked for only when the serving declares `streaming` and the
+  // provision can render progressively (docs/reference/design/service-apis.md, "Streaming").
+  // INVENTED: the serving's flag travels on the request as `streaming`.
+  describe('asking for progressive speech', () => {
+    const MLX = { api: 'openai.audio.speech', extends: ['stream-flag'] }
+    const speak = async (provision: unknown, streaming: boolean | undefined) => {
+      const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(new Blob([new Uint8Array([1])]))))
+      vi.stubGlobal('fetch', fetchMock)
+      const engine = makeEngine()
+      engine.init()
+      engine.beginRun('r-stream')
+      setNewAudio('play')
+      await engine.enqueueChat({
+        endpoint: 'http://localhost:1234',
+        text: 'hi',
+        speed: 1,
+        resolution: { model: 'm', voice: { name: 'v' } },
+        provision,
+        ...(streaming !== undefined && { streaming }),
+      } as never)
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+      engine.cancel()
+      return body
+    }
+
+    it('[T2] sends no stream flag to a stream-flag provision for a serving that does not declare streaming', async () => {
+      expect(await speak(MLX, false)).not.toHaveProperty('stream')
+      expect(await speak(MLX, undefined)).not.toHaveProperty('stream')
+    })
+
+    it('[T2] sends the stream flag to a stream-flag provision for a serving that declares streaming', async () => {
+      expect(await speak(MLX, true)).toMatchObject({ stream: true })
+    })
+
+    it('[T2] sends no stream flag to a provision without stream-flag, whatever the serving declares', async () => {
+      expect(await speak({ api: 'openai.audio.speech' }, true)).not.toHaveProperty('stream')
+    })
+  })
+
   // Tones are mp3 on the one SourceBuffer the session holds, and a runtime
   // may speak another format; each change of type switches the buffer
   // before the bytes go in.

@@ -151,6 +151,22 @@ export function roster(draft: Draft): RosterView {
   }
 }
 
+/** Why a stored selection fails the selection check, as GET /api/voice served it. Each concerns the stored service, so it is shown
+ *  only while the draft still names that service. */
+export interface SelectionErrors {
+  tts?: string
+  stt?: string
+}
+
+export function selectionErrors(draft: Draft): SelectionErrors {
+  const stored = draft.config.tts.selection
+  const errors: SelectionErrors = {}
+  if (stored?.selectionError && draft.ttsServiceId === stored.serviceId) errors.tts = stored.selectionError
+  const stt = draft.config.stt
+  if (stt?.selectionError && draft.sttServiceId === stt.serviceId) errors.stt = stt.selectionError
+  return errors
+}
+
 // ── Edits ────────────────────────────────────────────────────────────────
 
 export function setProvider(draft: Draft, serviceId: string): Draft {

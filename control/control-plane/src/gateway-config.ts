@@ -9,9 +9,10 @@ import { deriveHealthMap, deriveHealth } from '../../shared/src/events'
 import { dirname, join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { CHUNK_STRATEGIES } from '../../../shared/types'
-import type { Service, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
+import type { Service, SttModel, ServiceWithHealth, Registry, Shard, PartResult, ReloadWarning, ControlPlaneReloadResponse, ShardReloadResponse } from '../../../shared/types'
 import { emptyAssembly, type AssembledRoster } from './roster-assembly'
 import type { Resolution } from '../../../shared/apis/types'
+import { ttsSelectionError, sttSelectionError, type StoredSelectionErrors } from './selection-check'
 import { ttsRosterView, type TtsRosterView } from './voice-roster'
 
 export interface ModelChunkingPref {
@@ -193,6 +194,16 @@ export async function reloadConfig(configPath: string, target: PlatformConfig): 
   Object.assign(target, fresh)
 }
 
+/** A check that throws refuses nothing: the save goes ahead and the throw is logged. */
+function guardedRefusal(check: () => string | undefined): string | undefined {
+  try {
+    return check()
+  } catch (err) {
+    console.warn('selection: the check of the new selection failed:', err instanceof Error ? err.message : err)
+    return undefined
+  }
+}
+
 export async function updateVoiceSelection(
   configPath: string,
   config: PlatformConfig,
@@ -202,6 +213,8 @@ export async function updateVoiceSelection(
   /** A named service resolving to no provider is a 503 only while some
    *  shard here has never been polled; otherwise it's an ordinary 400. */
   neverPolledHosts?: () => string[],
+  /** The assembled roster's STT models, whose `kind` decides what the STT selection must transcribe. */
+  getSttModels?: () => SttModel[],
 ): Promise<PlatformConfig['voice']> {
   if (!config.voice) {
     throw new Error('Voice not configured')
@@ -224,6 +237,15 @@ export async function updateVoiceSelection(
         }
         throw new ValidationError(`unknown serviceId "${serviceId}"`)
       }
+      const service = (getServices ? getServices() : []).find(s => s.id === serviceId)
+      if (!service) {
+        throw new ValidationError(`${serviceId} is not a registered service`)
+      }
+      if (service.capabilityId !== 'tts') {
+        throw new ValidationError(`service "${serviceId}" is not a TTS service`)
+      }
+      const refused = guardedRefusal(() => ttsSelectionError(service))
+      if (refused) throw new ValidationError(refused)
       if (model !== undefined) {
         if (!provider.serves.some(s => s.model === model)) {
           throw new ValidationError(`unknown model "${model}" for serviceId "${serviceId}"`)
@@ -318,6 +340,10 @@ export async function updateVoiceSelection(
     if (match.capabilityId !== 'stt') {
       throw new ValidationError(`service "${patch.sttServiceId}" is not an STT service`)
     }
+    const sttModel = config.voice.stt?.model
+    const kind = sttModel === undefined ? undefined : (getSttModels ? getSttModels() : []).find(m => m.id === sttModel)?.kind
+    const refused = guardedRefusal(() => sttSelectionError(match, kind))
+    if (refused) throw new ValidationError(refused)
   }
 
   if (patch.vad !== undefined) validateTuning('vad', patch.vad, VAD_TUNING)
@@ -560,6 +586,10 @@ export function registerVoiceConfig(
   neverPolledHosts?: () => string[],
   /** Asks the shard on the selection's runtime host to resolve it. */
   resolveSelection?: (selection: { voice: string; model: string; serviceId: string }) => Promise<{ ok: true; resolution: Resolution } | { ok: false; error: string }>,
+  /** The stored selections' check: its current failures, and the re-check run after a change. */
+  selections?: { errors: () => StoredSelectionErrors; recheck: () => void },
+  /** The assembled roster's STT models, for the STT selection's check. */
+  getSttModels?: () => SttModel[],
 ) {
   const getView = (): TtsRosterView => ttsRosterView(getAssembly ? getAssembly() : emptyAssembly())
 
@@ -580,6 +610,7 @@ export function registerVoiceConfig(
     const view = getView()
     const assembly = getAssembly ? getAssembly() : emptyAssembly()
     const services = getServices ? getServices() : []
+    const selectionErrors = selections?.errors() ?? {}
     const declared = (serviceId: string) => {
       const svc = services.find(s => s.id === serviceId)
       return { ...(svc?.provides !== undefined && { provides: svc.provides }), ...(svc?.models !== undefined && { models: svc.models }) }
@@ -599,9 +630,17 @@ export function registerVoiceConfig(
         ...(config.voice.tts ?? {}),
         ...view,
         providers: view.providers.map(p => ({ ...p, ...declared(p.serviceId) })),
-        selection: await withResolution(config.voice.tts?.selection),
+        selection: {
+          ...await withResolution(config.voice.tts?.selection),
+          ...(selectionErrors.tts !== undefined && { selectionError: selectionErrors.tts }),
+        },
       },
-      stt: { ...(config.voice.stt ?? {}), options: sttOptions, models: assembly.sttModels },
+      stt: {
+        ...(config.voice.stt ?? {}),
+        options: sttOptions,
+        models: assembly.sttModels,
+        ...(selectionErrors.stt !== undefined && { selectionError: selectionErrors.stt }),
+      },
     })
   })
 
@@ -621,10 +660,21 @@ export function registerVoiceConfig(
     }
 
     try {
-      const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices, getView, neverPolledHosts)
+      const updatedVoice = await updateVoiceSelection(configPath, config, patch, getServices, getView, neverPolledHosts, getSttModels)
+      selections?.recheck()
+      const errors = selections?.errors() ?? {}
       return c.json({
         ...updatedVoice,
-        tts: { ...(updatedVoice?.tts ?? {}), selection: await withResolution(updatedVoice?.tts?.selection) },
+        tts: {
+          ...(updatedVoice?.tts ?? {}),
+          selection: {
+            ...await withResolution(updatedVoice?.tts?.selection),
+            ...(errors.tts !== undefined && { selectionError: errors.tts }),
+          },
+        },
+        ...(updatedVoice?.stt !== undefined && {
+          stt: { ...updatedVoice.stt, ...(errors.stt !== undefined && { selectionError: errors.stt }) },
+        }),
       })
     } catch (err) {
       if (err instanceof ValidationError) {
@@ -698,6 +748,8 @@ export interface ConfigReloadDeps {
   shards: Shard[]
   reloadShard: (endpoint: string) => Promise<ShardReloadResponse>
   pollShard: (hostId: string) => Promise<void>
+  /** Runs once the config, the registry and every shard have been reloaded. */
+  afterReload?: () => void
 }
 
 /** Covers only the control plane's local services; a shard-hosted service's
@@ -735,6 +787,12 @@ export function registerConfigReload(app: Hono<any>, deps: ConfigReloadDeps) {
       warnings.push(...result.warnings)
       // Polled even if the reload failed, rather than waiting out the interval.
       await pollShard(shard.hostId)
+    }
+    // A throw in the re-check never fails the reload.
+    try {
+      deps.afterReload?.()
+    } catch (err) {
+      console.warn('selection: the check after a reload failed:', err instanceof Error ? err.message : err)
     }
 
     const response: ControlPlaneReloadResponse = {

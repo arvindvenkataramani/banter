@@ -87,6 +87,19 @@ final class TritonRoutesTests: XCTestCase {
         return try XCTUnwrap(reply.json as? [[String: Any]], "the index is a JSON array")
     }
 
+    // The index's body is optional (Triton's extension, STT.md), so a request
+    // with none answers the index whether or not it names a JSON content type.
+    func testS1_AnIndexRequestWithNoBodyAnswersTheIndex() async throws {
+        let h = try await start()
+        for headers in [["Content-Type": "application/json"], [:]] {
+            let reply = try await h.live.request("POST", "/v2/repository/index", headers: headers)
+            XCTAssertEqual(reply.status, 200, "\(headers): \(reply.text)")
+            let entries = try XCTUnwrap(reply.json as? [[String: Any]], "\(headers): the index is a JSON array")
+            XCTAssertFalse(entries.isEmpty)
+        }
+        await h.live.stop()
+    }
+
     func testS1_ALoadWithNoParametersLoadsTheDefaultModeOfASingleModeModel() async throws {
         let h = try await start()
         let reply = try await load(h, "parakeet-tdt-v3")

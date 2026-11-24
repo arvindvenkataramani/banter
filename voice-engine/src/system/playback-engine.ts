@@ -6,6 +6,7 @@ import { useTurnManagerStore, report } from '../store/turn-manager-store'
 import type { StreamingBackend } from './streaming-backend'
 import type { Snapshot, Utterance, AudioSupply } from '../turn-manager'
 import { adapterFor } from '@platform/shared/apis'
+import { capabilityHolds } from '@platform/shared/apis/select'
 import type { AudioFormat, Provision, Resolution } from '@platform/shared/apis/types'
 
 /** A tone that has neither been heard nor cut within this is treated as
@@ -20,6 +21,8 @@ export interface SpeakRequest {
   /** The provision of the speech API the selection chose. */
   provision: Provision
   speed: number
+  /** The selected serving declares it streams its audio. */
+  streaming?: boolean
 }
 
 /** What the agent side plays and stops speech through — nothing about the
@@ -800,13 +803,17 @@ export class PlaybackEngine implements SpeechPlayer, TonePlayer {
 
     let res: Response
     try {
-      const spoken = await adapterFor(req.provision.api)!.synthesize!({
+      const adapter = adapterFor(req.provision.api)!
+      // Progressive only when the serving streams and the provision renders as it goes.
+      const progressive = STREAMING_BACKEND !== 'blob' && req.streaming === true
+        && capabilityHolds(req.provision, adapter, 'renders-progressively')
+      const spoken = await adapter.synthesize!({
         endpoint: req.endpoint,
         provision: req.provision,
         text: req.text,
         resolution: req.resolution,
         speed: req.speed,
-        progressive: STREAMING_BACKEND !== 'blob',
+        progressive,
         signal: abort.signal,
       })
       format = spoken.format

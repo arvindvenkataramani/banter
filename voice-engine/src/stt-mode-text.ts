@@ -10,6 +10,6 @@ export function describeSttInUse(stt: NonNullable<VoiceSystemState['stt']>): str
     return stt.decidedBy === 'model' ? `In use now: streaming, because ${stt.model} only streams.` : 'In use now: streaming.'
   }
   if (stt.decidedBy === 'model') return `In use now: batch, because ${stt.model} only transcribes in batch, ${AFTER_PAUSE}.`
-  if (stt.decidedBy === 'unknown') return `In use now: batch, because the server didn't say whether ${stt.model} streams, ${AFTER_PAUSE}.`
+  if (stt.decidedBy === 'unknown') return `In use now: batch, because the roster does not declare whether ${stt.model} streams, ${AFTER_PAUSE}.`
   return `In use now: batch, ${AFTER_PAUSE}.`
 }

@@ -72,6 +72,8 @@ export interface AgentSide {
   ttsSelection: VoiceSelection | null
   /** The provision of the speech API the selection chose. */
   ttsProvision?: Provision | null
+  /** Whether the selected serving declares it streams its audio. */
+  ttsStreaming?: boolean
   /** Why there is no provision: the selection's refusal. */
   ttsProvisionError?: string | null
   /** Called once per unresolved selection when an utterance arrives with no resolution to speak with. */
@@ -141,14 +143,16 @@ function modeFor(phase: VoicePhase, micMuted: boolean): 'off' | 'starting' | 'li
   return 'off'
 }
 
-/** The provision that speaks for a selection, or why none does: the selection's refusal, or that the provider is unknown. */
-function speechProvision(config: VoiceConfig | null, selection: VoiceSelection | null): { provision: Provision | null; error: string | null } {
+/** The provision that speaks for a selection, or why none does: the selection's refusal, or that the provider is unknown.
+ *  `streaming` is whether the selected serving declares it streams its audio. */
+function speechProvision(config: VoiceConfig | null, selection: VoiceSelection | null): { provision: Provision | null; error: string | null; streaming: boolean } {
   const provider: TtsProvider | undefined = config?.tts.providers.find((p) => p.serviceId === selection?.serviceId)
-  if (!provider) return { provision: null, error: null }
+  if (!provider) return { provision: null, error: null, streaming: false }
+  const streaming = provider.serves.find((s) => s.model === selection?.model)?.streaming === true
   try {
-    return { provision: select('synthesize', toService(provider), [], []).provision, error: null }
+    return { provision: select('synthesize', toService(provider), [], []).provision, error: null, streaming }
   } catch (err) {
-    return { provision: null, error: err instanceof Error ? err.message : String(err) }
+    return { provision: null, error: err instanceof Error ? err.message : String(err), streaming }
   }
 }
 
@@ -193,6 +197,7 @@ export class VoiceSystem {
           this.agent.ttsEndpoint = state.ttsEndpoint
           const speech = speechProvision(state.voiceConfig, state.voiceSelection)
           this.agent.ttsProvision = speech.provision
+          this.agent.ttsStreaming = speech.streaming
           this.agent.ttsProvisionError = speech.error
         }
       }
@@ -317,6 +322,7 @@ export class VoiceSystem {
       agent.ttsEndpoint = ttsEndpoint
       agent.ttsSelection = selection
       agent.ttsProvision = speech.provision
+      agent.ttsStreaming = provider.serves.find((s) => s.model === selection.model)?.streaming === true
       agent.ttsProvisionError = null
       agent.onCannotSpeak = (reason) => this.deps.notify(`Voice cannot speak: ${reason}`)
       agent.attach(session)

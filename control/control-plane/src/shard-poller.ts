@@ -12,7 +12,7 @@ interface ShardCache {
   online: boolean;
 }
 
-export function startShardPollLoop(shards: Shard[], intervalMs: number): { stop: () => void; getShardServices: (hostId: string) => ServiceWithHealth[]; getShardEvents: (hostId: string) => Event[]; getShardRoster: (hostId: string) => NodeRoster | null; isRosterUnsupported: (hostId: string) => boolean; isShardOnline: (hostId: string) => boolean; getLastPoll: (hostId: string) => number; getAllShardServices: () => ServiceWithHealth[]; getAllShardEvents: () => Event[]; pollShard: (hostId: string) => Promise<void>; updateCachedService: (hostId: string, svc: ServiceWithHealth) => void } {
+export function startShardPollLoop(shards: Shard[], intervalMs: number, onPolled?: (hostId: string) => void): { stop: () => void; getShardServices: (hostId: string) => ServiceWithHealth[]; getShardEvents: (hostId: string) => Event[]; getShardRoster: (hostId: string) => NodeRoster | null; isRosterUnsupported: (hostId: string) => boolean; isShardOnline: (hostId: string) => boolean; getLastPoll: (hostId: string) => number; getAllShardServices: () => ServiceWithHealth[]; getAllShardEvents: () => Event[]; pollShard: (hostId: string) => Promise<void>; updateCachedService: (hostId: string, svc: ServiceWithHealth) => void } {
   const cache = new Map<string, ShardCache>();
   let stopped = false;
   let sleepResolve: (() => void) | null = null;
@@ -78,6 +78,13 @@ export function startShardPollLoop(shards: Shard[], intervalMs: number): { stop:
           : svc
       );
       console.error(`[shard-poller] ${shard.hostId} poll failed:`, err instanceof Error ? err.message : err);
+    }
+    // Synchronous with the cache update, so whatever sees the new poll sees its consequences.
+    // A throw here must not end the poll loop or the reload that polled.
+    try {
+      onPolled?.(shard.hostId);
+    } catch (err) {
+      console.warn(`[shard-poller] ${shard.hostId}: after-poll check failed:`, err instanceof Error ? err.message : err);
     }
   }
 

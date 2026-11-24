@@ -23,7 +23,7 @@ Banter here means the voice-chat client and everything in it that calls a speech
 | `fluid-stt` | `/v1/audio/transcriptions` | `/v1/audio/transcriptions` with `stream=true`; Realtime in transcription mode | `POST /v1/listen` | WebSocket `/v1/listen`, conforming to Deepgram's spec | `/v1/audio/stream`, declared |
 | `fluid-tts` | `/v1/audio/speech` | `/v1/audio/speech` streamed and `stream_format=sse`; Realtime TTS, speaking `response.create` input verbatim | `POST /v1/speak` | WebSocket `/v1/speak` | `/v1/audio/stream`, declared |
 
-Realtime is implemented as a declared subset on each server; the conversational mode, which runs a model, is not.
+Realtime is implemented as a declared subset on each server, and no server runs a model behind it: `fluid-stt` serves the transcription mode, and `fluid-tts` serves the conversation mode only under `verbatim-speech`, speaking the text it is given.
 
 **Opus is preserved.** Opus input matters for home setups. Fluid's own protocol and the Deepgram live route carry it; on Realtime it is a declared extension. Banter's preference for Opus selects among provisions that accept it.
 
@@ -140,7 +140,7 @@ A speech request may carry `ref_audio`, the path of a recording on the service's
 
 #### opus-input
 
-On OpenAI's Realtime transcription session, the input format is PCM at a stated rate, sent as base64 in `input_audio_buffer.append`. The extension adds an Opus format, announced as `{ "type": "audio/opus", "rate": 48000 }` in `session.update`, where each `input_audio_buffer.append` carries one raw Opus packet exactly as WebCodecs emits it, base64-encoded the way the spec encodes PCM. It carries Opus from the browser to a Realtime server without a transcode.
+On OpenAI's Realtime transcription session, the input format is PCM at a stated rate, sent as base64 in `input_audio_buffer.append`. The extension adds an Opus format, announced as `{ "type": "audio/opus", "rate": 16000 }` in `session.update`, where each `input_audio_buffer.append` carries one raw Opus packet exactly as the voice engine's WebCodecs encoder emits it at 16 kHz, base64-encoded the way the spec encodes PCM. It carries Opus from the browser to a Realtime server without a transcode. The announced rate is informational: Opus packets carry their own timing, `fluid-stt` decodes them to the 16 kHz its models take whatever rate is announced, and its `session.updated` echoes what the client sent.
 
 #### voice-param
 
@@ -257,7 +257,7 @@ Whether a turn is transcribed as a stream, and whether speech plays as it render
 
 For transcription: the selected model's `kind` is `streaming` or `both` (roster, served as `stt.models`); the service has a candidate provision for `transcribeStream`; and the candidate holds the capability that the client decides where an utterance ends. Each adapter declares what that capability rests on in its own reference. For `fluid.stt.stream` it is the protocol as specified, which never segments. For `deepgram.listen.live` it is `endpointing-off`, under which the adapter sends `endpointing=false`; a provision that does not declare the extension does not hold the capability. For `openai.realtime` it is `turn_detection: null`. Where the model is `both` and a batch candidate also exists, `voice.stt.preferStreaming` chooses.
 
-For synthesis over `synthesize`: the serving's `streaming` flag is set (roster), and the candidate holds the capability that audio arrives as it renders. The `openai.audio.speech` adapter declares that capability twice over: resting on the API's default response, and resting on `stream-flag` for a provision that declares the extension, where it sends the flag.
+For synthesis over `synthesize`: the serving's `streaming` flag is set (roster), and the candidate holds the capability that audio arrives as it renders. The playback engine asks for progressive audio only when both hold. The `openai.audio.speech` adapter declares that capability twice over: resting on the API's default response, and resting on `stream-flag` for a provision that declares the extension, where it sends the flag.
 
 Among candidates that pass, preferences rank, each against a declared capability. `voice.stt.encodings` in `config.json` is Banter's ordered preference for audio sent to a transcription service: when it lists `opus` before `pcm16` (or lists `opus` alone), a candidate holding the Opus capability outranks one that takes only PCM; when `pcm16` comes first or `opus` is absent, the engine sends 16-bit PCM even to a provision that accepts Opus. A candidate holding the take-over capability then outranks one without it, and remaining ties fall to the order of the service's `provides` list.
 
@@ -328,13 +328,21 @@ Shape belongs to the registry schema and meaning to the checks that run after it
 8. **A declared load or unload call is well formed.** It has a method and a path beginning with `/`, and its templates use no placeholder but `{model}`.
 9. **A service Banter calls has a candidate provision for what it is called for.** A service is one Banter calls when a roster provider names it. A synthesis provider's service needs a candidate for `synthesize`; one serving a `streaming` STT model needs a candidate for `transcribeStream` where the client decides where an utterance ends, one serving a `batch` model a candidate for `transcribe`, and one serving a `both` model either.
 
-An unknown key anywhere in a provision, in `models` or in a declared call is fatal, and `autoLoad` and `resident` are stated when `loading` is `required` and absent when it is `none`. The configuration's selections are not checked at load: a selection can name a provider on a shard, which the control plane's own roster does not hold until that shard is polled, and the selection route keeps guarding them.
+An unknown key anywhere in a provision, in `models` or in a declared call is fatal, and `autoLoad` and `resident` are stated when `loading` is `required` and absent when it is `none`. The configuration's selections are not checked at load: a selection can name a provider on a shard, which the control plane's own roster does not hold until that shard is polled. The [selection check](#selections) covers them.
 
 Deliberately unchecked: that a service implements what an empty provision claims. For a server Banter builds, the server's own startup check and its conformance tests hold that; for any other, the claim is the registry's, and a wrong one fails at the request.
 
 **No load writes a provision the file does not state.** The schema sync adds no `provides` and no repair rule derives one. Deriving a provision from a capability would be the inference this design removes, written to disk.
 
 Both nodes' registries carry the new fields, and each reaches its node through that node's deploy. The deploy merge treats `services` by id and every other array as one value, so a service's `provides` list merges whole, and a live edit and a repo edit to the same list is a conflict the deploy stops on.
+
+## Selections
+
+A selection in `config.json` names a service on the control plane's own host or on a shard, and the control plane holds a shard's half only once it has polled it, so the selection check runs wherever the two meet and never at registry load. A selection passes when the service it names has the capability the selection is for, and declares a candidate provision for the operation: `synthesize` for the TTS selection; for the STT selection, `transcribeStream` with `client-endpointing` when the selected model's `kind` is `streaming`, `transcribe` when it is `batch`, and either when it is `both` or no STT model is set. `capabilityId` says what a service does; whether Banter can call it for the operation is a provision question, which the check answers from the provisions. Whether the newly selected service serves the stored model is the voice system's to refuse at start.
+
+- **The selection routes** refuse a selection that fails, with the message selection gives. A roster provider with no service entry is refused as not a registered service.
+- **The control plane re-checks** the stored selections whenever what it checks against can change: at startup, after a config or registry reload, and, when a shard is configured, after each shard poll. A control plane with no shard checks its own services at startup. A failure is served in `GET /api/voice` as `selectionError` beside the selection it concerns (`tts.selection.selectionError`, `stt.selectionError`), shown beside the matching selector in the voice settings, and logged with `console.warn` under the prefix `selection:` once each time a selection starts failing or its message changes. A selection naming a service on a host never yet polled carries no `selectionError`.
+- **The check never stops anything.** A failing selection does not stop the control plane, because a shard unreachable at boot is no configuration error, and a throw inside the check is logged and never fails startup, a save, a reload or a poll.
 
 ## What is settled, and what is out
 

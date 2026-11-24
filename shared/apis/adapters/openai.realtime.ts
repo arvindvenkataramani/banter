@@ -31,7 +31,7 @@ export const declaration: AdapterDeclaration = {
   },
 };
 
-/** The sample rate of the PCM the session asks for, and of the engine's own audio. */
+/** The sample rate of the PCM the session asks for, and of the engine's own audio and Opus packets. */
 const SESSION_RATE = 24000;
 const ENGINE_RATE = 16000;
 
@@ -94,7 +94,7 @@ class RealtimeSocket extends StreamSocketBase {
   protected onOpen(): void {
     const opus = this.call.format === "opus";
     const input: Record<string, unknown> = {
-      format: opus ? { type: "audio/opus", rate: 48000 } : { type: "audio/pcm", rate: SESSION_RATE },
+      format: opus ? { type: "audio/opus", rate: ENGINE_RATE } : { type: "audio/pcm", rate: SESSION_RATE },
       turn_detection: null,
     };
     if (this.call.model) input.transcription = { model: this.call.model };

@@ -118,6 +118,8 @@ export interface StoredVoiceSelection {
   resolution?: Resolution
   /** Why `resolution` is absent. */
   resolutionError?: string
+  /** Why the stored selection fails the selection check: its service declares no API that can synthesize. Absent while it passes. */
+  selectionError?: string
 }
 
 /** The selection as the engine speaks it: the served selection, carried as served. */
@@ -151,6 +153,8 @@ export interface VoiceConfig {
   }
   stt?: {
     serviceId?: string
+    /** Why the stored STT selection fails the selection check: its service declares no API for what the selected model needs. Absent while it passes. */
+    selectionError?: string
     /** Which model the STT service loads for a voice session. The server starts
      * holding nothing, so this is what a session loads before its first
      * utterance. A batch model: the streaming ones transcribe less accurately

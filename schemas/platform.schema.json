@@ -201,7 +201,7 @@
         },
         "loadable": {
           "type": "boolean",
-          "description": "Whether this model can be made resident over /v1/models/load."
+          "description": "Whether this model can be made resident through the model repository load route, POST /v2/repository/models/{name}/load."
         },
         "kind": {
           "enum": [
@@ -640,39 +640,6 @@
           "items": {
             "$ref": "#/$defs/rendering"
           }
-        }
-      }
-    },
-    "loadRequest": {
-      "type": "object",
-      "description": "What POST /v1/models/load accepts. A model that offers a choice must be told which: loading a both-capable model with no mode, or a model with chunk sizes with no chunkMs, is refused naming the model and its choices, rather than defaulted into a latency the caller did not pick.",
-      "required": [
-        "model"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "model": {
-          "type": "string",
-          "minLength": 1,
-          "description": "A model id as listed by /v1/models."
-        },
-        "mode": {
-          "enum": [
-            "batch",
-            "streaming",
-            "both"
-          ],
-          "description": "Required when the model reports kind `both`; rejected when it reports one kind that this does not name. `both` makes all components resident."
-        },
-        "variant": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Which of the model's variants to load, by id. Refused when given with parameters that select a different variant."
-        },
-        "chunkMs": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "The chunkMs parameter, for a model declaring it; must be one of its values. Where a variant maps the value, it selects that variant. A model with several variants must be given a variant or parameters that select one."
         }
       }
     },

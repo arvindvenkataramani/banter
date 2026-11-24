@@ -33,12 +33,22 @@ export interface Synthesized {
 const DECODABLE: readonly AudioFormat[] = ["mp3", "aac", "wav"];
 
 /** The first value the provision accepts that the caller decodes, in the restriction's own order; a value it omits is not accepted. */
-function chooseFormat(provision: Provision): AudioFormat {
+function chooseFormat(provision: Provision): { format?: AudioFormat; accepted: string[] } {
   const restricted = provision.restricts?.response_format?.map(String);
   const accepted = (restricted ?? DECODABLE).filter((f) => partHolds(provision, `value:response_format=${f}`));
   const format = accepted.find((f): f is AudioFormat => (DECODABLE as readonly string[]).includes(f));
-  if (!format) throw new Error(`The speech service accepts ${accepted.join(", ") || "none of the formats"}; none of them is a format this player decodes (${DECODABLE.join(", ")}).`);
-  return format;
+  return { format, accepted };
+}
+
+/** Why this provision cannot carry a synthesis in this voice, or undefined when it can.
+ *  The same rules `synthesize` refuses by, read without a request. */
+export function synthesisRefusal(provision: Provision, voice?: Resolution["voice"]): string | undefined {
+  const { format, accepted } = chooseFormat(provision);
+  if (!format) return `The speech service accepts ${accepted.join(", ") || "none of the formats"}; none of them is a format this player decodes (${DECODABLE.join(", ")}).`;
+  if (voice && !("name" in voice) && !provision.extends?.includes("cloning-reference")) {
+    return "This voice is a recording, and the speech service does not declare cloning-reference.";
+  }
+  return undefined;
 }
 
 /** The speech request body: the serving's own parameters first, so the adapter's fields win. */
@@ -55,9 +65,6 @@ function bodyFor(call: SynthesizeCall, format: AudioFormat): Record<string, unkn
   if ("name" in resolution.voice) {
     if (partHolds(provision, "parameter:voice")) body.voice = resolution.voice.name;
   } else {
-    if (!provision.extends?.includes("cloning-reference")) {
-      throw new Error("This voice is a recording, and the speech service does not declare cloning-reference.");
-    }
     body.ref_audio = resolution.voice.recording;
     if (resolution.voice.transcript !== undefined) body.ref_text = resolution.voice.transcript;
   }
@@ -66,7 +73,9 @@ function bodyFor(call: SynthesizeCall, format: AudioFormat): Record<string, unkn
 }
 
 export async function synthesize(call: SynthesizeCall): Promise<Synthesized> {
-  const format = chooseFormat(call.provision);
+  const refused = synthesisRefusal(call.provision, call.resolution.voice);
+  if (refused) throw new Error(refused);
+  const format = chooseFormat(call.provision).format!;
   const body = bodyFor(call, format);
   const url = `${trimEndpoint(call.endpoint)}${call.provision.basePath ?? "/v1"}/audio/speech`;
   const response = await fetch(url, {

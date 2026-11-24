@@ -22,7 +22,7 @@ func buildRouter(ctx: AppContext) -> Router<BasicRequestContext> {
     // The middleware restores the 400 the spec promises for a body the
     // generated decoder rejects before any handler sees it.
     try! APIHandlers(ctx: ctx).registerHandlers(
-        on: router, middlewares: [APIErrorMiddleware()])
+        on: router, middlewares: [EmptyJSONBodyMiddleware(), APIErrorMiddleware()])
 
     // Transcription stays hand-written: its multipart parsing accepts both
     // spellings of `timestamp_granularities` and the harness depends on the

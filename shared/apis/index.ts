@@ -10,18 +10,26 @@ import * as listenLive from "./adapters/deepgram.listen.live";
 import * as sttStream from "./adapters/fluid.stt.stream";
 import * as modelRepository from "./adapters/triton.model-repository";
 
-export interface Adapter extends AdapterDeclaration {
-  synthesize?: typeof speech.synthesize;
+/** An adapter that synthesizes also says, without a request, why a provision cannot carry a synthesis. */
+type Synthesis =
+  | {
+      synthesize: typeof speech.synthesize;
+      /** Why a provision cannot carry a synthesis in these formats and this voice, read without a request. */
+      synthesisRefusal: typeof speech.synthesisRefusal;
+    }
+  | { synthesize?: undefined; synthesisRefusal?: undefined };
+
+export type Adapter = AdapterDeclaration & Synthesis & {
   transcribe?: typeof transcriptions.transcribe;
   transcribeStream?: (call: StreamCall, callbacks: StreamCallbacks) => StreamSession;
   /** The WebSocket path of a streaming provision, below the endpoint. */
   streamPath?: typeof sttStream.streamPath;
   loadModel?: typeof modelRepository.loadModel;
   unloadModel?: typeof modelRepository.unloadModel;
-}
+};
 
 export const adapters: Partial<Record<ApiId, Adapter>> = {
-  "openai.audio.speech": { ...speech.declaration, synthesize: speech.synthesize },
+  "openai.audio.speech": { ...speech.declaration, synthesize: speech.synthesize, synthesisRefusal: speech.synthesisRefusal },
   "openai.audio.transcriptions": { ...transcriptions.declaration, transcribe: transcriptions.transcribe },
   "openai.realtime": { ...realtime.declaration, transcribeStream: realtime.transcribeStream, streamPath: realtime.streamPath },
   "deepgram.listen.live": { ...listenLive.declaration, transcribeStream: listenLive.transcribeStream, streamPath: listenLive.streamPath },

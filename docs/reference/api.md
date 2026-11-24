@@ -453,6 +453,7 @@ Extends: [Service](#service)
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `tts` | → VoiceTts | yes |  |
+| `stt` | → VoiceStt | no |  |
 
 ### VoiceTts
 
@@ -473,6 +474,13 @@ Extends: [Service](#service)
 | `speed` | number | no |  |
 | `resolution` | object | no | The shard's resolution of this selection: the model as the runtime names it, the voice by name or recording, and the serving's request parameters |
 | `resolutionError` | string | no | Why `resolution` is absent: the shard refused the selection or could not be reached |
+| `selectionError` | string | no | Present while the stored selection fails the selection check: its service declares no candidate provision for synthesis |
+
+### VoiceStt
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `selectionError` | string | no | Present while the stored STT selection fails the selection check: its service declares no candidate provision for what the selected model needs |
 
 ### VoiceSelectionPatch
 

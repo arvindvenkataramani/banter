@@ -2,6 +2,7 @@
 // voice-settings-model.ts. State and saving live in voice-settings.tsx.
 
 import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,7 +22,7 @@ import { describeSttInUse } from '@platform/voice-engine/stt-mode-text'
 import { Section, FieldProvenance } from './voice-settings-parts'
 import {
   TUNING_FIELDS, chunkingView, editChunking, resetChunking, resetTuning, roster, setModel, setProvider,
-  setPreferStreaming, setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
+  selectionErrors, setPreferStreaming, setSaveMicSamples, setScope, setSpeed, setSttService, setTakeover, setTuning, setVoice, type Draft,
 } from './voice-settings-model'
 
 export type Edit = (change: (current: Draft) => Draft) => void
@@ -41,6 +42,16 @@ function DocLink({ path, children }: { path: string; children: React.ReactNode }
 
 function Help({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-muted-foreground">{children}</p>
+}
+
+/** Why the stored selection fails the selection check, beside the selector it concerns; nothing while it passes. */
+function SelectionError({ message }: { message: string | undefined }) {
+  if (!message) return null
+  return (
+    <Badge variant="destructive" className="h-auto whitespace-normal" role="alert">
+      {message}
+    </Badge>
+  )
 }
 
 function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
@@ -227,6 +238,7 @@ export function SpeechPanel({ draft, edit }: PanelProps) {
             </div>
           </div>
         </div>
+        <SelectionError message={selectionErrors(draft).tts} />
         <Help>
           Only models that can stream speech in real time are listed.{' '}
           <DocLink path="docs/guide/models.md#text-to-speech-models">Speech models</DocLink>
@@ -343,6 +355,7 @@ export function ListeningPanel({ draft, edit }: PanelProps) {
               {' · '}
               <DocLink path="docs/guide/models.md#speech-to-text-models">Transcription models</DocLink>
             </Help>
+            <SelectionError message={selectionErrors(draft).stt} />
           </Field>
         </Section>
       )}
