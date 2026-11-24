@@ -413,6 +413,7 @@ T3's adapters are verified inside that sandboxed scratch deploy and never agains
 
 - Every gate is green:
   - control: `bun test` in `control/`;
+  - shared: `bun test` in `shared/`, which runs the tests beside `shared/apis/`;
   - dashboard and voice engine: `bun run test`, `bun run lint` and `bunx tsc -b` in `dashboard/`, and `bun run lint` in `voice-engine/`;
   - dsh plugin: `bun run test`, `bun run lint` and `bunx tsc -p .` in `plugins/dsh/voice/`;
   - Swift: `swift test` in `services/fluid/`;
