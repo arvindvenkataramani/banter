@@ -7,7 +7,7 @@ import XCTest
 /// are. A wrong reading reaches the model as noise, so each declared value is
 /// pinned, and an encoding the server cannot decode is refused up front.
 ///
-/// INVENTED seams (see dev/plans/service-apis-run/inventions.md):
+/// INVENTED seams:
 /// `ListenQuery.endpointingMs` is nil when the client sent `endpointing=false`,
 /// and `ListenQuery.parse(_:provisions:)` reads the default for an absent
 /// `endpointing` from the entry's `deepgram.listen.live` provision, falling

@@ -1,7 +1,6 @@
 # Spec: declared service APIs in Banter
 
-The contract for building [the service APIs design](../design/service-apis.md) in Banter. The design says what and why; this spec says where in Banter, and settles what the design leaves to Banter. Where the two disagree, this spec wins for Banter and the disagreement is recorded under [Departures from the design](#departures-from-the-design). The research is [service-api-binding.md](../analysis/service-api-binding.md).
-
+The contract for building [the service APIs design](../../docs/reference/design/service-apis.md) in Banter. The design says what and why; this spec says where in Banter, and settles what the design leaves to Banter. Where the two disagree, this spec wins for Banter and the disagreement is recorded under [Departures from the design](#departures-from-the-design).
 Everything the design says about platform-only callers and services is out of scope: the shard's media jobs, the `chat` operation and `openai.chat.completions`, LM Studio, mlx-audio, piper, and the `/svc/<id>` forwarder. Banter has none of them.
 
 ## 1. Pins

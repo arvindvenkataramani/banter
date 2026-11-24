@@ -7,7 +7,7 @@ import XCTest
 
 /// A running `fluid-stt` router over models that need no weights.
 ///
-/// INVENTED seam (see dev/plans/service-apis-run/inventions.md):
+/// INVENTED seam:
 /// `LoadedModel.scripted(id:text:)` is a loaded model whose streaming session
 /// and batch transcription answer `text` once any audio has reached them since
 /// the last reset, and the empty string before. It reports both modes. The

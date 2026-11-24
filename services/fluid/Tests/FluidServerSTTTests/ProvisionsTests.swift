@@ -8,7 +8,7 @@ import XCTest
 /// not provide, or a part of one it lacks that the entry does not list as
 /// omitted. Spec section 9.
 ///
-/// INVENTED seam (see dev/plans/service-apis-run/inventions.md): the spec names
+/// INVENTED seam: the spec names
 /// the startup check and not the function that performs it. These tests call
 /// `Provisions.load(registry:provider:)`, which throws when the check refuses
 /// and returns what the entry declares otherwise.
