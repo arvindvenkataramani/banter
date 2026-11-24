@@ -96,3 +96,25 @@ describe("decideUnload", () => {
     expect(isNone((decideUnload as any)(svc, leaving))).toBe(true);
   });
 });
+
+describe("decideLoad when the call opens a session", () => {
+  const live = { api: "deepgram.listen.live" };
+  const realtime = { api: "openai.realtime" };
+
+  it("[T3] loads explicitly before a session whose adapter does not load the model it names, even with preload off", () => {
+    const svc = service([realtime, triton], required("always"));
+    expect(load(svc, "transcribeStream", plain, false)).toMatchObject({ call: "adapter", provision: triton });
+  });
+
+  it("[T3] leaves the load to a session whose adapter does load the model", () => {
+    const svc = service([stream, triton], required("always"));
+    expect(isNone(load(svc, "transcribeStream", plain, false))).toBe(true);
+  });
+
+  it("[T3] a live listen session loads the model it names only while the provision keeps the model parameter", () => {
+    const keeps = service([live, triton], required("always"));
+    expect(isNone(load(keeps, "transcribeStream", plain, false))).toBe(true);
+    const omits = service([{ ...live, omits: ["parameter:model"] }, triton], required("always"));
+    expect(load(omits, "transcribeStream", plain, false)).toMatchObject({ call: "adapter", provision: triton });
+  });
+});

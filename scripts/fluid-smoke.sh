@@ -36,7 +36,10 @@
 #              CloseStream, answers a Finalize sent with no audio by one empty
 #              from_finalize result, and with endpointing=false leaves an
 #              utterance open through a pause longer than the 700 ms it closes
-#              on otherwise (fluid-smoke-listen.ts); the default unloads after
+#              on otherwise (fluid-smoke-listen.ts); the deepgram.listen.live
+#              and openai.realtime adapters each take one utterance through
+#              one final per finalize (fluid-smoke-adapters.ts); the default
+#              unloads after
 #              the scratch roster's short idleUnloadMs; every
 #              other roster model whose weights are present loads through the
 #              Triton routes, shows READY in the index, transcribes the same
@@ -286,6 +289,26 @@ stt_unload() {
   if triton_ready "$STT_URL" "$key"; then fail "fluid-stt: the index still shows $1 READY after its unload"; fi
 }
 
+# Drives the deepgram.listen.live and openai.realtime adapters through one
+# utterance each, against the model the scratch server already holds. The
+# Realtime adapter opens no model of its own, so it is loaded for streaming
+# first, which is a no-op for a model that already is. Only a model that serves
+# both modes can be asked for streaming here without naming a variant.
+check_adapters() {
+  local default="$1" wav="$2" listing="$3" key code
+  if ! "$JQ" -e --arg m "$default" '.data[] | select(.id == $m and .kind == "both")' <<<"$listing" >/dev/null; then
+    fail "fluid-stt: the roster default $default does not serve both modes, so the transcribeStream adapters cannot be driven"
+    return
+  fi
+  key="$(stt_key "$default")"
+  code="$(triton_post "$STT_URL" "/v2/repository/models/$key/load" '{"parameters":{"mode":"streaming"}}')"
+  [[ "$code" == 200 ]] \
+    || fail "fluid-stt: loading $default for streaming returned $code: $(head -c 300 "$SCRATCH/triton.json")"
+  "$BUN" "$REPO/scripts/fluid-smoke-adapters.ts" "$STT_URL" "$wav" "$EXPECTED" \
+    "$SCRATCH/fluid-stt.registry.json" "$key" || fail "fluid-stt: the transcribeStream adapters"
+  ok "fluid-stt: the deepgram.listen.live and openai.realtime adapters each settled one utterance"
+}
+
 check_stt() {
   local default="$STT_MODEL" wav="$SCRATCH/speech.wav" text models model code
   say -o "$wav" --file-format=WAVE --data-format=LEI16@16000 "$SENTENCE"
@@ -302,8 +325,13 @@ check_stt() {
   grep -qi "$EXPECTED" <<<"$text" || fail "fluid-stt: POST /v1/listen \"$text\" does not contain \"$EXPECTED\""
   ok "fluid-stt: POST /v1/listen: \"$text\""
 
+  local models_listing
+  models_listing="$(curl -sf -m 10 "$STT_URL/v1/models")" || fail "fluid-stt /v1/models was refused"
+
   "$BUN" "$REPO/scripts/fluid-smoke-listen.ts" "ws://127.0.0.1:$STT_PORT" "$wav" "$EXPECTED" \
     || fail "fluid-stt: the /v1/listen socket"
+
+  check_adapters "$default" "$wav" "$models_listing"
 
   local unloaded=false
   for _ in $(seq 1 30); do

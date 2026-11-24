@@ -2,18 +2,18 @@
 // operation is performed over it. An adapter is its declaration beside the functions
 // that perform its operations.
 
-import type { AdapterDeclaration, ApiId } from "./types";
+import type { AdapterDeclaration, ApiId, StreamCall, StreamCallbacks, StreamSession } from "./types";
 import * as speech from "./adapters/openai.audio.speech";
 import * as transcriptions from "./adapters/openai.audio.transcriptions";
-import { declaration as realtime } from "./adapters/openai.realtime";
-import { declaration as listenLive } from "./adapters/deepgram.listen.live";
+import * as realtime from "./adapters/openai.realtime";
+import * as listenLive from "./adapters/deepgram.listen.live";
 import * as sttStream from "./adapters/fluid.stt.stream";
 import * as modelRepository from "./adapters/triton.model-repository";
 
 export interface Adapter extends AdapterDeclaration {
   synthesize?: typeof speech.synthesize;
   transcribe?: typeof transcriptions.transcribe;
-  transcribeStream?: typeof sttStream.transcribeStream;
+  transcribeStream?: (call: StreamCall, callbacks: StreamCallbacks) => StreamSession;
   /** The WebSocket path of a streaming provision, below the endpoint. */
   streamPath?: typeof sttStream.streamPath;
   loadModel?: typeof modelRepository.loadModel;
@@ -23,8 +23,8 @@ export interface Adapter extends AdapterDeclaration {
 export const adapters: Partial<Record<ApiId, Adapter>> = {
   "openai.audio.speech": { ...speech.declaration, synthesize: speech.synthesize },
   "openai.audio.transcriptions": { ...transcriptions.declaration, transcribe: transcriptions.transcribe },
-  "openai.realtime": realtime,
-  "deepgram.listen.live": listenLive,
+  "openai.realtime": { ...realtime.declaration, transcribeStream: realtime.transcribeStream, streamPath: realtime.streamPath },
+  "deepgram.listen.live": { ...listenLive.declaration, transcribeStream: listenLive.transcribeStream, streamPath: listenLive.streamPath },
   "fluid.stt.stream": { ...sttStream.declaration, transcribeStream: sttStream.transcribeStream, streamPath: sttStream.streamPath },
   "triton.model-repository": { ...modelRepository.declaration, loadModel: modelRepository.loadModel, unloadModel: modelRepository.unloadModel },
 };

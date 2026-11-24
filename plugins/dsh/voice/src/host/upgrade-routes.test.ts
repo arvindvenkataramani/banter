@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apply, type Config } from './index'
 // A relative import: this package declares no dependency on the shared package for tests.
 import * as streamAdapter from '../../../../../shared/apis/adapters/fluid.stt.stream'
+import * as listenAdapter from '../../../../../shared/apis/adapters/deepgram.listen.live'
+import * as realtimeAdapter from '../../../../../shared/apis/adapters/openai.realtime'
 
 // The relay registers its WebSocket upgrade route at each path the selected STT service's
 // stream provisions use, and passes what the browser sends and the server answers through
@@ -33,8 +35,12 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-/** What the stream adapter opens for a provision on a bare endpoint: its path, the spec's. */
-function specPath(basePath?: string): string {
+interface StreamAdapter {
+  transcribeStream(call: never, callbacks: never): { close(): void }
+}
+
+/** What an adapter opens for a provision on a bare endpoint: its path, the spec's. */
+function pathOf(adapter: StreamAdapter, provision: Record<string, unknown>): string {
   const urls: string[] = []
   class Capture {
     static readonly CONNECTING = 0
@@ -54,8 +60,8 @@ function specPath(basePath?: string): string {
   const original = globalThis.WebSocket
   ;(globalThis as { WebSocket: unknown }).WebSocket = Capture
   try {
-    const session = streamAdapter.transcribeStream(
-      { endpoint: 'http://host.invalid', provision: { api: 'fluid.stt.stream', ...(basePath ? { basePath } : {}) }, model: 'm', format: 'pcm16' } as never,
+    const session = adapter.transcribeStream(
+      { endpoint: 'http://host.invalid', provision, model: 'm', format: 'pcm16' } as never,
       { onPartial() {}, onFinal() {}, onReady() {}, onClosed() {} } as never,
     )
     session.close()
@@ -64,6 +70,8 @@ function specPath(basePath?: string): string {
   }
   return new URL(urls[0]).pathname
 }
+
+const specPath = (basePath?: string): string => pathOf(streamAdapter, { api: 'fluid.stt.stream', ...(basePath ? { basePath } : {}) })
 
 /** A server that answers an upgrade with the handshake and one close frame whose code is the request's `code` query. */
 async function startUpstream() {
@@ -193,5 +201,29 @@ describe('the STT upgrade route', () => {
     const first = new URL(upstream.requests[0], 'http://upstream.invalid')
     expect(first.pathname).toBe(specPath())
     expect(Object.fromEntries(first.searchParams)).toEqual({ model: 'opaque-key', format: 'opus', session: 'sess-1', takeover: '1', code: '4001' })
+  })
+})
+
+describe('the STT upgrade routes of every streaming provision', () => {
+  const live = { api: 'deepgram.listen.live', extends: ['endpointing-off'] }
+  const realtime = { api: 'openai.realtime', only: ['mode:transcription'] }
+  const under = (path: string): string => `/dsh-voice/speech/stt-a${path}`
+
+  it('[T3] has a route at the path of each provision that can stream transcription, the Deepgram and Realtime ones included', async () => {
+    const upstream = await startUpstream()
+    const upgrades = await applyPlugin([{ api: 'fluid.stt.stream', basePath: '/alt' }, live, realtime, { api: 'openai.audio.transcriptions' }], upstream.port)
+
+    expect([...upgrades.keys()].sort()).toEqual([
+      under(pathOf(streamAdapter, { api: 'fluid.stt.stream', basePath: '/alt' })),
+      under(pathOf(listenAdapter, live)),
+      under(pathOf(realtimeAdapter, realtime)),
+    ].sort())
+  })
+
+  it('[T3] has none for a provision that cannot decide where an utterance ends, such as Deepgram live without endpointing-off', async () => {
+    const upstream = await startUpstream()
+    const upgrades = await applyPlugin([{ api: 'fluid.stt.stream' }, { api: 'deepgram.listen.live' }], upstream.port)
+
+    expect([...upgrades.keys()]).toEqual([under(specPath())])
   })
 })
