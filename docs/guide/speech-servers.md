@@ -62,7 +62,7 @@ The OpenClaw gateway checks browser origins too, separately from any speech serv
 
 Any server that serves the APIs in [speech-server-api.md](../reference/speech-server-api.md), and declares them in its registry entry, works: `openai.audio.transcriptions` for STT, `openai.audio.speech` for TTS, a way to load a model if it needs one, a health path, and CORS.
 
-1. Add a `services` entry to your registry: `capabilityId` `"stt"` or `"tts"`, its host, port and health path, and `"runner": { "type": "external" }` if Banter should not manage its process. A `process` runner marks its port as `{port}` in `runner.main` and writes the number only in `network.port`.
+1. Add a `services` entry to your registry: `capabilityId` `"stt"` or `"tts"`, its host, port and health path, a [`provides`](../reference/components/registry.md#provides) list naming the APIs it serves, and `"runner": { "type": "external" }` if Banter should not manage its process. A `process` runner marks its port as `{port}` in `runner.main` and writes the number only in `network.port`.
 2. Declare the model in the roster's `ttsModels` or `sttModels`, add a `roster.providers` entry keyed by the service id that serves it, and for TTS give it a voice with a rendering on the model. [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) has the exact shape.
 3. Point `config.json` at it: `voice.stt.serviceId`, and `voice.tts.selection` for TTS.
 4. Reload and restart the affected provider; see [Applying an edit](voices-and-models.md#applying-an-edit):

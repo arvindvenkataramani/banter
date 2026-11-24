@@ -16,6 +16,21 @@ Run what covers the change before committing it. The commands are in the [develo
 
 A change these cover can be committed on a green run, without anyone trying it by hand. A skipped check, or a failure that is explained away rather than fixed, is not green: say what was skipped and why.
 
+## Changelog
+
+[CHANGELOG.md](CHANGELOG.md) is written for someone updating an installation or the dsh plugin from the previous release. A change a user would notice adds its line under **Unreleased** in the same commit as the change. Releasing renames that heading to the version, and the release workflow publishes that section as the release notes; it refuses a tag whose version has no section.
+
+Each release's section has up to four groups, in this order, and leaves out any that are empty:
+
+1. **Action needed.** What someone updating must do: a renamed or removed config or registry field, an entry that now needs something it didn't, a plugin that must match the server's version.
+2. **New.** Something a user can now do, or a new API, setting or guide worth knowing about.
+3. **Changed.** Behaviour a user would notice that works differently now.
+4. **Fixed.** Bugs a user could have hit. Last, because few of them matter to most users.
+
+One line per item, in plain words, naming the setting, field or route and linking its doc where there is one. No commit hashes, and no internal labels such as a build phase.
+
+Left out: specs, tests, `dev/` changes, refactors, the release commit itself, and internal changes with no visible effect unless they change what a user must do. Doc edits are left out unless they add a page worth knowing about.
+
 ## Git hooks
 
 `scripts/git-hooks/` holds the hooks every clone should run. `ops/install.sh` enables them in a git checkout; in a clone that skipped it, run `git config core.hooksPath scripts/git-hooks`. The `pre-commit` hook regenerates `docs/reference/api.md` (`bun run docs`) on any commit that touches `control/` and adds it to that commit, so the reference always matches the routes beside it.
