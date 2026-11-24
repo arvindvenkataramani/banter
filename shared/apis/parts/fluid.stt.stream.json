@@ -1,0 +1,29 @@
+{
+  "api": "fluid.stt.stream",
+  "revision": "in-repo",
+  "parts": [
+    "parameter:model",
+    "parameter:format",
+    "value:format=opus",
+    "value:format=pcm16",
+    "parameter:session",
+    "parameter:takeover",
+    "value:takeover=1",
+    "parameter:chunkMs",
+    "client-message:audio",
+    "client-message:Finalize",
+    "client-message:done",
+    "client-message:CloseStream",
+    "client-message:KeepAlive",
+    "server-message:ready",
+    "field:ready.model",
+    "field:ready.format",
+    "server-message:transcript",
+    "field:transcript.is_final",
+    "field:transcript.text",
+    "field:transcript.words",
+    "server-message:error",
+    "field:error.code",
+    "field:error.message"
+  ]
+}

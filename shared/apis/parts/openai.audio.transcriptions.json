@@ -1,0 +1,29 @@
+{
+  "api": "openai.audio.transcriptions",
+  "revision": "373f26a9aec3608e3158f2a0d4b8ae49d13162a4",
+  "parts": [
+    "parameter:file",
+    "parameter:model",
+    "parameter:language",
+    "parameter:languages",
+    "parameter:keywords",
+    "parameter:prompt",
+    "parameter:response_format",
+    "value:response_format=json",
+    "value:response_format=text",
+    "value:response_format=srt",
+    "value:response_format=verbose_json",
+    "value:response_format=vtt",
+    "value:response_format=diarized_json",
+    "parameter:temperature",
+    "parameter:include",
+    "value:include=logprobs",
+    "parameter:timestamp_granularities",
+    "value:timestamp_granularities=word",
+    "value:timestamp_granularities=segment",
+    "parameter:stream",
+    "parameter:chunking_strategy",
+    "parameter:known_speaker_names",
+    "parameter:known_speaker_references"
+  ]
+}

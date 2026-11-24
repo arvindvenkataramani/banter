@@ -1,0 +1,21 @@
+{
+  "api": "openai.audio.speech",
+  "revision": "373f26a9aec3608e3158f2a0d4b8ae49d13162a4",
+  "parts": [
+    "parameter:model",
+    "parameter:input",
+    "parameter:instructions",
+    "parameter:voice",
+    "parameter:response_format",
+    "value:response_format=mp3",
+    "value:response_format=opus",
+    "value:response_format=aac",
+    "value:response_format=flac",
+    "value:response_format=wav",
+    "value:response_format=pcm",
+    "parameter:speed",
+    "parameter:stream_format",
+    "value:stream_format=sse",
+    "value:stream_format=audio"
+  ]
+}

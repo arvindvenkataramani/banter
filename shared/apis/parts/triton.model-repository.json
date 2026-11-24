@@ -1,0 +1,16 @@
+{
+  "api": "triton.model-repository",
+  "revision": "81794dd20032fc2504a40e6a3942ad9330ff437b",
+  "parts": [
+    "route:index",
+    "route:load",
+    "route:unload",
+    "parameter:parameters",
+    "parameter:ready",
+    "field:index.name",
+    "field:index.version",
+    "field:index.state",
+    "field:index.reason",
+    "field:error.error"
+  ]
+}
