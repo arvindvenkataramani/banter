@@ -1,6 +1,6 @@
 # Spec: voice mode as a dsh plugin
 
-The contract for building Banter's voice mode as a DeepSeek Harness (dsh) plugin. Design: [`dev/design/dsh-voice-plugin.md`](../design/dsh-voice-plugin.md). This spec is complete for the build; where it is silent, the decision tiers apply (decide from precedent and log, or write a brief and stop that step).
+The contract for building Banter's voice mode as a DeepSeek Harness (dsh) plugin. Design: [`docs/reference/design/dsh-voice-plugin.md`](../../docs/reference/design/dsh-voice-plugin.md). This spec is complete for the build; where it is silent, the decision tiers apply (decide from precedent and log, or write a brief and stop that step).
 
 **Done means:** with the plugin installed into the `web` profile, `npx @deepseek-ai/dsh web` opens dsh, the person turns voice on in a session, and holds a spoken conversation with the agent using the configured STT and TTS services.
 

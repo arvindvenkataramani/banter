@@ -4,7 +4,7 @@
 
 *Read against dsh `66491b05e3` (`dsh-v0.2.2-rc.1`, the npm `latest` release), from [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness). Line citations below are at that commit.*
 
-Companions: [`dev/design/agent-backend-abstraction.md`](../design/agent-backend-abstraction.md) for where dsh sits among Banter's backends, [`dev/design/voice-engine-package.md`](../design/voice-engine-package.md) for the engine package the plugin would consume, and [`docs/reference/protocols/dsh/dsh-web-protocol.md`](../../docs/reference/protocols/dsh/dsh-web-protocol.md) for dsh's wire.
+Companions: [`dev/design/agent-backend-abstraction.md`](../design/agent-backend-abstraction.md) for where dsh sits among Banter's backends, [`docs/reference/design/voice-engine-package.md`](../../docs/reference/design/voice-engine-package.md) for the engine package the plugin would consume, and [`docs/reference/protocols/dsh/dsh-web-protocol.md`](../../docs/reference/protocols/dsh/dsh-web-protocol.md) for dsh's wire.
 
 ---
 
@@ -102,7 +102,7 @@ Shipping the zero-setup tier as the default and Banter's services as the upgrade
 
 ## Where Banter's voice code stands
 
-The engine is `@platform/voice-engine` at `voice-engine/src/`, about 7.8k lines of non-test code. It imports nothing from the dashboard, and a boundary test enforces that (`dev/design/voice-engine-package.md`). The dashboard keeps what talks to the control plane or owns the page's wiring, in `dashboard/src/lib/voice/`: `system/index.ts` (builds the page's `VoiceSystem`), `voice-service.ts`, `apply-voice-settings.ts` and `index.ts`. Most of the engine should move to a plugin untouched: `human/`, `system/playback-engine.ts`, `turn-manager.ts`, and the chunkers. The seams the host supplies:
+The engine is `@platform/voice-engine` at `voice-engine/src/`, about 7.8k lines of non-test code. It imports nothing from the dashboard, and a boundary test enforces that (`docs/reference/design/voice-engine-package.md`). The dashboard keeps what talks to the control plane or owns the page's wiring, in `dashboard/src/lib/voice/`: `system/index.ts` (builds the page's `VoiceSystem`), `voice-service.ts`, `apply-voice-settings.ts` and `index.ts`. Most of the engine should move to a plugin untouched: `human/`, `system/playback-engine.ts`, `turn-manager.ts`, and the chunkers. The seams the host supplies:
 
 | Seam | In the package | On dsh |
 |---|---|---|

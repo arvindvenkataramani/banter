@@ -2,7 +2,7 @@
 
 Voice settings live in one place, the Banter server's voice config, and are edited in one place, Banter's settings dialog. The dsh plugin reads them from the server and keeps only the settings that belong to dsh or to the browser it runs in.
 
-Companions: [`dsh-voice-plugin.md`](dsh-voice-plugin.md) (the plugin), [`docs/reference/components/voice-interface.md`](../../docs/reference/components/voice-interface.md) (what the tuning values do), [`docs/reference/configuration.md`](../../docs/reference/configuration.md) (the stored config).
+Companions: [`dsh-voice-plugin.md`](dsh-voice-plugin.md) (the plugin), [`docs/reference/components/voice-interface.md`](../components/voice-interface.md) (what the tuning values do), [`docs/reference/configuration.md`](../configuration.md) (the stored config).
 
 ## Principles
 
@@ -98,9 +98,3 @@ A dsh-stored setting saves with its own `mutate` on dsh's config form, fenced by
 |---|---|---|---|
 | Save mic samples | Posts samples to Banter's server when on | Ignored | The engine posts to the page's own origin, and dsh's does not accept them |
 | Settings change while voice is on | Applied at Save | Applied on the next refetch: focus, visibility, voice start or the Reload button | The plugin learns of a change only by fetching (impossible otherwise: the server sends no change event the plugin can receive) |
-
-## Needs human review before commit
-
-- The new host route makes Banter's voice config readable by anything dsh's connection check admits (access).
-- The control plane's PATCH accepts `null` for tuning fields (a change to what clients can write).
-- `docs/guide/plugins/dsh-voice/images/settings.png` shows the old page and needs a new screenshot.

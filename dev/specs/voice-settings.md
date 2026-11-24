@@ -1,6 +1,6 @@
 # Voice settings: build spec
 
-Implements [`dev/design/voice-settings.md`](../design/voice-settings.md). The plugin parts amend [`dsh-voice-plugin.md`](dsh-voice-plugin.md), whose sections 2, 4, 7, 8 and 10 point here for settings.
+Implements [`docs/reference/design/voice-settings.md`](../../docs/reference/design/voice-settings.md). The plugin parts amend [`dsh-voice-plugin.md`](dsh-voice-plugin.md), whose sections 2, 4, 7, 8 and 10 point here for settings.
 
 ## 1. Control plane
 
