@@ -73,13 +73,21 @@ Banter changes that platform lacks. They stay.
 - **Harness-agnostic docs:** `docs/reference/protocols/dsh/` and `docs/reference/protocols/opencode/`.
 - **Page security notice:** the settings dialog warns when the page is not a secure context, so voice can't reach the microphone, and notes when a secure page is not cross-origin isolated, so the voice models run on one thread (`features/settings/page-security-notice.tsx`, `voice-page-support.ts`). Platform is always served over https, so it never shows.
 - **Cross-platform example services:** the example registries register Banter's own `services/stt/faster-whisper` and `services/tts/kokoro` adapters; the fluid servers are an Apple Silicon option in `services/fluid/registry.fluid.example.json`. Every Python adapter reads its CORS allowlist from a `*_CORS_ORIGINS` variable and sends no CORS headers without one.
+- **Service APIs:** services declare the published APIs they serve (`provides`) and how their models load (`models`) in the registry, and every client calls them through adapters chosen from those declarations. Platform's design is at platform `c6f2ba4`; Banter's form is [`docs/reference/design/service-apis.md`](../../docs/reference/design/service-apis.md). Platform should take, in order:
+  - `319e4b4`, `7ca0496` and `02c7c88`: the design record, the spec, the pinned part indexes and the first tests
+  - `94c5d60` (T1): the catalog, selection, the load decisions, the registry checks and the zod and JSON schemas
+  - `7df6f51` (S1) and `554501b` (S2) and `2212bd9` (S3): the fluid servers' provisions, the model repository routes, loading on request, the standard APIs and the removal of the old load routes, in `services/fluid/`
+  - `8e9dec8` (T2): the adapters, `resolveSpeech`, the `GET /api/voice` shapes, the voice engine's loads and the removal of `responseFormat` and `sessions`
+  - `c2f9fed` (T3): the Deepgram and Realtime transcription adapters
+  - `bffc4ea`: the fixes from the first review
+  Left out of Banter's form, and kept by platform: the `chat` operation and `openai.chat.completions`, the media jobs' speech call, the shard's `/svc/<id>` forwarder, and the mlx-audio, piper and LM Studio provisions.
 
 ## Adapted in a port
 
 Code taken from platform and changed to fit Banter. Each is a seam to check at the next port.
 
-- **`buildSpeechRequest`** lives in `control/shared/src/speech-request.ts`. Platform keeps it in `media-job.ts`, which Banter leaves out.
-- **The control plane resolves a selection whose runtime is on its own host**, from its own roster with `buildSpeechRequest` (`resolveSelection` in `control/control-plane/src/app.ts`). Platform always asks a shard, since it always runs one; a single-machine Banter install has none, and without this its voice could not speak.
+- **`resolveSpeech`** lives in `control/shared/src/speech-request.ts`. Platform keeps it in `media-job.ts`, which Banter leaves out.
+- **The control plane resolves a selection whose runtime is on its own host**, from its own roster with `resolveSpeech` (`resolveSelection` in `control/control-plane/src/app.ts`). Platform always asks a shard, since it always runs one; a single-machine Banter install has none, and without this its voice could not speak.
 - **The example rosters:** the fluid example's voices are unprefixed, so they are the same voices the shard example declares, and merging it into a registry is a union by id. It declares Pocket-TTS's eight original preset voices (`alba` to `azelma`); LuxTTS ships with no voice. Tests that platform points at its shipped shard registry point at Banter's three example registries.
 - **Real people's voices and platform's machines** in the shared resolution cases (`schemas/voice-resolution-cases.json`) and the tests that read them are renamed to generic ids (`alex`, `sam`, `gpu-machine`, `home-server`).
 

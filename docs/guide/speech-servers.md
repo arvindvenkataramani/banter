@@ -60,7 +60,7 @@ The OpenClaw gateway checks browser origins too, separately from any speech serv
 
 ## Adding another server
 
-Any server that answers the routes in [speech-server-api.md](../reference/speech-server-api.md) works: `POST /v1/audio/transcriptions` for STT, `POST /v1/audio/speech` plus `POST` and `DELETE /v1/models` for TTS, a health path, and CORS.
+Any server that serves the APIs in [speech-server-api.md](../reference/speech-server-api.md), and declares them in its registry entry, works: `openai.audio.transcriptions` for STT, `openai.audio.speech` for TTS, a way to load a model if it needs one, a health path, and CORS.
 
 1. Add a `services` entry to your registry: `capabilityId` `"stt"` or `"tts"`, its host, port and health path, and `"runner": { "type": "external" }` if Banter should not manage its process. A `process` runner marks its port as `{port}` in `runner.main` and writes the number only in `network.port`.
 2. Declare the model in the roster's `ttsModels` or `sttModels`, add a `roster.providers` entry keyed by the service id that serves it, and for TTS give it a voice with a rendering on the model. [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) has the exact shape.
@@ -103,7 +103,7 @@ This repo ships two adapters that run on Linux as they do on macOS: `stt/faster-
 
 ### The contract
 
-Any server Banter talks to has to answer the routes in [speech-server-api.md](../reference/speech-server-api.md): batch transcription or synthesis, `POST /v1/models?model_name=<id>` for TTS, a health path, and CORS. The streaming socket and the STT load calls are optional; leave `voice.stt.model` unset and Banter transcribes in batch without them.
+Any server Banter talks to has to serve an API from [speech-server-api.md](../reference/speech-server-api.md) and declare it in its registry entry: batch transcription or synthesis, a load call if its models need loading, a health path, and CORS. The streaming APIs are optional; leave `voice.stt.model` unset and Banter transcribes in batch without them.
 
 ### The roster entry that makes it visible
 
@@ -139,7 +139,7 @@ Using any of these with Banter means writing (or finding) an adapter that puts t
 
 #### Speaches (STT and TTS)
 
-[speaches-ai/speaches](https://github.com/speaches-ai/speaches) (also known as `fedirz/faster-whisper-server`) describes itself as an OpenAI API-compatible server for streaming transcription and speech generation — STT via faster-whisper, TTS via Kokoro or Piper — with Docker-based CPU and GPU support and no MLX dependency. Its own docs are the source for exact endpoint and model-loading behavior; confirm it against the contract above (particularly the `/v1/models` load/unload calls) before registering it.
+[speaches-ai/speaches](https://github.com/speaches-ai/speaches) (also known as `fedirz/faster-whisper-server`) describes itself as an OpenAI API-compatible server for streaming transcription and speech generation — STT via faster-whisper, TTS via Kokoro or Piper — with Docker-based CPU and GPU support and no MLX dependency. Its own docs are the source for exact endpoint and model-loading behavior; confirm it against the contract above (particularly how its models load and unload, which its registry entry must declare) before registering it.
 
 #### Other faster-whisper servers (STT)
 

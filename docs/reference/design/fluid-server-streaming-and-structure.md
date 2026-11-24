@@ -32,7 +32,7 @@ mp3 is reachable but unnecessary. AudioToolbox decodes it and will not encode it
 
 Worth checking on a real Android device is whether Chrome there wants fragmented MP4 rather than raw ADTS framing; the WAV floor covers that case until someone tests it.
 
-A driver that does not conform to `TtsStreamingDriver`, asked for `stream:true`, serves the whole utterance as one response in the same container. The wire shape is then uniform across backends and a client never branches on which model it is talking to.
+A driver that does not conform to `TtsStreamingDriver` serves the whole utterance as one response in the same container. The wire shape is then uniform across backends and a client never branches on which model it is talking to.
 
 **The dashboard has mp3 compiled in**, in three places: the MIME passed to `addSourceBuffer`, the blob fallback's type, and `streaming-backend.ts`'s capability probe. It speaks mp3 because that is mlx-audio's default, not because anything chose it. Moving to AAC makes that MIME follow the format requested, which is the change that lets one playback path serve either server.
 
@@ -66,7 +66,7 @@ That reasoning is not about speech recognition. It is about one CoreML model res
 
 A model is weights in memory. How it is then driven — one shot over HTTP, or a session over a socket — is a property of the request, not of the load. So `load` builds whatever the catalogue names and puts it in the slot, whichever kind it is, and `/healthz` reports what is actually resident.
 
-This matters because the alternative breaks the rule the server exists to keep. A load costs seconds; the whole reason loading is explicit is that those seconds must be paid where the caller asked for them, never hidden inside a request. A session model whose manager is built when a socket connects moves that cost onto the first connection — the one place a voice loop cannot absorb it — while `/healthz` reports a model that is not in memory at all.
+This matters because the alternative breaks the rule the load exists to keep. A load costs seconds, and those seconds must be paid where the caller can see them: on the explicit load, or on the first request of a server that declares it loads on request (see [fluid-stt-on-demand-load.md](fluid-stt-on-demand-load.md)), never hidden in a later one. A session model whose manager is built when a socket connects moves that cost onto the first connection — the one place a voice loop cannot absorb it — while `/healthz` reports a model that is not in memory at all.
 
 What differs between the kinds is only what they refuse. A session model has no one-shot call, so transcription against one is refused by name rather than by claiming nothing is loaded. A batch model cannot stream, so a socket asking for one is refused the same way. Both refusals come from asking the resident model what it is, not from a second notion of residency.
 
@@ -123,7 +123,7 @@ The benchmark and the voice loop want different things from the same synthesis p
 
 ### Benchmark: HTTP
 
-`POST /v1/audio/speech` with `stream:true`, as above. One request, one utterance, no queue, no cancellation. The harness reads whatever the server sends — it is an instrument, and it follows the wire format rather than setting it.
+`POST /v1/audio/speech`, as above: the response streams as it renders, with no flag asked, and `stream_format: "sse"` sends the same audio as server-sent events. One request, one utterance, no queue, no cancellation. The harness reads whatever the server sends — it is an instrument, and it follows the wire format rather than setting it.
 
 ### Voice loop: WebSocket
 
@@ -133,7 +133,7 @@ Streaming also makes the server one-stream-at-a-time, so overlapping work has to
 
 The server queues rather than the dashboard serialising. Synthesising the next span while the current one plays is what keeps the seams gapless, and the dashboard should not be modelling the fact that the server holds one model — that is a server fact, and it would have to change again if it stopped being true. The queue needs a depth cap so a runaway client is refused rather than hanging.
 
-**The dashboard does not consult which backends can stream.** The roster declares `streaming` per serving (a runtime's fact about a model) and the control plane carries it to the dashboard, but the dashboard sets `stream` from browser capability alone (`STREAMING_BACKEND !== 'blob'`, `playback-engine.ts`), so it asks every provider to stream whether or not that provider can. It survives because both servers accept the flag and this one serves a non-streaming backend as a single whole-utterance response. The `realtime` flag in `voice.tts` does not close this: it marks a model fast enough for the voice loop and is read only to filter the model picker. A model that cannot stream is therefore indistinguishable in the loop from one that can, and shows up as a long first-audio wait with nothing to attribute it to. Closing it is a client, config and `/v1/models` change, not a server one.
+**Whether audio arrives as it renders is a declared capability.** The roster declares `streaming` per serving (a runtime's fact about a model) and the speech API's adapter holds the `renders-progressively` capability, which the API's own default response grants and the `stream-flag` extension grants for runtimes that need the flag. The playback engine asks for progressive audio from browser capability alone, and the adapter sends `stream: true` only to a provision that declares `stream-flag`; `fluid-tts` declares neither the flag nor a need for it, since it streams every response that can stream. The `realtime` flag in `voice.tts` marks a model fast enough for the voice loop and is read only to filter the model picker, so a model that cannot stream still shows up in the loop as a long first-audio wait with nothing to attribute it to.
 
 STT already holds a socket for its streaming session. A WebSocket here is the consistent shape, not the exception.
 
@@ -159,6 +159,6 @@ This holds because these servers run under a supervisor that evicts them. A buil
 
 Both servers build from `services/fluid/` against the upstream FluidAudio release, registered as `fluid-stt` and `fluid-tts`. Each generates its model-lifecycle routes from its own `openapi.yaml`; synthesis, transcription and the sockets stay hand-written.
 
-**`/v1/models` convergence.** Both answer `GET /v1/models`, `DELETE /v1/models`, `POST /v1/models?model_name=` and `POST /v1/models/load`. The query form is mlx-audio's, and the dashboard sends it to every synthesis provider; it carries no mode or variant, so an STT model that needs one is refused there and loaded through `/v1/models/load`. Two differences remain: STT also answers `POST /v1/models/unload` naming a model, and its loads return a `ModelAction` body where TTS returns an empty 200. Closing them is a wire-shape change with the harness and the dashboard on it.
+**Model routes converge.** Both servers answer `GET /v1/models` and `/healthz`, and load and unload models through `triton.model-repository`: `POST /v2/repository/models/{name}/load` and `.../unload`, with `mode` and `variant` as load parameters on the STT server, and `POST /v2/repository/index`. The routes that were mlx-audio's and the older load routes are gone. The voice engine reads no listing: the roster declares the models, and a load of a model with no weights on disk fails with the server's own message.
 
 `docs/reference/design/fluidserver-model-lifecycle.md` describes the STT lifecycle. Its component detail on the managers and the model catalogue holds; the lifecycle itself is `ResidentSlot` in the shared kit, shared by both servers.

@@ -107,7 +107,7 @@ The shared protocol is in the [speech server API](../../docs/reference/speech-se
 - `done` is accepted as a synonym for `Finalize`. A text frame of any other type, or one that isn't valid JSON, is ignored.
 - The socket is accepted, then the model is made ready: loaded if nothing is resident, given its streaming mode if it lacks it, replacing the resident one if another is named and no session holds the server. Audio arriving during the load waits in the socket. `chunkMs` picks Nemotron's tier.
 - The model check runs before the claim, so a connection refused for its model can't displace a live session on its way out.
-- A replace or takeover waits up to two seconds for the previous holder's in-flight work. Past that, the newcomer is refused `busy` and the holder keeps the socket.
+- A replace or takeover waits up to five seconds for the previous holder's in-flight work. Past that, the newcomer is refused `busy` and the holder keeps the socket.
 - Every session starts from a clean decoder, and every exit resets it before the model is released: `Finalize`, `CloseStream`, a dropped socket, a decode failure, a takeover. A client that never sends `Finalize` still leaves the model clean for the next one.
 - Bitrate and DTX are the client's choice; the server decodes whatever arrives.
 

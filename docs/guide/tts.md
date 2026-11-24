@@ -32,13 +32,27 @@ Install it by following the adapter's README: copy `server.py` and `requirements
     }
   },
   "network": { "port": 8002, "healthPath": "/health" },
-  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "idleUnload": true, "idleTimeout": 1800000, "startupTime": 90000, "restartOnCrash": true, "maxRestarts": 3 }
+  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "idleUnload": true, "idleTimeout": 1800000, "startupTime": 90000, "restartOnCrash": true, "maxRestarts": 3 },
+  "provides": [
+    {
+      "api": "openai.audio.speech",
+      "omits": ["parameter:instructions", "parameter:stream_format"],
+      "restricts": { "response_format": ["wav"] }
+    }
+  ],
+  "models": {
+    "loading": "required",
+    "autoLoad": "always",
+    "resident": "one",
+    "load": { "method": "POST", "path": "/v1/models", "query": { "model_name": "{model}" } },
+    "unload": { "method": "DELETE", "path": "/v1/models", "query": { "model_name": "{model}" } }
+  }
 }
 ```
 
 `KOKORO_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. `startupTime` covers importing PyTorch, which happens before the server listens.
 
-The server always answers `audio/wav`, so the roster provider sets `"responseFormat": "wav"`. Left absent it defaults to `mp3`, and Banter would try to decode wav bytes as mp3. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. The roster declares the model once, the provider that serves it, and each voice as a rendering on the model, as in the example registry, trimmed:
+The server always answers `audio/wav`, so the entry's `openai.audio.speech` provision restricts `response_format` to `["wav"]`; Banter sends the first restricted value it can decode, and decodes the response as it. It omits `instructions` and `stream_format`, which the server does not implement, and declares how a model loads: a request does load a model it names, and the `load` and `unload` calls are `/v1/models` with `model_name`. The adapter builds its pipeline for American English, so the voices are the `af_` (female) and `am_` (male) presets. The roster declares the model once, the provider that serves it, and each voice as a rendering on the model, as in the example registry, trimmed:
 
 ```json
 "roster": {
@@ -46,7 +60,6 @@ The server always answers `audio/wav`, so the roster provider sets `"responseFor
   "providers": {
     "tts-kokoro": {
       "resolvesVoices": false,
-      "responseFormat": "wav",
       "serves": [{ "model": "kokoro-82m", "key": "kokoro-82m" }]
     }
   },
@@ -100,7 +113,15 @@ Add this entry to `registry.json`'s `services`:
     }
   },
   "network": { "port": 8004, "healthPath": "/health" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 },
+  "provides": [
+    {
+      "api": "openai.audio.speech",
+      "omits": ["parameter:instructions", "parameter:stream_format"],
+      "restricts": { "response_format": ["wav", "mp3"] }
+    }
+  ],
+  "models": { "loading": "none" }
 }
 ```
 
@@ -112,7 +133,6 @@ Then add its model, provider and a voice to the `roster` in `registry.json`:
   "providers": {
     "tts-neutts-air": {
       "resolvesVoices": false,
-      "responseFormat": "wav",
       "serves": [{ "model": "neuphonic/neutts-air", "key": "neuphonic/neutts-air" }]
     }
   },
@@ -126,7 +146,7 @@ Then add its model, provider and a voice to the `roster` in `registry.json`:
 }
 ```
 
-The rendering's `key` (`example` above) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. Banter sends `responseFormat` as the request's `response_format` and decodes the response as that format, so set it to `"wav"` or `"mp3"` — either works, `"wav"` above is just NeuTTS Air's own default.
+The rendering's `key` (`example` above) is whatever's declared in `voices.yaml` alongside `server.py` — add your own reference clip and entry there, then add a matching voice here. `NEUTTS_CORS_ORIGINS` is a comma-separated allowlist; unset, the server sends no CORS headers and the browser refuses every call. The provision restricts `response_format` to `wav` and `mp3`, in that order, and Banter sends the first it can decode and decodes the response as that format. It declares neither `stream-flag` nor loading, because NeuTTS Air's stream ignores the format and the model is fixed when the server starts.
 
 Point `voice.tts.selection` at it in `config.json`:
 
@@ -166,7 +186,21 @@ Add this entry to `registry.json`'s `services`:
   },
   "ops": { "env": { "workingDirectory": "~/services/tts/mlx-audio" } },
   "network": { "port": 8001, "healthPath": "/v1/models" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 },
+  "provides": [
+    {
+      "api": "openai.audio.speech",
+      "omits": ["parameter:stream_format"],
+      "extends": ["stream-flag", "cloning-reference"]
+    }
+  ],
+  "models": {
+    "loading": "required",
+    "autoLoad": "always",
+    "resident": "many",
+    "load": { "method": "POST", "path": "/v1/models", "query": { "model_name": "{model}" } },
+    "unload": { "method": "DELETE", "path": "/v1/models", "query": { "model_name": "{model}" } }
+  }
 }
 ```
 
@@ -202,7 +236,7 @@ Point `voice.tts.selection` at whichever preset you want by default:
 
 `mlx-audio` has no dedicated health endpoint; `GET /v1/models` doubles as one, returning 2xx once it's actually ready to serve. `--allowed-origins` is `mlx-audio`'s own CORS flag — pass Banter's origin the same as any other service. Any other model `mlx-audio` supports can be added as another entry in the same provider's `serves` list, after declaring it in `ttsModels`; no second registry entry or process needed.
 
-`responseFormat` in the provider above is left unset, defaulting to `mp3` — Banter sends that as the request's `response_format` and decodes the response as that format, so this only works if `mlx-audio` honors the field. Set `responseFormat` explicitly to `"wav"` if you'd rather it request wav.
+The provision above restricts nothing, so Banter asks for `mp3` and decodes the response as mp3, which only works if `mlx-audio` honors `response_format`. Restrict `response_format` to `["wav"]` if you'd rather it request wav. `stream-flag` lets Banter send `stream: true` for audio as it renders, and `cloning-reference` lets a cloned voice go as `ref_audio`. `mlx-audio` keeps every model it has loaded, so the entry says `resident: "many"` and declares an unload call: when the selected model changes, Banter unloads the one it is leaving.
 
 ---
 
@@ -220,7 +254,7 @@ This repo has no adapter for it, and no general-purpose runtime here already exp
 
 ## Anything else OpenAI-compatible
 
-Any server exposing `POST /v1/audio/speech` and a health endpoint can be registered directly, no adapter needed. Add an entry like this to `registry.json`'s `services`:
+Any server providing `openai.audio.speech` (`POST /v1/audio/speech`) and a health endpoint can be registered directly, no adapter needed. Add an entry like this to `registry.json`'s `services`, and list under `omits` and `restricts` where the server departs from OpenAI's API:
 
 ```json
 {
@@ -235,7 +269,9 @@ Any server exposing `POST /v1/audio/speech` and a health endpoint can be registe
   },
   "ops": { "env": { "workingDirectory": "~/services/tts/yourservice" } },
   "network": { "port": 0, "healthPath": "/health" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 },
+  "provides": [{ "api": "openai.audio.speech", "restricts": { "response_format": ["wav"] } }],
+  "models": { "loading": "none" }
 }
 ```
 
@@ -272,4 +308,4 @@ And point `voice.tts.selection` at it in `config.json`:
 
 A wrong serving `key` or rendering `key` fails at the request, not at load — the roster is Banter's claim about what a third-party server will accept, not something checked against it. See [voices-and-models.md](voices-and-models.md#adding-another-model-or-another-speech-server) for the full shape, including voices built from reference audio.
 
-Set the provider's `responseFormat` to `mp3`, `aac`, or `wav` — Banter sends this as the request's `response_format` and decodes the response as that format, so it needs to match what the server actually returns for that value. Absent means `mp3`.
+Restrict `response_format` in the provision to the values the server accepts, from `mp3`, `aac` and `wav`, in order of preference — Banter sends the first as the request's `response_format` and decodes the response as that format, so each must match what the server actually returns for that value. With no restriction it sends `mp3`. A restriction with none of the three is refused before any request.

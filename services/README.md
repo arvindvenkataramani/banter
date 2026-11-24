@@ -6,19 +6,21 @@ Adapter code and install docs for the STT/TTS model servers this repo ships. Ban
 
 Two kinds of entries here:
 
-- **Ours** — adapter server code committed so you don't have to re-solve OpenAI-API-compatibility from scratch. Python adapters ship the full server, which you copy into its working directory and install into a virtual environment there; `services/fluid` is Swift and you build it yourself: a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/README.md`](fluid/README.md) and, for what to check before changing the FluidAudio release it pins, [`services/fluid/verification/README.md`](fluid/verification/README.md).
+- **Ours** — adapter server code committed so you don't have to re-solve serving the OpenAI APIs from scratch. Python adapters ship the full server, which you copy into its working directory and install into a virtual environment there; `services/fluid` is Swift and you build it yourself: a full Swift package, built with `scripts/fluid-build.sh` rather than a `BUILD.md`, documented in [`services/fluid/README.md`](fluid/README.md) and, for what to check before changing the FluidAudio release it pins, [`services/fluid/verification/README.md`](fluid/verification/README.md).
 - **Third-party, pip-installable** — servers we don't vendor at all, just document how to wire in.
 
 ## Ours
 
-| Service | Capability | Endpoints | CORS allowlist | Install |
+| Service | Capability | APIs it provides | CORS allowlist | Install |
 |---|---|---|---|---|
-| `stt/faster-whisper` | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions` | `FASTER_WHISPER_CORS_ORIGINS` | [`stt/faster-whisper/README.md`](stt/faster-whisper/README.md) |
-| `stt/whisper` | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions` | `WHISPER_CORS_ORIGINS` | Apple Silicon (MLX). Copy `server.py` and `requirements.txt`, then `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` |
-| `tts/kokoro` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `KOKORO_CORS_ORIGINS` | [`tts/kokoro/README.md`](tts/kokoro/README.md) |
-| `tts/neutts-air` | TTS | `GET /health`, `POST /v1/models`, `DELETE /v1/models`, `POST /v1/audio/speech` | `NEUTTS_CORS_ORIGINS` | [`tts/neutts-air/README.md`](tts/neutts-air/README.md); NeuTTS itself is editable-installed from a patched clone, not on PyPI, so there's no pip name to add to `requirements.txt` |
-| `fluid` (`fluid-stt`) | STT | `GET /healthz`, `POST /audio/transcriptions`, `POST /v1/audio/transcriptions`, `WS /v1/audio/stream` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
-| `fluid` (`fluid-tts`) | TTS | `GET /healthz`, `POST /v1/audio/speech`, `WS /v1/audio/stream` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
+| `stt/faster-whisper` | STT | `openai.audio.transcriptions`; health at `GET /healthz` | `FASTER_WHISPER_CORS_ORIGINS` | [`stt/faster-whisper/README.md`](stt/faster-whisper/README.md) |
+| `stt/whisper` | STT | `openai.audio.transcriptions`; health at `GET /healthz` | `WHISPER_CORS_ORIGINS` | Apple Silicon (MLX). Copy `server.py` and `requirements.txt`, then `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` |
+| `tts/kokoro` | TTS | `openai.audio.speech`; loads and unloads a model at `POST` and `DELETE /v1/models` (declared under `models`); health at `GET /health` | `KOKORO_CORS_ORIGINS` | [`tts/kokoro/README.md`](tts/kokoro/README.md) |
+| `tts/neutts-air` | TTS | `openai.audio.speech`; health at `GET /health` | `NEUTTS_CORS_ORIGINS` | [`tts/neutts-air/README.md`](tts/neutts-air/README.md); NeuTTS itself is editable-installed from a patched clone, not on PyPI, so there's no pip name to add to `requirements.txt` |
+| `fluid` (`fluid-stt`) | STT | `fluid.stt.stream`, `openai.audio.transcriptions`, `deepgram.listen.prerecorded`, `deepgram.listen.live`, `openai.realtime` (transcription), `triton.model-repository`; health at `GET /healthz` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
+| `fluid` (`fluid-tts`) | TTS | `openai.audio.speech`, `deepgram.speak`, `deepgram.speak.live`, `openai.realtime` (speech), `fluid.tts.stream`, `triton.model-repository`; health at `GET /healthz` | `FLUID_CORS_ORIGINS` | Swift: `scripts/fluid-build.sh`; see [`fluid/README.md`](fluid/README.md) |
+
+An API is named by its catalog id; the paths, and how each server departs from the published spec, are in [docs/reference/speech-server-api.md](../docs/reference/speech-server-api.md). A registry entry for any of these must declare the APIs it provides and how its models load (`provides` and `models`); the example registries and [docs/guide/stt.md](../docs/guide/stt.md) and [tts.md](../docs/guide/tts.md) show them.
 
 Every adapter reads its allowlist as a comma-separated list of origins and sends no CORS headers when it is unset, so the browser refuses every call. Set it under the service's `ops.env.variables` to the origins you open Banter from. `ops/install.sh` fills each `*_CORS_ORIGINS` variable in a fresh registry it seeds; see [docs/guide/speech-servers.md](../docs/guide/speech-servers.md#cors).
 

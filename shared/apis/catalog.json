@@ -131,22 +131,22 @@
     {
       "id": "finalize-answered",
       "adds": "every `Finalize` is answered by exactly one result marked as answering it, including an empty one",
-      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Streaming" }
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Deepgram /v1/listen" }
     },
     {
       "id": "endpointing-off",
       "adds": "`endpointing=false` stops the server closing utterances on its own",
-      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "/v1/listen" }
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Deepgram /v1/listen" }
     },
     {
       "id": "opus-packets",
       "adds": "with `encoding=opus`, each binary message is one raw Opus packet",
-      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Audio formats" }
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Streaming" }
     },
     {
       "id": "resident-slot",
       "adds": "on the model repository API: `mode` and `variant` as load parameters; a load of what is already resident changes nothing; a load replaces the one resident model; a load that would change the model, and an unload, are refused while a session holds it",
-      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Models" }
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Model repository" }
     }
   ]
 }

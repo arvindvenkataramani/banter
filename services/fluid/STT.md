@@ -1,6 +1,6 @@
 # fluid-stt
 
-A speech-to-text server for Apple Silicon, built on FluidAudio's CoreML models. It holds one ASR model at a time and serves it two ways: whole files over HTTP, and live audio over a WebSocket. Registered in a registry as the service `fluid-stt`.
+A speech-to-text server for Apple Silicon, built on FluidAudio's CoreML models. It holds one ASR model at a time and serves it three ways: whole files over HTTP, live audio over its own WebSocket protocol, and the standard APIs a registry entry declares (Deepgram's `/v1/listen` and a transcription subset of OpenAI's Realtime). Registered in a registry as the service `fluid-stt`.
 
 ## Package and layout
 
@@ -68,7 +68,7 @@ A model's `kind` is `batch`, `streaming`, or `both`. `both` is one model with tw
 
 Weights are not prefetched by this server. `GET /v1/models` reports `present` for each entry, true when every file that model's manager needs is already on disk under `~/Library/Application Support/FluidAudio/Models/`; a load of an absent model downloads its weights inside the call.
 
-**One model is resident at a time, and switching costs around thirteen seconds.** CoreML is not reentrant, so the server holds exactly one model and serialises everything that touches it. A batch request or a load is queued behind whatever holds the slot, refused with 409 only after a two-second wait; a streaming connection that holds the claim takes the slot over instead of queuing, as the streaming section describes.
+**One model is resident at a time, and switching costs around thirteen seconds.** CoreML is not reentrant, so the server holds exactly one model and serialises everything that touches it. A batch request or a load is queued behind whatever holds the slot, refused with 409 only after a two-minute wait; a streaming connection that holds the claim takes the slot over instead of queuing, as the streaming section describes.
 
 **A request loads the model it names.** A request naming a model other than the resident one, or another variant of it, replaces it once the work in flight ends. An open streaming session is the sole occupant: while it lasts, every other request is refused at once. Outside a session, requests queue for up to two minutes.
 
@@ -138,7 +138,7 @@ The socket is accepted, then the model is made ready: loaded if nothing is resid
 | id X | id Y, or none | refused `held`; the holder keeps the slot |
 | id X | id Y, or none, with `takeover=1` | newcomer gets the slot; the holder is closed `superseded` |
 
-The model check runs before the claim: a connection that will be refused for its model cannot displace a live session on its way out. A replace or takeover that is granted still waits up to two seconds for the previous holder's in-flight work to finish; past that the newcomer is refused `busy` instead, and the previous holder keeps the slot.
+The model check runs before the claim: a connection that will be refused for its model cannot displace a live session on its way out. A replace or takeover that is granted still waits up to five seconds for the previous holder's in-flight work to finish; past that the newcomer is refused `busy` instead, and the previous holder keeps the slot.
 
 Binary frames carry audio; text frames carry control.
 
@@ -229,6 +229,22 @@ setInterval(() => ws.send(JSON.stringify({ type: 'KeepAlive' })), 4000)
 The client decides when the utterance ended — VAD and turn detection make that judgement, and the server does not second-guess them.
 
 **Audio formats.** `pcm16` is raw little-endian Int16, 16 kHz mono. `opus` is raw Opus packets, one per frame, as WebCodecs `AudioEncoder` produces them — not the WebM that `MediaRecorder` emits, which this endpoint does not parse. Decoded with libopus via the `COpus` system-library target. Bitrate and DTX are the client's choice and never reach the server, which decodes whatever arrives.
+
+## Standard APIs
+
+The registry entry for `fluid-stt` declares which published APIs it serves and where it departs from them, by catalog id; the server reads that entry at startup and refuses to start when it claims more than the build serves. The speech server API reference lists the provisions: [docs/reference/speech-server-api.md](../../docs/reference/speech-server-api.md).
+
+### Deepgram `/v1/listen`
+
+`POST /v1/listen` takes the audio as the raw body, or raw `linear16` at `sample_rate` when `encoding=linear16`. A WebSocket on `/v1/listen` takes `linear16` PCM at the declared `sample_rate`, or one raw Opus packet per message with `encoding=opus`, and returns `Results` messages. `/listen` is an alias. `model` names a serving by its key, as on the stream socket, and `session` and `takeover` claim the socket with the same rules. A refusal or displacement closes with its 4001 to 4010 code and sends no frame; a message the server cannot parse is answered with an `Error` message and the stream stays open. `CloseStream` settles the open utterance, sends `Metadata` and closes with 1000.
+
+The segmenter closes an utterance after `endpointing` milliseconds of silence once there is text; its default is the provision's `defaults.endpointing`, else Deepgram's 10, and `endpointing=false` leaves every utterance to the client. Every `Finalize` is answered by exactly one `Results` marked `from_finalize`, including an empty one when nothing was heard. Only a result with text is marked `is_final`, so a client settles on `from_finalize`. The `Error` message carries `type`, `variant`, `description` and `message`; the deprecated `code` is not sent. Deepgram's own model names are not served: `model` is a serving's key, and a name that is no serving's key is refused.
+
+### Realtime transcription (`openai.realtime`)
+
+A WebSocket on `/v1/realtime` serves OpenAI's Realtime protocol in transcription mode only. It implements `session.update`, `input_audio_buffer.append`, `input_audio_buffer.commit` and `input_audio_buffer.clear`, and answers with `session.created`, `session.updated`, `input_audio_buffer.committed`, `input_audio_buffer.cleared`, `conversation.item.input_audio_transcription.delta` and `.completed`, and `error`. Any other client event is answered with `error`.
+
+The model is the connect query's `model` or `session.audio.input.transcription.model`, both a serving's key. `audio/pcm` at the session's rate and `audio/opus` (one raw packet per append, an extension of the protocol) are accepted; any other format, and any `turn_detection` other than null, is answered with `error`. Each commit's audio is transcribed whole, and commits are answered in order: `committed`, one `delta` holding the text when there is any, then `completed`, whose `usage` carries the seconds of audio committed. An empty commit is an `error`. The server never decides where an utterance ends.
 
 ## Word timings
 

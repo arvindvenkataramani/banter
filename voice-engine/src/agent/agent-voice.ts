@@ -30,9 +30,12 @@ export class AgentVoice {
   ttsSelection: VoiceSelection | null = null
   /** The provision of the speech API the selection chose, pushed with the selection. */
   ttsProvision: Provision | null = null
+  /** Why `ttsProvision` is null: the selection's refusal, naming the service and what it provides. */
+  ttsProvisionError: string | null = null
   /** Told once per unresolved selection that there is nothing to speak with. */
   onCannotSpeak: ((reason: string) => void) | undefined
   private reportedUnresolved: VoiceSelection | null = null
+  private reportedNoProvision: VoiceSelection | null = null
 
   constructor(player: SpeechPlayer) {
     // Local "silence now" precedes ground truth — stop() halts audio
@@ -51,6 +54,10 @@ export class AgentVoice {
           this.onCannotSpeak?.(sel.resolutionError ?? 'the selection was not resolved')
         }
         const provision = this.ttsProvision
+        if (sel?.resolution && !provision && this.reportedNoProvision !== sel) {
+          this.reportedNoProvision = sel
+          this.onCannotSpeak?.(this.ttsProvisionError ?? 'the selected provider has no speech API')
+        }
         if (!sel?.resolution || !endpoint || !provision) return
         await player.enqueueChat({
           endpoint,

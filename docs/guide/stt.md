@@ -34,7 +34,19 @@ Install it by following the adapter's README: copy `server.py` and `requirements
     }
   },
   "network": { "port": 8766, "healthPath": "/healthz" },
-  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "idleUnload": true, "idleTimeout": 1800000, "startupTime": 180000, "restartOnCrash": true, "maxRestarts": 3 }
+  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "idleUnload": true, "idleTimeout": 1800000, "startupTime": 180000, "restartOnCrash": true, "maxRestarts": 3 },
+  "provides": [
+    {
+      "api": "openai.audio.transcriptions",
+      "omits": [
+        "parameter:languages", "parameter:keywords", "parameter:prompt", "parameter:temperature", "parameter:include",
+        "parameter:timestamp_granularities", "parameter:stream", "parameter:chunking_strategy",
+        "parameter:known_speaker_names", "parameter:known_speaker_references"
+      ],
+      "restricts": { "response_format": ["json", "text"] }
+    }
+  ],
+  "models": { "loading": "none" }
 }
 ```
 
@@ -47,7 +59,7 @@ Settings come from `ops.env.variables`:
 | `FASTER_WHISPER_COMPUTE_TYPE` | `int8` on `cpu`, otherwise `auto` | `int8`, `float16`, `int8_float16`, and the other CTranslate2 types |
 | `FASTER_WHISPER_CORS_ORIGINS` | none | Comma-separated origins allowed to call the server. Unset adds no CORS headers, so the browser refuses every call |
 
-The server is batch only: it has no streaming socket and no `/v1/models` routes, and the model is fixed when it starts (a `model` field in a request is ignored). Leave `voice.stt.model` unset and Banter transcribes in batch:
+The server is batch only: it provides no streaming API and declares no loading, and the model is fixed when it starts (a `model` field in a request is ignored). Leave `voice.stt.model` unset and Banter transcribes in batch:
 
 ```json
 "voice": {
@@ -94,7 +106,19 @@ Add this entry to `registry.json`'s `services`:
     }
   },
   "network": { "port": 8768, "healthPath": "/healthz" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 },
+  "provides": [
+    {
+      "api": "openai.audio.transcriptions",
+      "omits": [
+        "parameter:languages", "parameter:keywords", "parameter:prompt", "parameter:temperature", "parameter:include",
+        "parameter:timestamp_granularities", "parameter:stream", "parameter:chunking_strategy",
+        "parameter:known_speaker_names", "parameter:known_speaker_references"
+      ],
+      "restricts": { "response_format": ["json", "text"] }
+    }
+  ],
+  "models": { "loading": "none" }
 }
 ```
 
@@ -137,9 +161,24 @@ Its entry is in `services/fluid/registry.fluid.example.json`, which merges into 
     }
   },
   "network": { "port": 8767, "healthPath": "/healthz" },
-  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "shutdown": true, "idleUnload": true, "idleTimeout": 1800000, "restartOnCrash": true, "maxRestarts": 3 }
+  "lifecycle": { "loadStrategy": "demand", "autoStart": false, "shutdown": true, "idleUnload": true, "idleTimeout": 1800000, "restartOnCrash": true, "maxRestarts": 3 },
+  "provides": [
+    { "api": "fluid.stt.stream" },
+    {
+      "api": "openai.audio.transcriptions",
+      "omits": [
+        "value:timestamp_granularities=segment", "parameter:language", "parameter:languages", "parameter:keywords", "parameter:prompt",
+        "parameter:temperature", "parameter:include", "parameter:chunking_strategy", "parameter:known_speaker_names", "parameter:known_speaker_references"
+      ],
+      "restricts": { "response_format": ["json", "text", "verbose_json"] }
+    },
+    { "api": "triton.model-repository", "omits": ["field:index.version"], "extends": ["resident-slot"] }
+  ],
+  "models": { "loading": "required", "autoLoad": "always", "resident": "one" }
 }
 ```
+
+The entry shown leaves out the Deepgram and Realtime provisions the example file also declares (`deepgram.listen.prerecorded`, `deepgram.listen.live` and `openai.realtime`), which let a client written for those APIs use the server; see [speech-server-api.md](../reference/speech-server-api.md#what-the-fluid-servers-provide). `provides` is what Banter reads to choose how to call the service, and `models` says a request naming a model loads it, replacing the one resident.
 
 `--registry` and `--provider` are required — `fluid-stt` reads the models the `fluid-stt` provider `serves` from the registry's `roster` section rather than taking a model on the command line. The fluid example declares `parakeet-tdt-v3` (batch), `parakeet-unified-0.6b` (both batch and streaming), and `nemotron-streaming-en-0.6b` (streaming, at three chunk sizes) — see [voices-and-models.md](voices-and-models.md) for what an `sttModels` entry and a `serves` entry look like and how to add or change one. The same provider block's `defaultModel` is what a request naming no model loads into an empty server, and `idleUnloadMs` (30 minutes when absent) is how long the model stays resident without work.
 
@@ -177,7 +216,7 @@ Confirm its CORS configuration allows Banter's origin before assuming it works. 
 
 ## Anything else OpenAI-compatible
 
-Any server exposing `POST /v1/audio/transcriptions`, a health endpoint, and Banter's origin in CORS can be registered directly. Add an entry like this to `registry.json`'s `services`:
+Any server providing `openai.audio.transcriptions` (`POST /v1/audio/transcriptions`), a health endpoint, and Banter's origin in CORS can be registered directly. Add an entry like this to `registry.json`'s `services`, with a `provides` that lists any request field the server ignores under `omits` (an empty provision claims the full API):
 
 ```json
 {
@@ -192,7 +231,9 @@ Any server exposing `POST /v1/audio/transcriptions`, a health endpoint, and Bant
   },
   "ops": { "env": { "workingDirectory": "~/services/stt/yourservice" } },
   "network": { "port": 0, "healthPath": "/health" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 },
+  "provides": [{ "api": "openai.audio.transcriptions" }],
+  "models": { "loading": "none" }
 }
 ```
 

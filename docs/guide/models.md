@@ -6,11 +6,11 @@ Some servers run anywhere (`stt/faster-whisper`, `tts/kokoro`, `tts/neutts-air`)
 
 Neither the model nor the framework matters to Banter. Any server is usable if it:
 
-1. serves the OpenAI-shaped endpoint for its kind — `/v1/audio/transcriptions` for STT, `/v1/audio/speech` for TTS;
+1. serves a published API for its kind, and says so in its registry entry — `openai.audio.transcriptions` for STT, `openai.audio.speech` for TTS, or one of the streaming and loading APIs listed in [speech-server-api.md](../reference/speech-server-api.md);
 2. answers a health path with a 2xx when ready; and
 3. permits Banter's origin in its CORS configuration.
 
-Anything satisfying that can be registered, health-checked, and demand-started the same as the servers in `services/`.
+Each registry entry carries `provides` (the APIs it serves, and where it departs from them) and `models` (whether its models need loading, and how), as the snippets in [tts.md](tts.md) and [stt.md](stt.md) show; Banter calls the service through those and nothing else. Anything satisfying that can be registered, health-checked, and demand-started the same as the servers in `services/`.
 
 ## Quick start
 
@@ -55,7 +55,9 @@ Add this entry to `registry.json`'s `services`. Replace the CORS origin below wi
     }
   },
   "network": { "port": 8765, "healthPath": "/healthz" },
-  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 }
+  "lifecycle": { "loadStrategy": "demand", "idleUnload": true, "idleTimeout": 1800000 },
+  "provides": [{ "api": "openai.audio.transcriptions" }],
+  "models": { "loading": "none" }
 }
 ```
 
@@ -81,7 +83,7 @@ Three distinct things, often confused for one:
 
 - **Model** — weights. Nothing more.
 - **Runtime** — a library that loads a model and runs inference. No HTTP.
-- **Server** — the HTTP process Banter registers: answers `POST /v1/audio/...` and a health check.
+- **Server** — the HTTP process Banter registers: serves the APIs its entry declares and answers a health check.
 
 A model may ship with a runtime, a server, both, or neither. Where a runtime exists but no server does, something has to add an HTTP layer before Banter can use it.
 
@@ -111,7 +113,7 @@ The models below are suitable for realtime or near-realtime use. There are model
 | [Voxtral](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603) | Apple Silicon (MLX) | `mlx-audio` | 4B parameters. 20 preset voices across 9 languages, with voice cloning from a reference sample. Ships in several quantizations (4-bit through bf16); the 6-bit build is the pick for realtime use — full bf16 is too slow for a voice conversation. |
 | [Pocket TTS](https://huggingface.co/kyutai/pocket-tts) | this repo's `fluid-tts` is Apple Silicon; `mlx-audio` is Apple Silicon too — see the model's own docs for other runtimes | `fluid-tts` ([`services/fluid`](../../services/fluid)), `mlx-audio`, or a third-party OpenAI-compatible wrapper | 100M parameters, ~30MB weights. Voice cloning from a few seconds of reference audio, plus a handful of preset voices. Sub-50ms first-chunk latency. |
 | [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) | — | needs an adapter — none in this repo | Voice cloning and voice design (describe a voice by attributes like gender, age, or accent) across 600+ languages. Reference usage returns a complete audio array rather than a stream. |
-| Anything OpenAI-compatible | whatever the server runs on | either | Any server that exposes `POST /v1/audio/speech` plus a health endpoint meets the contract, whatever model it's actually running. |
+| Anything OpenAI-compatible | whatever the server runs on | either | Any server that provides `openai.audio.speech` and a health endpoint meets the contract, whatever model it's actually running. |
 
 **Kokoro.** [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), 82M parameters, built on StyleTTS 2 with an ISTFTNet vocoder. This repo's adapter is set up in [tts.md](tts.md#kokoro) and its own [README](../../services/tts/kokoro/README.md); it answers WAV and builds an American English pipeline, so its voices are the `af_` and `am_` presets.
 
@@ -123,7 +125,7 @@ The models below are suitable for realtime or near-realtime use. There are model
 
 **OmniVoice.** [k2-fsa](https://github.com/k2-fsa/OmniVoice), built on the Qwen3-0.6B architecture, PyTorch. Ships no server of its own, and this repo has no adapter for it — an experimental MLX conversion and runtime exist ([mlx-community/OmniVoice](https://huggingface.co/mlx-community/OmniVoice), [ailuntx/OmniVoice-MLX](https://github.com/ailuntx/OmniVoice-MLX)), but the runtime has no HTTP server either, so either path needs adapter code written before Banter can use it.
 
-**Anything OpenAI-compatible.** The TTS contract is `POST /v1/audio/speech`, `POST /v1/models?model_name=<id>` and a health endpoint — see [speech-server-api.md](../reference/speech-server-api.md). A server meeting that can be registered without any adapter code here, subject to the same CORS caveat as speech-to-text, below.
+**Anything OpenAI-compatible.** The TTS contract is `openai.audio.speech`, a way to load a model if it needs one (declared under `models`), and a health endpoint — see [speech-server-api.md](../reference/speech-server-api.md). A server meeting that can be registered without any adapter code here, subject to the same CORS caveat as speech-to-text, below.
 
 ---
 
@@ -135,7 +137,7 @@ One row per model, each with more than one server option. For registry/config sn
 |---|---|---|---|
 | [Parakeet](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) | `parakeet-mlx-fastapi` is Apple Silicon (MLX); `fluid-stt` is Apple Silicon (CoreML); Linux options exist but need an adapter — see [Speech servers on Linux](speech-servers.md#linux) | third-party ([`parakeet-mlx-fastapi`](https://pypi.org/project/parakeet-mlx-fastapi/)) or this repo's adapter (`fluid-stt`, in [`services/fluid`](../../services/fluid)) | 0.6B parameters, FastConformer/Conformer architecture. 25 languages. `fluid-stt` also offers streaming variants (Parakeet Unified, Nemotron) — see [`services/fluid`](../../services/fluid/README.md). |
 | [Whisper](https://huggingface.co/openai/whisper-large-v3-turbo) | `stt/faster-whisper` runs on CPU or an NVIDIA GPU on Linux, macOS and Windows; `stt/whisper` is Apple Silicon (MLX); whisper.cpp runs on Linux too | this repo's adapters ([`stt/faster-whisper`](../../services/stt/faster-whisper/README.md), [`stt/whisper`](../../services/stt/whisper)), or whisper.cpp | 809M parameters (large-v3-turbo). 99 languages. A pruned variant of large-v3 — fewer decoder layers, faster inference, slight accuracy loss. |
-| Anything OpenAI-compatible | whatever the server runs on | either | Any server that exposes `POST /v1/audio/transcriptions` plus a health endpoint meets the contract, whatever model it's actually running. |
+| Anything OpenAI-compatible | whatever the server runs on | either | Any server that provides `openai.audio.transcriptions` and a health endpoint meets the contract, whatever model it's actually running. |
 
 **Parakeet.** Two ways to run it on Apple Silicon — `parakeet-mlx-fastapi` (third-party, pip, MLX; see its entry in the Quick start) or `fluid-stt` (this repo's adapter; build with `scripts/fluid-build.sh`, see [`services/fluid`](../../services/fluid/README.md)). The latter runs [FluidInference's CoreML build](https://github.com/FluidInference/FluidAudio), targeting the Apple Neural Engine rather than MLX's GPU path, and also serves Parakeet Unified and Nemotron's streaming variants alongside the batch model. For Linux, see [Speech servers on Linux](speech-servers.md#linux).
 

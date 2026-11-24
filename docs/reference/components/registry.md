@@ -62,7 +62,7 @@ The `roster` section declares what this node's model services offer, each fact o
 |-------|-------------|
 | `ttsModels` | Synthesis models on this node, each declared once however many providers serve it: `id`, `name`, and optionally `cloning`, `chunkProfile` and `chunking`. A model can clone if and only if it has a `cloning` block: `requiresText` (the model is sent the transcript), and, where the model constrains recordings, `minDurationS`, `maxDurationS` (both inclusive) and `sampleRate`. `chunkProfile` is the model's own chunker constraint (`words`, `chars`); `chunking` is how the realtime voice loop splits text for it |
 | `sttModels` | Speech-to-text models: `id`, `name`, `kind` (`batch`, `streaming` or `both`), and optionally `params` and `variants` |
-| `providers` | Keyed by registry service id: the runtimes that serve models. A provider has `serves`, a list of `{model, key, ...}`, and optionally `responseFormat`, `sessions`, `defaultModel` and `idleUnloadMs` |
+| `providers` | Keyed by registry service id: the runtimes that serve models. A provider has `serves`, a list of `{model, key, ...}`, and optionally `defaultModel` and `idleUnloadMs` |
 | `voices` | The curated voices: `id`, `name`, optionally `recordings`, and `renderings`. A voice that is not declared does not exist, and a request for it is refused |
 
 A model has no key of its own: its id is Banter's identity for it, the same whichever runtime serves it. Each entry in a provider's `serves` names a model by id and carries `key`, the runtime's own name for it (`kokoro-82m` is served under the key `kokoro-ane` by `fluid-tts`), plus what is true of this runtime rather than the weights: `streaming`, `realtime`, `concurrency` and `requestParams`, the fields every request to it carries. An absent flag means no.
@@ -75,11 +75,11 @@ The registry is validated at load against the services in the same file. These a
 
 Every node builds its roster from its own registry. The shard serves its roster at `GET /api/roster`; the control plane polls it alongside the shard's services and assembles every node's roster with its own. A model or voice id declared on two nodes is excluded from both and reported as a collision, since a silent winner would leave one node's copy unreachable without saying so. Recordings stay on the node that declares them and are not served.
 
-The shard also answers `POST /api/voices/resolve` with a voice, a model and a service id, for runtimes that cannot read the registry. The control plane calls it when serving `GET /api/voice` and puts the answer in `tts.selection.request`, the body the browser sends to the runtime unchanged; if it cannot be resolved, `requestError` says why.
+The shard also answers `POST /api/voices/resolve` with a voice, a model and a service id, for runtimes that cannot read the registry. The control plane calls it when serving `GET /api/voice` and puts the answer in `tts.selection.resolution`: the model as the runtime names it, the voice by name or by recording (with the transcript's contents where the model uses one), and the serving's request parameters. The speech adapter encodes it for the wire. If it cannot be resolved, `resolutionError` says why.
 
 A server that reads its provider's roster section at startup (as `fluid-stt` and `fluid-tts` do, with `--registry {registry} --provider <id>`) sees an edit only when it restarts; `POST /api/config/reload` re-reads the registry but names the affected provider in a warning rather than restarting it for you. See [docs/guide/voices-and-models.md](../../guide/voices-and-models.md) for how to edit the roster and apply the change.
 
-Among the provider fields, `sessions: true` declares that the runtime's streaming socket understands session ids and take-over — the same way `responseFormat` (`mp3`, `aac` or `wav`; `mp3` when absent) declares the audio format it returns. It applies to both STT and TTS providers, and `GET /api/voice` carries it through to each `stt.options` entry and each TTS provider so the dashboard can tell which services support taking over a held session.
+Which audio format a runtime returns, and whether its streaming socket supports take-over, are not provider fields: they follow from the service's `provides` (see [`provides`](#provides)). `GET /api/voice` carries each TTS provider's and each `stt.options` entry's `provides` and `models`, and `stt.options[].serves` (`{model, key}` for each model it serves), and serves the roster's speech-to-text models as `stt.models`.
 
 An STT provider may also set `defaultModel`, the model a request naming none loads into an empty server (it must name a served model that needs no parameter), and `idleUnloadMs`, how long the model may go without work before the server unloads it (30 minutes when absent or not positive). Both are read by the runtime, not the control plane; `fluid-stt` honours them.
 
@@ -93,6 +93,59 @@ Concrete processes. Each service belongs to one host and implements one capabili
 | `name` | Human-readable name (shown in Banter); falls back to `id` if omitted |
 | `capabilityId` | Which capability this implements |
 | `hostId` | Which host it runs on |
+| `provides` | The APIs the service serves; see [`provides`](#provides). Required of a service a roster provider names |
+| `models` | Whether the service's models need loading, and how; see [`models`](#models) |
+
+#### `provides`
+
+A list of provisions, one for each API the service serves, naming the API by its catalog id and stating only how the service departs from that API's published spec. Banter calls a service through what it declares here and nothing else: no path, field or behaviour is inferred from the capability, the service id or a convention.
+
+| Field | Description |
+|-------|-------------|
+| `api` | A catalog id: `openai.audio.speech`, `openai.audio.transcriptions`, `openai.realtime`, `deepgram.listen.prerecorded`, `deepgram.listen.live`, `deepgram.speak`, `deepgram.speak.live`, `fluid.stt.stream`, `fluid.tts.stream` or `triton.model-repository`. The catalog is `shared/apis/catalog.json`, and each entry pins the spec it refers to |
+| `basePath` | Where the service mounts the API, when that is not the path of the spec's own server address. For OpenAI's REST routes it replaces `/v1`; for the others it prefixes the spec's path. Begins with `/` and does not end with one |
+| `omits` | Parts of the spec the service does not implement, as `<kind>:<name>` from the API's part index: `parameter:`, `value:<parameter>=<value>`, `client-message:`, `server-message:`, `field:`, `mode:` and `route:`. Omitting a parameter removes all its values |
+| `only` | The same by complement: the parts of each kind it names are the ones implemented, and every other part of those kinds is omitted. Realtime servers state their small subsets this way |
+| `restricts` | Narrows a parameter to the values the service accepts, in its order of preference |
+| `defaults` | The value the service uses for a parameter a client leaves out, where that differs from the spec's default |
+| `extends` | Extensions the service adds beyond the spec: `session-claim`, `cloning-reference`, `stream-flag`, `opus-input`, `voice-param`, `verbatim-speech`, `finalize-answered`, `endpointing-off`, `opus-packets` and `resident-slot`. Each is described in [service-apis.md](../design/service-apis.md#extensions) |
+
+A provision with only `api` claims the service behaves as the reference says, at the path the reference gives. An unknown key anywhere in a provision is a load error, since a misspelt `omits` would otherwise claim full conformance. The part indexes in `shared/apis/parts/` name every part a deviation may name.
+
+```json
+"provides": [
+  {
+    "api": "openai.audio.transcriptions",
+    "omits": ["parameter:prompt", "parameter:temperature", "parameter:stream"],
+    "restricts": { "response_format": ["json", "text"] }
+  }
+]
+```
+
+No load writes a `provides` or `models` the file does not state. A service Banter does not call declares neither.
+
+#### `models`
+
+| Field | Description |
+|-------|-------------|
+| `loading` | `required` when a model must be resident before it can work; `none` when the service has nothing to load |
+| `autoLoad` | What a request naming a model that is not resident does: `always` loads it, `never` leaves loading to an explicit call. Stated when `loading` is `required`, absent otherwise |
+| `resident` | How many models the service holds: `one` (a load replaces what was resident) or `many` (models accumulate until each is unloaded). Stated when `loading` is `required`, absent otherwise |
+| `load`, `unload` | The explicit calls of a runtime that publishes no spec for them: `method` (`GET`, `POST`, `PUT` or `DELETE`), `path` beginning with `/`, and optional `query` and `body` templates in which `{model}` stands for the model's name on the wire. A service whose explicit calls follow a published spec declares none here and provides `triton.model-repository` instead |
+
+The name on the wire is the roster's `key` for the serving, except for synthesis on a runtime that resolves voices itself, which is sent the roster id.
+
+```json
+"models": {
+  "loading": "required",
+  "autoLoad": "always",
+  "resident": "one",
+  "load": { "method": "POST", "path": "/v1/models", "query": { "model_name": "{model}" } },
+  "unload": { "method": "DELETE", "path": "/v1/models", "query": { "model_name": "{model}" } }
+}
+```
+
+Banter decides whether to load explicitly from these facts, the roster's variants and the selected API, and `voice.preload` in `config.json` is its preference for loading ahead of the first request; see [voice-system.md](../design/voice-system.md#model-loading).
 
 #### `permissions`
 
@@ -239,6 +292,16 @@ On load:
 - Services with `runner.type: "external"` are valid — monitored but unmanaged
 - `network.healthPath` and `network.port` are required for every runner type except `managed`
 - Optional `shards` entries require `hostId` and `port`, and `hostId` must resolve to a known host
+- A service lists an API once in `provides`
+- A `basePath` begins with `/` and does not end with one
+- `omits` and `only` do not both name parts of the same kind
+- Every `api` and every `extends` entry is in the catalog
+- Every name in `omits` and `only`, and every key in `restricts` and `defaults`, is in that API's part index; every restricted value is in the index where the index lists values for that parameter
+- A service with `loading: required` and `autoLoad: never` has a load call: a `triton.model-repository` provision or a declared `models.load`. So does a service serving a roster model with `variants`, unless a provision's adapter carries a variant for the operation the service is called for
+- A service has a `triton.model-repository` provision or a `models.load`, never both
+- A declared call has a method, a path beginning with `/`, and no placeholder but `{model}`
+- A service a roster provider names has a candidate provision for what it is called for: `openai.audio.speech` or another API that synthesizes for a synthesis provider; a streaming API where the client decides where an utterance ends for a provider serving a `streaming` model; a batch API for a provider serving a `batch` model; either for a `both` model
+- `autoLoad` and `resident` are stated when `loading` is `required` and absent when it is `none`, and an unknown key in a provision, in `models` or in a declared call is an error
 - `defaults` (if present) may only set fields on an explicit allowlist per group (`permissions`, `network`, `lifecycle`); an unknown field or group is rejected, as is a shard-only default (e.g. `network.tailscaleServe`) on a `"control"`-type registry
 
 Validation errors are fatal at startup.

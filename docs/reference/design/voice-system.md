@@ -10,7 +10,7 @@ The voice floor names three actors. The human side and the agent side are object
 
 **The session id.** A random id made when voice turns on and never reused. Every step of the voice code that resumes after an await asks whether its session is still current by comparing this id, and nothing in the voice code asks any other way. The devices module keeps its own guards against a release arriving mid-acquisition; those protect one asynchronous call inside the device owner and are not session questions.
 
-**The session's services.** Starting the TTS and STT services and loading their models, the mode the STT model was loaded in, and the heartbeat that holds both services while the session lasts. A saved provider change under a running session is a call on the system, which readies the new service and model and re-aims the heartbeat.
+**The session's services.** Starting the TTS and STT services and loading their models as their declarations call for (see [Model loading](#model-loading)), the mode the STT model was brought up in, and the heartbeat that holds both services while the session lasts. A saved provider change under a running session is a call on the system, which readies the new service and model and re-aims the heartbeat.
 
 **The two sides.** The system constructs the human side and the agent side, attaches them to the gateway session, re-attaches them when the chat page's gateway session changes, pushes new config into them, and stops and detaches them at the end.
 
@@ -28,7 +28,7 @@ What outlives a session stays in the session store: config, the selection, the g
 
 Diagram: [`voice-system.mermaid`](voice-system.mermaid).
 
-The system is constructed from its collaborators: the devices, the tone queue, the player, the service calls, the loader for the browser's VAD and smart-turn models, the transport factory, the constructors for the human and agent sides, a notifier for messages to the person, a clock, and a source of ids. The page builds one system from the real ones. A test builds one from fakes and drives it with no browser, microphone or server.
+The system is constructed from its collaborators: the devices, the tone queue, the player, the calls that start a service and keep it alive, the loader for the browser's VAD and smart-turn models, the transport factory, the constructors for the human and agent sides, a notifier for messages to the person, a clock, and a source of ids. The page builds one system from the real ones. A test builds one from fakes and drives it with no browser, microphone or server.
 
 The browser models load once per page, the first time the system asks for them. The app asks when it loads, so the first tap rarely waits.
 
@@ -48,6 +48,32 @@ It sets the phase to ending, records the reason, and reports `ending`. It resets
 
 The loop's settling and the ended tone run at once, neither waiting on the other. When both have finished, if the session is still current, the player is released, the phase becomes off, and the system reports `off`, which resets the turn manager. A voice on during the ended tone performs that clearing itself before starting, so the new session's first report lands on a clean floor.
 
+## Calling a service
+
+The system calls services through operations, never paths. Which API performs an operation is read from the service's `provides` list in the served voice config, by the selection described in [service-apis.md](service-apis.md#provisions): provisions whose API has an adapter for the operation, minus those whose omissions remove a part the call needs, ranked by preference. The speech call is `synthesize` through the selected provision's adapter, batch transcription is `transcribe`, and a live transcription connection is `transcribeStream`, which needs a provision where the client decides where an utterance ends. A service left with no candidate is refused with a message naming the service, the operation and the APIs it declares, and the person sees that message.
+
+**The mode.** The roster's `stt.models` declares each model's kind (`batch`, `streaming` or `both`) and the selected service's provisions say which routes it offers. A model that does one thing decides the mode; a model that does both takes the only route the service offers, or `voice.stt.preferStreaming` where it offers both, and batch with none stated. The system publishes the mode and what decided it. Nothing is read from the server.
+
+**The audio.** The transport sends Opus when the selected provision holds the `opus` capability, the browser can encode it, and `voice.stt.encodings` puts Opus before 16-bit PCM; otherwise it sends 16-bit PCM. Selection also prefers a provision that holds Opus, then one that supports take-over.
+
+**The speech provision.** The agent side holds the provision that speaks for the selected provider beside the served resolution, so an utterance with nothing to speak it through is reported with the selection's refusal rather than dropped.
+
+## Model loading
+
+Whether the system loads a model itself, and through which call, follows from what the service declares and what the roster says of the model, in this order:
+
+| Declared | Result |
+|---|---|
+| `models.loading` is `none`, or the service declares no `models` | no load |
+| `autoLoad: never` | an explicit load before first use |
+| the roster's model has variants, and the selected API cannot carry one | an explicit load naming the variant |
+| the selected API does not load the model a session names, and the call opens a session | an explicit load before the session |
+| `autoLoad: always` | an explicit load when `voice.preload` is on; otherwise the first request loads it |
+
+An explicit load goes through the `triton.model-repository` provision the service declares, or through its declared `models.load`. A model's name on the wire is the serving's `key` for transcription and for a synthesis runtime that does not resolve voices, and the roster id for one that does. A streaming model with latency tiers is loaded in streaming mode naming the variant whose parameters hold the configured `chunkMs`.
+
+The load runs in the system, through the adapters, in the same sequence for the dashboard and for any other host. A refused load fails the start and the person sees the server's own text. Models are unloaded in one case: when a saved change moves a service that keeps several models resident (`resident: many`) to another model, the system unloads the model it is leaving, read from the selection that is still in the session store when the change arrives. On a service that holds one model, the next load replaces it.
+
 ## The transcription connection
 
 A dropped connection is replaced: the first attempt at once, each later one waiting longer, the count reset once a connection stays up for the stable interval, and voice ended once the budget is spent. What the old socket held and had not finalized is lost, and the person is told once per outage. A connection that another client took over ends voice without reconnecting, since reconnecting would take the model back from the client that just took it.
@@ -56,7 +82,7 @@ A dropped connection is replaced: the first attempt at once, each later one wait
 
 The STT server holds one streaming session at a time, so two clients can want it at once — the same person on the phone and the laptop, or one page reloaded under a new identity. The server decides who holds it by the session id, and the person decides whether to take it from someone else.
 
-A server that follows this rule on its streaming sockets, such as the fluid servers, declares it. Whether a service does is declared, not assumed: a roster provider carries `sessions: true` when its runtime's socket understands session ids, the way it carries `responseFormat`. Taking over is a property of the server, not of transcription specifically — a voice session's TTS provider can hold a slot exactly as its STT service can. VoiceSystem sends a session id and acts on `held` only for an STT service that declares it, since the STT socket is the one it opens and reconnects; any other service, streaming or not, is used exactly as before. On a service that declares sessions, every connection carries the session's id as `session`, and may carry `takeover`. The server gives the slot to a connection when nobody holds it, or when the holder has the same id: that is the session's own reconnect, and the old socket, which the client has already abandoned, is closed. A connection with a different id is refused with `held`, unless it carries `takeover`, in which case the holder is closed with `superseded` and the newcomer gets the slot. A connection without an id has an identity of its own, so it is refused while anyone holds the slot.
+A server that follows this rule on its streaming sockets, such as the fluid servers, declares it. Whether a service does is declared, not assumed: take-over is a capability of the selected streaming provision, which it holds when its API defines the `session` parameter and the provision does not omit it (`fluid.stt.stream`), or declares the `session-claim` extension (`deepgram.listen.live`). VoiceSystem sends a session id and acts on `held` only when the provision it selected holds it, since the STT socket is the one it opens and reconnects; any other service, streaming or not, is used exactly as before. On a provision that holds it, every connection carries the session's id as `session`, and may carry `takeover`. The server gives the slot to a connection when nobody holds it, or when the holder has the same id: that is the session's own reconnect, and the old socket, which the client has already abandoned, is closed. A connection with a different id is refused with `held`, unless it carries `takeover`, in which case the holder is closed with `superseded` and the newcomer gets the slot. A connection without an id has an identity of its own, so it is refused while anyone holds the slot.
 
 The server does not check that a holder is alive before refusing. A holder whose socket died without closing — a phone that locked, a tab iOS reloaded under a new id — costs the next client one refusal and one tap to take over; the server reclaims a quiet session after thirty minutes regardless.
 
@@ -66,7 +92,7 @@ The server does not check that a holder is alive before refusing. A holder whose
 
 **`superseded` ends voice and says so.** Voice ends with the reason `superseded` and a notice that stays until dismissed. It never reconnects, because reconnecting would take the model back from the client that just took it.
 
-**A preference skips the dialog.** `voice.takeover` in `config.json` is `ask` by default; set to `always`, every connection carries `takeover` and voice is never refused. A "Voice servers" section at the bottom of the Settings dialog's Voice tab sets it, shown only when the selected STT service or the selected TTS provider declares sessions. A `held` refusal from an STT service that does not declare sessions — a fluid-stt whose registry entry has not been updated — cannot be answered with a take-over, so it ends voice with a persistent notice instead of the dialog.
+**A preference skips the dialog.** `voice.takeover` in `config.json` is `ask` by default; set to `always`, every connection carries `takeover` and voice is never refused. A "Voice servers" section at the bottom of the Settings dialog's Voice tab sets it, shown only when the selected STT service's streaming provision, chosen as a session chooses it, holds take-over. A `held` refusal from a provision that does not hold it cannot be answered with a take-over, so it ends voice with a persistent notice instead of the dialog.
 
 ## Rules the code keeps
 

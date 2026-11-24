@@ -28,7 +28,7 @@ import {
   selectStt,
   holdsTakeover,
 } from '../voice-session-store'
-import { candidates, select, type Selection } from '@platform/shared/apis/select'
+import { select, type Selection } from '@platform/shared/apis/select'
 import { decideLoad, decideUnload } from '@platform/shared/apis/loading'
 import type { Adapter } from '@platform/shared/apis'
 import type { Provision } from '@platform/shared/apis/types'
@@ -72,6 +72,8 @@ export interface AgentSide {
   ttsSelection: VoiceSelection | null
   /** The provision of the speech API the selection chose. */
   ttsProvision?: Provision | null
+  /** Why there is no provision: the selection's refusal. */
+  ttsProvisionError?: string | null
   /** Called once per unresolved selection when an utterance arrives with no resolution to speak with. */
   onCannotSpeak?: (reason: string) => void
   attach(session: VoiceSession): void
@@ -139,10 +141,15 @@ function modeFor(phase: VoicePhase, micMuted: boolean): 'off' | 'starting' | 'li
   return 'off'
 }
 
-/** The provision that speaks for a selection, or null when its provider has none or the selection names none. */
-function speechProvision(config: VoiceConfig | null, selection: VoiceSelection | null): Provision | null {
+/** The provision that speaks for a selection, or why none does: the selection's refusal, or that the provider is unknown. */
+function speechProvision(config: VoiceConfig | null, selection: VoiceSelection | null): { provision: Provision | null; error: string | null } {
   const provider: TtsProvider | undefined = config?.tts.providers.find((p) => p.serviceId === selection?.serviceId)
-  return provider ? candidates('synthesize', toService(provider), [], [])[0]?.provision ?? null : null
+  if (!provider) return { provision: null, error: null }
+  try {
+    return { provision: select('synthesize', toService(provider), [], []).provision, error: null }
+  } catch (err) {
+    return { provision: null, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 export class VoiceSystem {
@@ -184,7 +191,9 @@ export class VoiceSystem {
         if (this.agent) {
           this.agent.ttsSelection = state.voiceSelection
           this.agent.ttsEndpoint = state.ttsEndpoint
-          this.agent.ttsProvision = speechProvision(state.voiceConfig, state.voiceSelection)
+          const speech = speechProvision(state.voiceConfig, state.voiceSelection)
+          this.agent.ttsProvision = speech.provision
+          this.agent.ttsProvisionError = speech.error
         }
       }
       if (state.session !== prev.session && state.session !== null) {
@@ -308,6 +317,7 @@ export class VoiceSystem {
       agent.ttsEndpoint = ttsEndpoint
       agent.ttsSelection = selection
       agent.ttsProvision = speech.provision
+      agent.ttsProvisionError = null
       agent.onCannotSpeak = (reason) => this.deps.notify(`Voice cannot speak: ${reason}`)
       agent.attach(session)
       this.agent = agent

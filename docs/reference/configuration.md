@@ -95,6 +95,8 @@ A service entry answers four questions: what it is, where it runs, how to start 
 
 `capabilityId` must match an entry in `capabilities`. The voice config selects services by id, so `voice.stt.serviceId` and `voice.tts.selection.serviceId` both refer to these.
 
+A service entry also declares how Banter calls it: `provides` lists the APIs it serves and how it departs from each, and `models` says whether its models need loading. A service a roster provider names must provide an API for what it is called for, or the registry does not load. See [registry.md](components/registry.md#provides) and the `tts-kokoro` entry in [models.md](../guide/models.md).
+
 A TTS service entry alone doesn't make it selectable: `voice.tts.selection` names a roster model and voice, so the service also needs a `roster.providers` entry whose `serves` names at least one declared model, and at least one voice with a rendering on that model. `voice.stt.serviceId` is checked against the registry directly and needs no roster entry, though a roster `sttModels` entry served by the provider is still how a server that reads the roster declares what it can load (`fluid-stt`, for example). See [voices-and-models.md#adding-another-model-or-another-speech-server](../guide/voices-and-models.md#adding-another-model-or-another-speech-server) for the roster entry that goes with a service like the one above.
 
 ### Choosing a runner
@@ -236,6 +238,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 | Field | Purpose |
 |---|---|
 | `enabled` | Accepted by the schema, which follows the platform schema; Banter does not read it. |
+| `preload` | Boolean, default `true`. Bring a model up when voice starts, before the first utterance needs it, where the service lets a request load it on first use. A service that never loads on its own, a model with latency tiers the streaming API cannot name, or a session that does not load the model it names is loaded explicitly whatever this says. See [voice-system.md](design/voice-system.md#model-loading). |
 | `takeover` | What a voice session does when a voice server it wants, TTS or STT, is held by another session. `"ask"` (default) ends voice with a dialog offering to take it over; `"always"` takes over without asking, on every connection the session makes. |
 | `debug.saveMicSamples` | Boolean, default `false`. Saves microphone captures to disk, and only takes effect when the control plane runs with the `DEBUG` environment variable set. See `MIC_SAMPLE_DIR` under [Deployment](#deployment). |
 
@@ -246,6 +249,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 | `serviceId` | none | Registry id of the STT service. It is started on demand and its endpoint is resolved from the registry. |
 | `model` | none | The model the STT service loads for a voice session. A server holding nothing at start loads this before the first utterance. Leave it unset for a batch-only server. |
 | `preferStreaming` | `false` | For a model that offers both batch and streaming, take the streaming side: words appear as you speak. Batch transcribes on each pause, so words appear only after it, with no live preview. Only models reporting both consult it; set from the settings dialog's Transcription mode. |
+| `encodings` | `["opus", "pcm16"]` | The audio formats the browser may send to a transcription service, most preferred first. When `opus` comes before `pcm16` (or stands alone), a service whose streaming API accepts Opus is sent Opus where the browser can encode it; when `pcm16` comes first, 16-bit PCM is sent even to a service that accepts Opus. |
 | `chunkMs` | server's own | Which streaming latency tier to load, for a model that offers a choice. |
 | `maxRecordingMs` | `300000` | Longest an utterance may run before it is force-flushed to transcription, whatever turn detection says. A safety net against a wedged detector, not a turn-taking setting. |
 | `settleOnStopMs` | `1500` | How long turning voice off waits for an utterance still being heard, or held paused, to finish transcribing before closing the transport regardless. |
@@ -255,7 +259,7 @@ Every field `config.json` accepts. Every field is optional except `version`. A "
 | `reconnect.attempts` | `3` | Failed connections in a row after which voice ends when the streaming socket drops. `0` ends voice on the first drop. Words the dropped socket had not finalized are lost. |
 | `reconnect.delayMs` | `1000` | How much longer each attempt after the first waits than the one before it. The first attempt goes at once. |
 | `reconnect.stableMs` | `10000` | How long a socket must stay up before its drop starts a fresh count. One that drops sooner counts as a failure. |
-| `options` | assembled | Not written by hand: `GET /api/voice` fills it from the registry's STT services (`serviceId`, `name`, `sessions`) for the settings dialog's picker. |
+| `options` | assembled | Not written by hand: `GET /api/voice` fills it from the registry's STT services (`serviceId`, `name`, `provides`, `models` and `serves`) for the settings dialog's picker. `GET /api/voice` also serves `models`, the roster's speech-to-text models. |
 
 `vad` decides whether captured sound is speech at all:
 
@@ -289,7 +293,7 @@ Nothing here declares what exists: models, voices, what each model calls them an
 
 | Field | Purpose |
 |---|---|
-| `selection.serviceId`, `.model`, `.voice` | The chosen runtime (a service id), roster model id and roster voice id. The control plane has the shard on the runtime's host resolve them, and serves the answer as `tts.selection.request` in `GET /api/voice`; the web app sends it to the TTS server unchanged, and `requestError` says why when they cannot be resolved. |
+| `selection.serviceId`, `.model`, `.voice` | The chosen runtime (a service id), roster model id and roster voice id. The control plane has the shard on the runtime's host resolve them, and serves the answer as `tts.selection.resolution` in `GET /api/voice`; the web app's speech adapter encodes it for the TTS server, and `resolutionError` says why when they cannot be resolved. |
 | `selection.speed` | Between `0.5` and `2.0`; `1` when unset. |
 | `options.chunkStrategy` | `two-chunk`, `paragraph`, `sentence` or `greedy`. When nothing sets it, `two-chunk`. |
 | `options.minChunkWords` | The shortest piece spoken on its own. A sentence shorter than this is held and joined with what follows, so very short phrases do not reach the TTS service without context for natural prosody. |

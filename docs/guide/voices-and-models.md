@@ -13,7 +13,7 @@ Every edit below goes in your deployed `registry.json` (`~/services/banter/regis
 Each node's registry declares a `roster`: what that node offers, and how config.json refers to it. Three things are declared, each once.
 
 - **A model** is one set of weights, declared once per node in `ttsModels` or `sttModels` with an id and a display `name`, however many runtimes serve it. A TTS model that can clone declares a `cloning` block saying what it demands of a recording; a model with no `cloning` block cannot clone. Kokoro is one model, `kokoro-82m`, whichever speech server runs it.
-- **A provider** is a speech server (a runtime), keyed by its registry service id. Its `serves` list names each model it runs by model id, with `key`, the runtime's own name for that model, which may differ from the id. A TTS provider also says whether it resolves voices itself (`resolvesVoices`) and the `responseFormat` it returns.
+- **A provider** is a speech server (a runtime), keyed by its registry service id. Its `serves` list names each model it runs by model id, with `key`, the runtime's own name for that model, which may differ from the id. A TTS provider also says whether it resolves voices itself (`resolvesVoices`). The audio format it returns, and how Banter calls it, are declared in its service entry's `provides`, not here.
 - **A voice** is a person with a name, independent of any model. Its `renderings` say which models produce it and how: a `preset` rendering carries the model's own key for her (`af_heart`), and a `clone` rendering has no key and is made from one of the voice's `recordings`. A rendering names a model, never a runtime. A voice is available on a runtime when some model renders her and that runtime serves that model.
 
 The example registry (`control/control-plane/data/registry.example.json`) declares a roster for its two speech servers, and this page uses it as the worked example: the TTS provider `tts-kokoro` serves one model, `kokoro-82m`, and the roster has 20 voices (`alloy`, `heart`, `sarah`, and so on), each with one preset rendering on it. The STT provider `stt-faster-whisper` serves one batch model, `faster-whisper`. Here is the TTS side, trimmed:
@@ -26,7 +26,6 @@ The example registry (`control/control-plane/data/registry.example.json`) declar
   "providers": {
     "tts-kokoro": {
       "resolvesVoices": false,
-      "responseFormat": "wav",
       "serves": [
         { "model": "kokoro-82m", "key": "kokoro-82m", "realtime": false, "streaming": false }
       ]
@@ -54,9 +53,9 @@ The example registry (`control/control-plane/data/registry.example.json`) declar
 }
 ```
 
-The roster lives in the registry, not in `config.json`. `GET /api/voice` returns it assembled under `tts.models`, `tts.providers` (each with what it `serves`) and `tts.voices` (each with its renderings, without the preset keys), for Banter to read; nothing writes that back into config.json. It also returns `tts.selection.request`, the body the browser sends to the runtime for the stored selection. The shard on the runtime's machine produces it through `POST /api/voices/resolve`, and when the selection cannot be resolved, `requestError` says why. A voice that is not declared in the roster does not exist: a selection naming it is refused rather than passed to the runtime.
+The roster lives in the registry, not in `config.json`. `GET /api/voice` returns it assembled under `tts.models`, `tts.providers` (each with what it `serves`) and `tts.voices` (each with its renderings, without the preset keys), for Banter to read; nothing writes that back into config.json. It also returns `tts.selection.resolution`, which the browser's speech adapter encodes into a request to the runtime for the stored selection. The shard on the runtime's machine produces it through `POST /api/voices/resolve`, and when the selection cannot be resolved, `resolutionError` says why. A voice that is not declared in the roster does not exist: a selection naming it is refused rather than passed to the runtime.
 
-Note also that a hand edit to `config.json` isn't checked against the roster the way Banter's own writes are — the control plane just parses the file at load and on reload. If you type a `voice` id that doesn't exist, or a voice with no rendering on the selected model, you won't find out until `GET /api/voice` reports a `requestError` for the selection.
+Note also that a hand edit to `config.json` isn't checked against the roster the way Banter's own writes are — the control plane just parses the file at load and on reload. If you type a `voice` id that doesn't exist, or a voice with no rendering on the selected model, you won't find out until `GET /api/voice` reports a `resolutionError` for the selection.
 
 ---
 
@@ -151,7 +150,6 @@ A voice can mix a preset rendering on one model and a clone rendering on another
   "providers": {
     "my-tts-server": {
       "resolvesVoices": false,
-      "responseFormat": "wav",
       "serves": [
         { "model": "my-model", "key": "my-model" }
       ]
@@ -169,7 +167,7 @@ A voice can mix a preset rendering on one model and a clone rendering on another
 }
 ```
 
-A provider naming no registered service fails at load — the service entry has to exist first. A serving must name a declared model, and a TTS provider must state `resolvesVoices`. A model with no rendering on any voice can be selected by nothing. `responseFormat` is the audio format `/v1/audio/speech` returns; absent means `mp3`, so set it explicitly if the server returns something else, or Banter decodes the wrong format.
+A provider naming no registered service fails at load — the service entry has to exist first. A serving must name a declared model, and a TTS provider must state `resolvesVoices`. A model with no rendering on any voice can be selected by nothing. The audio format a speech server returns is stated on its service entry, as the `response_format` its `openai.audio.speech` provision accepts; see [tts.md](tts.md). A service a provider names must declare a `provides` for what it is called for, or the registry does not load.
 
 If the voice is already declared (another model renders her), add a rendering to that voice instead of declaring her again; she is then available on the new model too.
 

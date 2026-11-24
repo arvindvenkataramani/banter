@@ -95,7 +95,7 @@ Three entities and two relations, each declared in exactly one place.
 roster
   ttsModels   [ { id, name, cloning?: { requiresText, minDurationS?, maxDurationS?, sampleRate? }, chunkProfile?, chunking? } ]
   sttModels   [ { id, name, kind, params?, variants? } ]
-  providers   service id → { resolvesVoices (tts), responseFormat?, sessions?, defaultModel?, idleUnloadMs?,
+  providers   service id → { resolvesVoices (tts), defaultModel?, idleUnloadMs?,
                              serves: [ { model, key, streaming?, realtime?, concurrency?, requestParams? } ] }
   voices      [ { id, name,
                   recordings?: [ { audio, text, durationS, sampleRate } ],
@@ -235,15 +235,17 @@ The control plane assembles the node rosters and serves them as they are declare
 `GET /api/voice` serves, under `tts`:
 
 - `models`: each synthesis model, with its name, whether it can clone, and its chunking defaults.
-- `providers`: each synthesis runtime, with its host, whether that host is answering, its name from the service entry, its response format, whether it takes sessions, and what it serves.
+- `providers`: each synthesis runtime, with its host, whether that host is answering, its name from the service entry, the `provides` and `models` its service declares (which APIs it serves and how its models load; see [service-apis.md](service-apis.md)), and what it serves.
 - `voices`: each voice, with its name and her renderings as model and method. A preset's key is not served; it is the resolver's.
-- `selection`: the stored selection, voice, model and runtime, and `request`, below.
+- `selection`: the stored selection, voice, model and runtime, and `resolution`, below.
+
+Under `stt`, `options` lists each speech-to-text service with its `provides`, `models` and what it `serves` as model and key, and `models` lists the roster's speech-to-text models with their kind, parameters and variants. The voice engine reads what a model is and which tiers it offers from these, not from the server.
 
 ## Reaching a resolution
 
-The control plane resolves a voice only for a runtime on its own host. When it serves the voice selection, on `GET /api/voice` and in the answer to a selection change, it asks the shard on the selection's runtime host to resolve the selection, or resolves it from its own roster when the runtime is on its own host, and serves the answer as `selection.request`: the fields the browser puts into a speech request, which it sends to the runtime unchanged. One resolution per selection, never one per utterance.
+The control plane resolves a voice only for a runtime on its own host. When it serves the voice selection, on `GET /api/voice` and in the answer to a selection change, it asks the shard on the selection's runtime host to resolve the selection, or resolves it from its own roster when the runtime is on its own host, and serves the answer as `selection.resolution`: the model as the runtime names it, the voice by name or by recording, and the serving's request parameters. The browser hands it to the speech adapter of the runtime's API, which encodes the request; no field of it is a wire field. One resolution per selection, never one per utterance.
 
-The shard answers `POST /api/voices/resolve` with a voice, a model and a runtime. For a runtime that resolves voices itself the answer is the roster's ids. For any other it is the runtime's key for the model, and either the preset's key or a recording's audio path, with the transcript's text when the model uses one, plus the serving's request parameters. A refusal names the voice and model. An unreachable shard leaves `request` absent, with the reason, and the voice loop reports that it cannot speak.
+The shard answers `POST /api/voices/resolve` with a voice, a model and a runtime. For a runtime that resolves voices itself the answer is the roster's model id and the voice's name. For any other it is `{ model, voice, params? }`: the runtime's key for the model, the preset's key as the voice name or a recording's audio path with the transcript's text when the model uses one, and the serving's request parameters as `params`. A refusal names the voice and model. An unreachable shard leaves `resolution` absent, with `resolutionError` saying why, with the reason, and the voice loop reports that it cannot speak.
 
 ---
 

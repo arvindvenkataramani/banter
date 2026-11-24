@@ -1,21 +1,34 @@
 # Speech server API
 
-What Banter's dashboard calls on a speech server. Any server that answers these routes in this shape can be registered, whatever model or runtime is behind it. The [fluid servers](../../services/fluid/README.md) implement all of it, and the Python adapters under [`services/`](../../services/README.md) implement the batch parts; they are examples of conforming servers.
+Which APIs Banter calls a speech server through, and which the fluid servers provide. Banter calls a service through the APIs its registry entry declares in `provides`, by catalog id, and nothing else; no path or field is inferred from the service's capability or id. Any server that serves one of these APIs, and declares it, can be registered, whatever model or runtime is behind it. The [fluid servers](../../services/fluid/README.md) provide all of what follows, and the Python adapters under [`services/`](../../services/README.md) provide the batch parts.
 
-Taken from what the dashboard actually sends, not from a general OpenAI-API description.
+An API is identified by an id in the catalog, `shared/apis/catalog.json`, which pins the published spec it refers to. A provision lists only how a service departs from that spec; the registry reference is [registry.md](components/registry.md#provides), and the reasoning is in [service-apis.md](design/service-apis.md).
+
+## What Banter calls
+
+Banter calls a fixed set of operations. Each is performed over whichever declared API has an adapter for it.
+
+| Operation | Used for | APIs Banter has an adapter for |
+|---|---|---|
+| `synthesize` | speaking the agent's reply | `openai.audio.speech` |
+| `transcribe` | batch transcription of a whole utterance | `openai.audio.transcriptions` |
+| `transcribeStream` | live transcription, where the client decides where an utterance ends | `fluid.stt.stream`, `deepgram.listen.live`, `openai.realtime` |
+| `loadModel`, `unloadModel` | bringing a model up or releasing it | `triton.model-repository`, or a call declared under the service's `models` |
+
+A service a roster provider names must provide an API for what it is called for, or the registry does not load. Among streaming APIs Banter prefers one that accepts Opus, when `voice.stt.encodings` puts Opus first, and then one that supports taking over a held session.
 
 ## The minimum
 
-A usable server needs only:
+A usable server provides:
 
-- batch transcription (STT) or synthesis (TTS),
-- `POST /v1/models?model_name=<id>` (TTS),
+- `openai.audio.speech` (TTS) or `openai.audio.transcriptions` (STT),
+- a way to load a model, if it needs one: `triton.model-repository`, or a `load` call declared under `models` (a model that loads on first request needs neither),
 - a health path,
 - CORS.
 
-Everything streaming-specific is optional. The dashboard only uses the STT model-load calls and the streaming socket when `voice.stt.model` is set; with it unset, it transcribes in batch and never calls them.
+Everything streaming-specific is optional. The dashboard calls `transcribeStream` only when `voice.stt.model` names a model the roster declares as streaming, or as both with streaming preferred.
 
-A server that answers all of this still isn't selectable until the registry's `roster` section declares its models: see [setup/voices-and-models.md](../guide/voices-and-models.md#adding-another-model-or-another-speech-server).
+A server that provides all of this still isn't selectable until the registry's `roster` section declares its models: see [setup/voices-and-models.md](../guide/voices-and-models.md#adding-another-model-or-another-speech-server).
 
 ## Every server
 
@@ -23,63 +36,43 @@ A server that answers all of this still isn't selectable until the registry's `r
 
 **CORS.** The browser calls speech servers directly, so each server must allow the dashboard's origin. A refused request surfaces in the browser with no useful explanation.
 
-## Text-to-speech
+**Failures.** A non-2xx answer is shown with the server's own text: the body's `error` (a string, or `error.message`), or the raw body when it is not JSON, after the status. A refused load fails the voice start with that text.
 
-### Synthesis
+## The APIs and their adapters
 
-`POST {endpoint}/v1/audio/speech`, JSON body `{ model, input, voice, speed, stream, response_format, ...extra }` ([`playback-engine.ts`](../../voice-engine/src/system/playback-engine.ts)).
+### `openai.audio.speech`
 
-`response_format` is the roster provider's `responseFormat`, `mp3` when absent. The dashboard decodes the response as that format, so it has to match what the server returns. A server that can't produce the requested format should refuse the request rather than return another format.
+`POST <base>/audio/speech`, JSON, where `<base>` is the provision's `basePath` or `/v1`. The body is the serving's request parameters first, then `model` (the resolution's), `input`, `voice` and `speed`, and `response_format`.
 
-### Model load and unload
+- `response_format` is always sent: the first value the provision accepts, in its order, that the browser decodes (`mp3`, `aac` or `wav`); without a restriction, the first of those three. The browser decodes the response as that format. A provision that accepts none of them is refused before any request, naming what the service accepts.
+- `speed` and `voice` are sent only when the provision implements them.
+- A cloned voice is sent as `ref_audio` (a path on the service's machine) and `ref_text`, only to a provision that declares `cloning-reference`; otherwise the request is refused before it is made.
+- `stream: true` is sent only with `stream-flag`, when the playback engine wants audio as it renders.
 
-`POST {endpoint}/v1/models?model_name=<id>` is called once when a voice session starts, before the first synthesis request ([`voice-service.ts`](../../dashboard/src/lib/voice/voice-service.ts)). A failure here fails the session start with a "Voice failed to start" notice, so a TTS server without this route can't be used for voice.
+### `openai.audio.transcriptions`
 
-`DELETE {endpoint}/v1/models?model_name=<id>` is sent when the selected model changes in the settings dialog, not at session end. Its failure is ignored: a server without it still works, but is never told to release the old model.
+`POST <base>/audio/transcriptions`, multipart: `file` (WAV), `model` when the caller names one, and `response_format`, always: the first of `json` and `verbose_json` the provision accepts. A provision that accepts neither is refused before any request. The answer's `text` is the transcript.
 
-## Speech-to-text
+### `fluid.stt.stream`
 
-### Batch transcription
+`WS <base>/v1/audio/stream?model=<key>&format=<opus|pcm16>&chunkMs=<ms>&session=<id>&takeover=1`, the protocol in [`services/fluid/STT.md`](../../services/fluid/STT.md#streaming). `chunkMs` is sent when the provision implements it; `session` is sent when the provision holds take-over and the caller has a session, and `takeover=1` only when the caller asks to take over. Opus is raw packets, one per frame, as WebCodecs produces them; `pcm16` is little-endian Int16 at 16 kHz mono.
 
-`POST {endpoint}/audio/transcriptions`, multipart, with a `file` field carrying WAV audio ([`stt-client.ts`](../../voice-engine/src/human/stt-client.ts)). OpenAI-compatible servers usually answer under `/v1/audio/transcriptions` as well; the dashboard uses the bare path.
+One connection carries a conversation, not an utterance: `Finalize` settles the turn and leaves the socket open. The client decides when an utterance ends. A connection that goes quiet keeps its session for thirty minutes, and a dropped one is not resumed. A close in 4001 to 4010 names why:
 
-The response is JSON with a `text` field. `fluid-stt` also takes `response_format` (`text`, `verbose_json`) and `timestamp_granularities[]=word` for word timings, and an optional `model` field: loaded if nothing is resident, refused (409) if another model is, never switched to.
+| code | close | when |
+|---|---|---|
+| `held` | 4001 | another session holds the socket and the connection did not ask to take over |
+| `superseded` | 4002 | another client took over this session |
+| `idle` | 4003 | nothing received for thirty minutes |
+| `model_not_loaded` | 4004 | no model loaded, or not loaded in a streaming mode |
+| `model_mismatch` | 4005 | the named model is unknown, or the roster refuses how it is asked for |
+| `busy` | 4006 | the model is busy with other work |
+| `bad_format` | 4007 | unknown `format` |
+| `bad_audio` | 4008 | a frame could not be decoded |
+| `failed` | 4009 | transcription failed for any other reason |
+| `replaced` | 4010 | the same session reconnected on a new socket (close only, no error frame) |
 
-### Model facts
-
-`GET {endpoint}/v1/models`, read before loading. The OpenAI-style `data` array, where the entry whose `id` is the configured model may carry:
-
-| Field | Meaning |
-|---|---|
-| `kind` | `batch`, `streaming`, or `both` — what the model can do |
-| `transport` | `["http"]`, `["websocket"]`, or both — how it is reached |
-| `present` | whether its weights are already on disk; a load of an absent model downloads them first |
-| `params` | declared parameters, e.g. `{ "name": "chunkMs", "values": [560, 1120, 2240] }` |
-
-Any field left out is treated as unknown, not as a default. A model of kind `both` is streamed or batched according to `voice.stt.preferStreaming`.
-
-### Model load
-
-`POST {endpoint}/v1/models/load`, JSON `{ model, mode?, chunkMs? }`, before the first utterance. `mode` (`batch` or `streaming`) is sent for a model of kind `both`; `chunkMs` picks a streaming latency tier where the model declares one. A server should refuse a load it can't honour (400) rather than pick for the caller, and refuse with 409 while it is busy with other work.
-
-Only a load replaces a resident model: a transcription or socket naming a different one is refused. `fluid-stt` also loads on demand: a request that finds nothing resident loads the model it names, or the roster's `defaultModel`, and the model unloads after `idleUnloadMs` without work. The dashboard still loads explicitly, so a server that only loads on request works too.
-
-## Streaming transcription
-
-`WS {endpoint}/v1/audio/stream?model=<id>&chunkMs=<ms>&format=<opus|pcm16>&session=<id>&takeover=1` ([`stt-socket.ts`](../../voice-engine/src/human/stt-socket.ts)). Used when the model's `kind` is `streaming` or `both` and streaming is preferred.
-
-`model` names the model wanted, and `chunkMs` the latency tier where the model declares one. A server may expect the model already loaded in a streaming mode; `fluid-stt` accepts the socket and then loads it, or adds its streaming mode, when nothing else is resident.
-
-### Audio
-
-Binary frames carry audio; text frames carry control.
-
-- **`opus`** (the dashboard's default where the browser can encode it) — raw Opus packets, one per frame, as WebCodecs `AudioEncoder` produces them. Not the WebM that `MediaRecorder` emits.
-- **`pcm16`** (the fallback) — raw little-endian Int16, 16 kHz mono.
-
-### Who holds the socket
-
-One streaming session is live at a time. `session` is the client's own id, which lets a reconnect be recognised; `takeover=1` asks to displace another client.
+Who holds the socket:
 
 | Holder | Newcomer | Result |
 |---|---|---|
@@ -88,34 +81,58 @@ One streaming session is live at a time. `session` is the client's own id, which
 | id X | id Y, or none | refused `held`; the holder keeps it |
 | id X | id Y, or none, with `takeover=1` | newcomer gets it; the holder is closed `superseded` |
 
-### Frames
+### `deepgram.listen.live`
 
-| Direction | Frame | Meaning |
-|---|---|---|
-| → | binary | one audio frame in the declared format |
-| → | `{"type":"Finalize"}` | end of utterance: send the final transcript and stay open for the next one |
-| → | `{"type":"CloseStream"}` | send the final transcript, then close |
-| → | `{"type":"KeepAlive"}` | the client is still there; never answered |
-| ← | `{"type":"ready","model":…,"format":…}` | session open |
-| ← | `{"type":"transcript","is_final":false,"text":…}` | the whole transcript so far, sent when it changes. It may still change; render the latest |
-| ← | `{"type":"transcript","is_final":true,"text":…,"words":[…]}` | after `Finalize` or `CloseStream`: settled, with word timings |
-| ← | `{"type":"error","code":…,"message":…}` | followed by a close with the matching code |
+`WS <base>/v1/listen`, Deepgram's live channel. Banter connects with `encoding` (`opus` or `linear16`), `sample_rate`, `channels=1`, `interim_results=true` and `endpointing=false` (it never relies on a server's default), and `model` when the provision implements it. It sends `Finalize`, `KeepAlive` and `CloseStream`. Each `Results` is accumulated into the utterance so far, which goes out as a partial, and exactly one final is answered for each `Finalize`. Where the provision declares `finalize-answered` it settles on the result marked `from_finalize`; otherwise on the first such result or after 3000 ms. It sends `session` and `takeover` only with `session-claim`, and Opus only with `opus-packets`.
 
-One connection carries a conversation, not an utterance: `Finalize` resets the session for the next turn and leaves the socket open. The client decides when an utterance ends — Banter's VAD and turn detection make that call, and the server doesn't second-guess it.
+### `openai.realtime`
 
-A connection that goes quiet keeps its session for up to thirty minutes. Any frame, `KeepAlive` included, resets that clock. A dropped connection is not resumed: reconnecting starts a new session, and the words since the last `Finalize` are lost.
+`WS <base>/realtime?intent=transcription`, where `<base>` is the provision's `basePath` or `/v1`. The adapter sends `session.update` for a transcription session with turn detection off and 24 kHz PCM input (resampled from the engine's 16 kHz), or 48 kHz Opus input where the provision declares `opus-input`. A finalize is `input_audio_buffer.commit`; one with no audio since the last commit is answered empty without a commit. Deltas are accumulated per item, and finals are released in commit order. Realtime sessions do not load the model they name.
 
-### Error codes
+### `triton.model-repository`
 
-| code | close | when |
-|---|---|---|
-| `held` | 4001 | another session holds the socket and the connection did not ask to take over |
-| `superseded` | 4002 | another client took over this session |
-| `idle` | 4003 | nothing received for thirty minutes |
-| `model_not_loaded` | 4004 | no model loaded, or not loaded in a streaming mode |
-| `model_mismatch` | 4005 | the named model is not the loaded one |
-| `busy` | 4006 | the model is busy with other work |
-| `bad_format` | 4007 | unknown `format` |
-| `bad_audio` | 4008 | a frame could not be decoded |
-| `failed` | 4009 | transcription failed for any other reason |
-| `replaced` | 4010 | the same session reconnected on a new socket (close only, no error frame) |
+`POST <base>/v2/repository/models/{name}/load` with `{"parameters": {...}}` carrying `mode` and `variant` when given and the provision declares `resident-slot`, `POST .../unload`, and `POST <base>/v2/repository/index`. A 200 is success, and a failure is a status with `{"error": ...}`. `{name}` is the serving's key for transcription and for a synthesis runtime that does not resolve voices, and the roster id for one that does.
+
+### A declared call
+
+A service whose load and unload follow no published spec states them under `models.load` and `models.unload` in its registry entry: a method, a path, and query and body templates in which `{model}` stands for the name on the wire.
+
+## What the fluid servers provide
+
+The fluid servers read their own registry entry at startup and refuse to start when it claims an API, or a part of one, that their build does not serve. The provisions below are those in `services/fluid/registry.fluid.example.json`; the file is the source of truth for the exact omissions.
+
+**`fluid-stt`**
+
+| API | Departures |
+|---|---|
+| `fluid.stt.stream` | none |
+| `openai.audio.transcriptions` | omits the request fields it ignores; `response_format` restricted to `json`, `text` and `verbose_json` |
+| `deepgram.listen.prerecorded` | omits every query parameter but `model`, `encoding` and `sample_rate`; `encoding` restricted to `linear16` and `flac` |
+| `deepgram.listen.live` | omits the parameters and messages it ignores; `encoding` restricted to `opus` and `linear16`; `endpointing` defaults to 700; extends `session-claim`, `finalize-answered`, `endpointing-off` and `opus-packets` |
+| `openai.realtime` | only the transcription subset of the client and server events; extends `opus-input` |
+| `triton.model-repository` | extends `resident-slot` |
+
+**`fluid-tts`**
+
+| API | Departures |
+|---|---|
+| `openai.audio.speech` | omits `instructions`; `response_format` restricted to `aac`, `wav` and `pcm`, defaulting to `aac`; extends `cloning-reference` |
+| `deepgram.speak` | omits the query parameters it ignores; `encoding` restricted to `aac` and `linear16`; extends `voice-param` and `cloning-reference` |
+| `deepgram.speak.live` | `encoding` restricted to `linear16`; extends `voice-param`, `cloning-reference` and `session-claim` |
+| `openai.realtime` | only `session.update`, `response.create` and `response.cancel`, in 24 kHz PCM; extends `verbatim-speech` |
+| `fluid.tts.stream` | none; the protocol is in [`services/fluid/TTS-STREAM.md`](../../services/fluid/TTS-STREAM.md) |
+| `triton.model-repository` | extends `resident-slot` |
+
+Both declare `models: { loading: "required", autoLoad: "always", resident: "one" }`: a request naming a model that is not resident loads it, replacing the one that was.
+
+**Known gaps** in what they claim:
+
+- Deepgram's own model names are not served. `model` is a serving's key (listen) or a roster id (speak).
+- A listen answer to an empty `Finalize` is marked `from_finalize` but not `is_final`.
+- Deepgram's deprecated `Error.code` is not sent.
+- A Realtime speech session that names no model speaks with the resident model, else the roster's first.
+- On `fluid-tts` a socket's claim covers the connection, while synthesis takes the resident slot per span, so a load that would change the model waits behind a streaming response and is refused with 409 at the slot's deadline.
+- The index of `triton.model-repository` sends no `version`.
+- A `timestamp_granularities` value of `segment` is not implemented, and is omitted in the provision.
+
+The Banter adapters for `deepgram.speak`, `deepgram.speak.live`, `openai.realtime` speech and `fluid.tts.stream` are not built; Banter does not call those routes.

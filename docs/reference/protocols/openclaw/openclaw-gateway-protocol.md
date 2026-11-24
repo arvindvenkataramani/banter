@@ -663,7 +663,7 @@ Banter's approach differs: it runs its own STT and TTS services (registered in t
 
 ## Voice selection
 
-Banter voices every `assistant` message with one TTS selection, whichever agent produced it. The selection is a `VoiceSelection` (`voice-engine/src/voice-config.ts`): a roster `serviceId`, `model`, `voice` and `speed`, optional `params`, resolved against the roster into a `modelKey`, `voiceKey` and `responseFormat`. `AgentVoice` (`voice-engine/src/agent/agent-voice.ts`) holds it as `ttsSelection` and sends it with each chunk it speaks. There is no per-agent voice mapping.
+Banter voices every `assistant` message with one TTS selection, whichever agent produced it. The selection is a `VoiceSelection` (`voice-engine/src/voice-config.ts`): a roster `serviceId`, `model`, `voice` and `speed`, optional `params`, resolved against the roster into a `resolution` (the model as the runtime names it, the voice by name or recording, and the serving's request parameters). `AgentVoice` (`voice-engine/src/agent/agent-voice.ts`) holds it as `ttsSelection` and sends it with each chunk it speaks. There is no per-agent voice mapping.
 
 ---
 
