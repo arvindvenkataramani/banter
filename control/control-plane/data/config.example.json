@@ -31,7 +31,7 @@
     },
     "stt": {
       "serviceId": "stt-faster-whisper",
-      "preferStreaming": false,
+      "preferStreaming": true,
       "maxRecordingMs": 300000,
       "settleOnStopMs": 1500,
       "pauseFlushMs": 1500,

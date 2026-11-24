@@ -188,7 +188,7 @@ Under `voice` in `config.json`. The pieces that matter (the service ids and mode
 ```json
 "voice": {
   "enabled": true,
-  "stt": { "serviceId": "stt-faster-whisper", "preferStreaming": false },
+  "stt": { "serviceId": "stt-faster-whisper", "preferStreaming": true },
   "tts": {
     "selection": { "serviceId": "tts-kokoro", "model": "kokoro-82m", "voice": "heart", "speed": 1 },
     "options": { "chunkStrategy": "greedy", "minChunkWords": 15, "maxChunkWords": 60 },
