@@ -18,6 +18,8 @@ Promote changes to the installation by re-running `ops/control-deploy.sh`. The i
 
 To work on the shard, `scripts/shard-dev.sh` (`bun run shard-dev`) runs it alone, API only, with `--watch`. It needs a deployed shard registry, and it stops the production shard agent while it runs and restores it on exit. See [shard](../guide/shard.md).
 
+To try a branch end to end, speech servers included, without deploying it, run a [test environment](test-environment.md): the branch's control plane and fluid servers from a scratch directory, reusing the models on disk.
+
 To reach the dev server from another device, Vite's `allowedHosts` needs a hostname added; see [Hardening](../../README.md#hardening).
 
 ## Tests
@@ -108,3 +110,4 @@ The config templates are in `control/control-plane/data/` (`config.example.json`
 | [api.md](api.md) | The control plane's HTTP API, generated from the route definitions. |
 | [speech-server-api.md](speech-server-api.md) | What a speech server must answer. |
 | [architecture.md](architecture.md) | The three planes, and how a voice turn works end to end. |
+| [test-environment.md](test-environment.md) | Running a branch's control plane and fluid servers beside an install, and pointing the dsh plugin at them. |
