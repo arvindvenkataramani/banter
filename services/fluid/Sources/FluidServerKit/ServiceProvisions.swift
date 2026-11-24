@@ -81,6 +81,7 @@ public enum ProvisionError: Error, CustomStringConvertible {
     case noService(id: String, path: String)
     case unservedApi(service: String, api: String)
     case lackedParts(service: String, api: String, parts: [String])
+    case unimplementedExtensions(service: String, api: String, extensions: [String])
 
     public var description: String {
         switch self {
@@ -95,6 +96,9 @@ public enum ProvisionError: Error, CustomStringConvertible {
         case .lackedParts(let service, let api, let parts):
             return
                 "\(service) provides \(api) with \(parts.joined(separator: ", ")), which this build lacks; list them in omits"
+        case .unimplementedExtensions(let service, let api, let extensions):
+            return
+                "\(service) provides \(api) extended by \(extensions.joined(separator: ", ")), which this build does not implement"
         }
     }
 }
@@ -121,10 +125,11 @@ public enum ProvisionCheck {
         return entry.provides ?? []
     }
 
-    /// Refuses a provision of an API the build does not serve, or one that does not declare
-    /// absent a part the build lacks. `build` maps each served API to the parts it lacks.
+    /// Refuses a provision of an API the build does not serve, one that does not declare absent a
+    /// part the build lacks, or one claiming an extension the build does not implement for that API.
     public static func check(
-        _ provisions: [Provision], service: String, build: [String: [String]]
+        _ provisions: [Provision], service: String, build: [String: [String]],
+        extensions: [String: [String]]
     ) throws {
         for provision in provisions {
             guard let lacked = build[provision.api] else {
@@ -134,6 +139,12 @@ public enum ProvisionCheck {
             if !claimed.isEmpty {
                 throw ProvisionError.lackedParts(
                     service: service, api: provision.api, parts: claimed)
+            }
+            let implemented = extensions[provision.api] ?? []
+            let unimplemented = (provision.extends ?? []).filter { !implemented.contains($0) }
+            if !unimplemented.isEmpty {
+                throw ProvisionError.unimplementedExtensions(
+                    service: service, api: provision.api, extensions: unimplemented)
             }
         }
     }

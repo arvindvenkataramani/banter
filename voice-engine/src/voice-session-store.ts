@@ -1,12 +1,12 @@
 import { create } from 'zustand'
 import type { VoiceSession } from './session'
-import { candidates } from '@platform/shared/apis/select'
+import { candidates, capabilityHolds, select, type Selection } from '@platform/shared/apis/select'
 import type { Provision } from '@platform/shared/apis/types'
 import type { Adapter } from '@platform/shared/apis'
 import type { SttTransport } from './human/stt-transport'
 import { BatchSttTransport } from './human/stt-transport-batch'
 import { StreamingSttTransport, type StreamingCloseInfo } from './human/stt-transport-streaming'
-import { toService, type ServiceEntry } from './service-calls'
+import { streamPreferences, toService, type ServiceEntry } from './service-calls'
 import type { SttModelEntry, VoiceConfig, VoiceSelection } from './voice-config'
 
 // The voice system's whole lifetime — including the service-level state Chat
@@ -101,6 +101,45 @@ export function sttModeSource(option: ServiceEntry, model: Pick<SttModelEntry, '
   if (model.kind !== 'both') return 'model'
   const { batch, streaming } = routes(option)
   return batch && streaming ? 'choice' : 'model'
+}
+
+/**
+ * The mode and the provision a session transcribes through: the one selection returns for the
+ * mode's operation (streaming needs a client that decides where an utterance ends), ranked by the
+ * configured encodings. Throws the selection's refusal when the service offers none.
+ */
+export function selectStt(
+  option: ServiceEntry,
+  model: Pick<SttModelEntry, 'kind'> | undefined,
+  preferStreaming: boolean | undefined,
+  encodings: ('opus' | 'pcm16')[] | undefined,
+): { mode: 'batch' | 'streaming'; selection: Selection } {
+  const mode = resolveSttMode(option, model, preferStreaming)
+  const service = toService(option)
+  const selection = mode === 'streaming'
+    ? select('transcribeStream', service, ['client-endpointing'], streamPreferences(encodings))
+    : select('transcribe', service, [], [])
+  return { mode, selection }
+}
+
+/** Whether a session over this mode and selection can claim and take over the server's slot. */
+export function holdsTakeover(mode: 'batch' | 'streaming' | null, selection: Selection): boolean {
+  return mode === 'streaming' && capabilityHolds(selection.provision, selection.adapter, 'takeover')
+}
+
+/** Whether voice would offer take-over for a service: the same selection a session makes, read without making one. */
+export function offersTakeover(
+  option: ServiceEntry,
+  model: Pick<SttModelEntry, 'kind'> | undefined,
+  preferStreaming: boolean | undefined,
+  encodings: ('opus' | 'pcm16')[] | undefined,
+): boolean {
+  try {
+    const { mode, selection } = selectStt(option, model, preferStreaming, encodings)
+    return holdsTakeover(mode, selection)
+  } catch {
+    return false
+  }
 }
 
 /**

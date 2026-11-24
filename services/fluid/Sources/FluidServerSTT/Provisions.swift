@@ -58,10 +58,17 @@ struct Provisions: Sendable {
         ],
     ]
 
+    /// The extensions this build implements, per API.
+    static let extensions: [String: [String]] = [
+        "triton.model-repository": ["resident-slot"],
+        "deepgram.listen.live": ["session-claim", "finalize-answered", "endpointing-off", "opus-packets"],
+        "openai.realtime": ["opus-input"],
+    ]
+
     /// Reads the `provides` of service `provider` and refuses an entry claiming more than the build serves.
     static func load(registry: URL, provider: String) throws -> Provisions {
         let declared = try ProvisionCheck.read(registry: registry, service: provider)
-        try ProvisionCheck.check(declared, service: provider, build: build)
+        try ProvisionCheck.check(declared, service: provider, build: build, extensions: extensions)
         return Provisions(declared: declared)
     }
 

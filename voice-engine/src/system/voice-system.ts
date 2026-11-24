@@ -25,12 +25,14 @@ import {
   resolveSttMode,
   resolveChunkMs,
   sttModeSource,
+  selectStt,
+  holdsTakeover,
 } from '../voice-session-store'
-import { candidates, capabilityHolds, select, type Selection } from '@platform/shared/apis/select'
+import { candidates, select, type Selection } from '@platform/shared/apis/select'
 import { decideLoad, decideUnload } from '@platform/shared/apis/loading'
 import type { Adapter } from '@platform/shared/apis'
 import type { Provision } from '@platform/shared/apis/types'
-import { perform, streamPreferences, toService } from '../service-calls'
+import { perform, toService } from '../service-calls'
 import { resolveChunkingFor } from '../agent/chunking-setting'
 import type { VoiceConfig, VoiceSelection, ChunkStrategy, SttModelEntry, SttOption, TtsProvider } from '../voice-config'
 import type { SttTransport } from '../human/stt-transport'
@@ -272,10 +274,9 @@ export class VoiceSystem {
           sttKey = sttOption.serves?.find(s => s.model === sttModelId)?.key
           if (sttKey === undefined) throw new Error(`${sttOption.name} does not serve ${sttModelId}`)
         }
-        const service = toService(sttOption)
-        sttSelection = sttMode === 'streaming'
-          ? select('transcribeStream', service, ['client-endpointing'], streamPreferences(config.stt?.encodings))
-          : select('transcribe', service, [], [])
+        sttSelection = (sttModelId
+          ? selectStt(sttOption, sttModel, config.stt?.preferStreaming, config.stt?.encodings)
+          : { selection: select('transcribe', toService(sttOption), [], []) }).selection
       }
       const sttChunkMs = sttMode === 'streaming' ? resolveChunkMs(sttModel, config.stt?.chunkMs) : undefined
       await Promise.all([
@@ -334,7 +335,7 @@ export class VoiceSystem {
 
       // Session ids and take-over are sent only when the selected streaming provision holds take-over.
       if (!sttSelection) throw new Error('Voice has no transcription service to connect to')
-      const declaresSessions = sttMode === 'streaming' && capabilityHolds(sttSelection.provision, sttSelection.adapter, 'takeover')
+      const declaresSessions = holdsTakeover(sttMode, sttSelection)
       const takeover = declaresSessions && (opts?.takeover === true || config.takeover === 'always')
       const transport = await this.openConnection(
         sessionId,
@@ -519,7 +520,10 @@ export class VoiceSystem {
         await perform(decideLoad(service, {}, select('synthesize', service, [], []), preload), 'load', { endpoint, service, model: resolution.model })
       })
       .then(() => { useVoiceSystemStore.setState({ reconfiguring: false }) })
-      .catch(() => { useVoiceSystemStore.setState({ reconfiguring: false }) })
+      .catch((err: unknown) => {
+        useVoiceSystemStore.setState({ reconfiguring: false })
+        this.deps.notify(`Voice could not ready the speech model: ${err instanceof Error ? err.message : String(err)}`)
+      })
 
     const sttChanged = sttServiceId && sttServiceId !== prev?.stt?.serviceId
     if (sttChanged) {

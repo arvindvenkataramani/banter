@@ -3,8 +3,7 @@
 // goes through the engine's own reducers (model-settings,
 // agent/chunking-setting). No React, so it runs in node.
 
-import { candidates } from '@platform/shared/apis/select'
-import { toService } from '@platform/voice-engine/service-calls'
+import { offersTakeover } from '@platform/voice-engine/voice-session-store'
 import type { TtsModel, TtsProvider, TtsVoice, SttOption, VoiceConfig, VoiceSelection, VoiceSelectionPatch } from '@platform/voice-engine/voice-config'
 import {
   buildModelPrefEntry, declaredAt, deleteModelOverride, editField, emptyPref, hasModelDefaults, hasOverride, readPrefs, settingsScopeFrom,
@@ -143,8 +142,12 @@ export function roster(draft: Draft): RosterView {
     currentModel,
     voices: currentModel ? voicesOn(draft.config, currentModel.id) : [],
     sttOptions,
-    offersTakeover: currentSttOption !== undefined
-      && candidates('transcribeStream', toService(currentSttOption), ['client-endpointing', 'takeover'], []).length > 0,
+    offersTakeover: currentSttOption !== undefined && offersTakeover(
+      currentSttOption,
+      draft.config.stt?.models?.find(m => m.id === draft.config.stt?.model),
+      draft.preferStreaming,
+      draft.config.stt?.encodings,
+    ),
   }
 }
 

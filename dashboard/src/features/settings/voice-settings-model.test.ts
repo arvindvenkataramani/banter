@@ -54,11 +54,12 @@ const CONFIG = ({
     serviceId: 'stt-a',
     model: 'stt-model-1',
     options: [
-      { serviceId: 'stt-a', name: 'STT A', provides: [{ api: 'openai.audio.transcriptions' }], models: { loading: 'none' }, serves: [] },
-      { serviceId: 'stt-b', name: 'STT B', provides: [{ api: 'fluid.stt.stream' }], models: { loading: 'none' }, serves: [] },
-      { serviceId: 'stt-c', name: 'STT C', provides: [{ api: 'fluid.stt.stream', omits: ['parameter:session'] }], models: { loading: 'none' }, serves: [] },
+      { serviceId: 'stt-a', name: 'STT A', provides: [{ api: 'openai.audio.transcriptions' }], models: { loading: 'none' }, serves: [{ model: 'stt-model-1', key: 'stt-model-1' }] },
+      { serviceId: 'stt-b', name: 'STT B', provides: [{ api: 'fluid.stt.stream' }], models: { loading: 'none' }, serves: [{ model: 'stt-model-1', key: 'stt-model-1' }] },
+      { serviceId: 'stt-c', name: 'STT C', provides: [{ api: 'fluid.stt.stream', omits: ['parameter:session'] }], models: { loading: 'none' }, serves: [{ model: 'stt-model-1', key: 'stt-model-1' }] },
     ],
-    models: [],
+    // A streaming model, so the switch condition (the selected streaming provision) can hold.
+    models: [{ id: 'stt-model-1', name: 'STT model', kind: 'streaming' }],
     vad: { minSpeechDurationS: 0.5 },
     turnTaking: { pauseThresholdMs: 700, commitMinDelayMs: 200, curve: { type: 'power', exponent: 2 } },
   },

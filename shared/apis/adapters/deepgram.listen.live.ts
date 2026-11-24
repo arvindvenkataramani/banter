@@ -80,7 +80,7 @@ class ListenSocket extends StreamSocketBase {
       interim_results: "true",
       endpointing: "false",
     });
-    if (this.call.model) query.set("model", this.call.model);
+    if (this.call.model && partHolds(provision, "parameter:model")) query.set("model", this.call.model);
     if (claims && this.call.session !== undefined) query.set("session", this.call.session);
     if (claims && this.call.takeover) query.set("takeover", "1");
     this.open(`${socketAddress(this.call.endpoint, streamPath(provision))}?${query}`);

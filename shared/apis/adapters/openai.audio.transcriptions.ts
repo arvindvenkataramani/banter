@@ -1,4 +1,5 @@
 import { failure, trimEndpoint } from "./http";
+import { partHolds } from "../parts";
 import type { AdapterDeclaration, Provision } from "../types";
 
 export const declaration: AdapterDeclaration = {
@@ -18,9 +19,15 @@ export interface TranscribeCall {
   model?: string;
 }
 
+/** The formats whose answer carries `text`, in the order tried. */
+const TEXT_FORMATS = ["json", "verbose_json"];
+
 /** Posts the recording as multipart `file` and resolves to the transcript's text. */
 export async function transcribe(call: TranscribeCall): Promise<string> {
+  const format = TEXT_FORMATS.find((f) => partHolds(call.provision, `value:response_format=${f}`));
+  if (!format) throw new Error(`The transcription service accepts neither ${TEXT_FORMATS.join(" nor ")} as a response format.`);
   const form = new FormData();
+  form.append("response_format", format);
   form.append("file", new Blob([call.audio], { type: "audio/wav" }), "audio.wav");
   if (call.model) form.append("model", call.model);
 

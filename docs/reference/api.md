@@ -351,6 +351,28 @@ Extends: [Service](#service)
 ### ServiceRunner
 
 
+### Provision
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `api` | string | yes |  |
+| `basePath` | string | no |  |
+| `omits` | string[] | no |  |
+| `only` | string[] | no |  |
+| `restricts` | object | no |  |
+| `defaults` | object | no |  |
+| `extends` | string[] | no |  |
+
+### ModelLoading
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `loading` | `required` \| `none` | yes |  |
+| `autoLoad` | `always` \| `never` | no |  |
+| `resident` | `one` \| `many` | no |  |
+| `load` | object | no |  |
+| `unload` | object | no |  |
+
 ### Event
 
 | Field | Type | Required | Description |
@@ -377,6 +399,8 @@ Extends: [Service](#service)
 | `runner` | → ServiceRunner | no |  |
 | `ops` | object | no |  |
 | `lifecycle` | object | no |  |
+| `provides` | Provision[] | no | The APIs this service serves, each with how it departs from the API's spec |
+| `models` | → ModelLoading | no |  |
 | `state` | object | no |  |
 
 ### Error

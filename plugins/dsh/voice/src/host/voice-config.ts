@@ -77,12 +77,13 @@ export function createVoiceConfigSource(deps: { controlPlaneUrl: () => string; f
       const nextPaths = option ? streamPaths(option) : []
       const pathsChanged = JSON.stringify(paths.get(next.sttServiceId) ?? []) !== JSON.stringify(nextPaths)
       paths.set(next.sttServiceId, nextPaths)
-      const changed = selected === null || selected.sttServiceId !== next.sttServiceId || selected.ttsServiceId !== next.ttsServiceId || pathsChanged
-      if (changed) {
+      const servicesChanged = selected === null || selected.sttServiceId !== next.sttServiceId || selected.ttsServiceId !== next.ttsServiceId
+      // A change of paths alone leaves the services as they were, so the one before stays the one before.
+      if (servicesChanged) {
         previous = selected
         selected = next
-        for (const listener of [...listeners]) listener()
       }
+      if (servicesChanged || pathsChanged) for (const listener of [...listeners]) listener()
       return answer
     },
     async check() {

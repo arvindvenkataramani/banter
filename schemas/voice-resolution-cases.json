@@ -8,30 +8,62 @@
       "provides": [
         {
           "api": "openai.audio.speech",
-          "omits": ["parameter:instructions", "parameter:stream_format"],
-          "restricts": { "response_format": ["aac", "wav", "pcm"] },
-          "extends": ["stream-flag", "cloning-reference"]
+          "omits": [
+            "parameter:instructions"
+          ],
+          "restricts": {
+            "response_format": [
+              "aac",
+              "wav",
+              "pcm"
+            ]
+          },
+          "defaults": {
+            "response_format": "aac"
+          },
+          "extends": [
+            "cloning-reference"
+          ]
         }
       ]
     },
     {
       "id": "tts-mlx-audio",
       "capabilityId": "tts",
-      "provides": [{ "api": "openai.audio.speech" }]
+      "provides": [
+        {
+          "api": "openai.audio.speech"
+        }
+      ]
     },
     {
       "id": "fluid-stt",
       "capabilityId": "stt",
       "provides": [
-        { "api": "fluid.stt.stream" },
+        {
+          "api": "fluid.stt.stream"
+        },
         {
           "api": "openai.audio.transcriptions",
           "omits": [
-            "parameter:language", "parameter:languages", "parameter:keywords", "parameter:prompt",
-            "parameter:temperature", "parameter:include", "parameter:stream", "parameter:chunking_strategy",
-            "parameter:known_speaker_names", "parameter:known_speaker_references"
+            "parameter:language",
+            "parameter:languages",
+            "parameter:keywords",
+            "parameter:prompt",
+            "parameter:temperature",
+            "parameter:include",
+            "parameter:stream",
+            "parameter:chunking_strategy",
+            "parameter:known_speaker_names",
+            "parameter:known_speaker_references"
           ],
-          "restricts": { "response_format": ["json", "text", "verbose_json"] }
+          "restricts": {
+            "response_format": [
+              "json",
+              "text",
+              "verbose_json"
+            ]
+          }
         }
       ]
     }

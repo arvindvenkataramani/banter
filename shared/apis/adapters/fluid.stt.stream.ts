@@ -16,7 +16,7 @@ export const declaration: AdapterDeclaration = {
   uses: { transcribeStream: ["parameter:session", "parameter:takeover", "parameter:chunkMs", "value:format=opus"] },
   capabilities: {
     "client-endpointing": [{ spec: true }],
-    opus: [{ spec: true }],
+    opus: [{ part: "value:format=opus" }],
     takeover: [{ part: "parameter:session" }],
     "carries-variant": [{ part: "parameter:chunkMs" }],
     "session-loads": [{ spec: true }],
@@ -53,7 +53,7 @@ function socketUrl(call: StreamCall): string {
   const claims = partHolds(call.provision, "parameter:session");
   let url = `${trimEndpoint(call.endpoint).replace(/^http/, "ws")}${streamPath(call.provision)}`
     + `?model=${encodeURIComponent(call.model)}&format=${call.format}`;
-  if (call.chunkMs !== undefined) url += `&chunkMs=${call.chunkMs}`;
+  if (call.chunkMs !== undefined && partHolds(call.provision, "parameter:chunkMs")) url += `&chunkMs=${call.chunkMs}`;
   if (claims && call.session !== undefined) url += `&session=${encodeURIComponent(call.session)}`;
   if (claims && call.takeover) url += "&takeover=1";
   return url;

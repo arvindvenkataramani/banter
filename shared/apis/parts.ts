@@ -7,6 +7,8 @@ const kindOf = (part: string): string => part.slice(0, part.indexOf(":"));
 /** A part holds when the provision neither omits it, excludes it by `only`, nor restricts its value away. */
 export function partHolds(provision: Provision, part: string): boolean {
   if (provision.omits?.includes(part)) return false;
+  // An omitted parameter accepts no values.
+  if (part.startsWith("value:") && !partHolds(provision, `parameter:${part.slice("value:".length).split("=")[0]}`)) return false;
   // `only` states the implemented parts of each kind it names; the rest of those kinds are omitted.
   if (provision.only && !provision.only.includes(part) && provision.only.some(p => kindOf(p) === kindOf(part))) return false;
   const restricts = provision.restricts;

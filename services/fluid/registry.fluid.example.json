@@ -297,6 +297,9 @@
             "parameter:tag",
             "parameter:bit_rate"
           ],
+          "defaults": {
+            "encoding": "aac"
+          },
           "restricts": {
             "encoding": [
               "aac",

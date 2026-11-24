@@ -1,4 +1,5 @@
 import { failure, trimEndpoint } from "./http";
+import { partHolds } from "../parts";
 import type { AdapterDeclaration, AudioFormat, Provision, Resolution } from "../types";
 
 export const declaration: AdapterDeclaration = {
@@ -31,11 +32,12 @@ export interface Synthesized {
 // The formats the caller decodes, in the order tried when the provision restricts none.
 const DECODABLE: readonly AudioFormat[] = ["mp3", "aac", "wav"];
 
-/** The first value the provision accepts that the caller decodes, in the restriction's own order. */
+/** The first value the provision accepts that the caller decodes, in the restriction's own order; a value it omits is not accepted. */
 function chooseFormat(provision: Provision): AudioFormat {
-  const accepted = provision.restricts?.response_format?.map(String);
-  const format = accepted ? accepted.find((f): f is AudioFormat => (DECODABLE as readonly string[]).includes(f)) : DECODABLE[0];
-  if (!format) throw new Error(`The speech service accepts ${accepted!.join(", ")}; none of them is a format this player decodes (${DECODABLE.join(", ")}).`);
+  const restricted = provision.restricts?.response_format?.map(String);
+  const accepted = (restricted ?? DECODABLE).filter((f) => partHolds(provision, `value:response_format=${f}`));
+  const format = accepted.find((f): f is AudioFormat => (DECODABLE as readonly string[]).includes(f));
+  if (!format) throw new Error(`The speech service accepts ${accepted.join(", ") || "none of the formats"}; none of them is a format this player decodes (${DECODABLE.join(", ")}).`);
   return format;
 }
 
@@ -46,11 +48,12 @@ function bodyFor(call: SynthesizeCall, format: AudioFormat): Record<string, unkn
     ...resolution.params,
     model: resolution.model,
     input: call.text,
-    speed: call.speed,
     response_format: format,
   };
+  // Parameters the adapter only uses when present are sent only when the provision implements them.
+  if (partHolds(provision, "parameter:speed")) body.speed = call.speed;
   if ("name" in resolution.voice) {
-    body.voice = resolution.voice.name;
+    if (partHolds(provision, "parameter:voice")) body.voice = resolution.voice.name;
   } else {
     if (!provision.extends?.includes("cloning-reference")) {
       throw new Error("This voice is a recording, and the speech service does not declare cloning-reference.");

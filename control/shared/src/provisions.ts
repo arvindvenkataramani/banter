@@ -156,7 +156,7 @@ function checkCandidates(service: Service, roster: NodeRoster): void {
   const sttModels = new Map((roster.sttModels ?? []).map(m => [m.id, m]));
   for (const { model } of provider.serves) {
     const operations: Operation[] = ttsIds.has(model) ? ["synthesize"] : sttOperations(sttModels.get(model)?.kind);
-    if (!operations.some(op => candidates(op, service as SelectableService, [], []).length > 0)) {
+    if (!operations.some(op => candidates(op, service as SelectableService, op === "transcribeStream" ? ["client-endpointing"] : [], []).length > 0)) {
       const apis = (service.provides ?? []).map(p => p.api).join(", ") || "no API";
       failIn("roster", `provider "${service.id}" serves model "${model}" but no provision can ${operations.join(" or ")}: it provides ${apis}`);
     }

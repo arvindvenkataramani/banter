@@ -104,6 +104,33 @@ export const ServiceStateSchema = z.object({
   loadTime: z.number().optional(),
 });
 
+const ParamValueSchema = z.union([z.string(), z.number(), z.boolean()]);
+
+export const ProvisionSchema = z.object({
+  api: z.string(),
+  basePath: z.string().optional(),
+  omits: z.array(z.string()).optional(),
+  only: z.array(z.string()).optional(),
+  restricts: z.record(z.string(), z.array(ParamValueSchema)).optional(),
+  defaults: z.record(z.string(), ParamValueSchema).optional(),
+  extends: z.array(z.string()).optional(),
+}).openapi("Provision");
+
+const DeclaredCallSchema = z.object({
+  method: z.enum(["GET", "POST", "PUT", "DELETE"]),
+  path: z.string(),
+  query: z.record(z.string(), z.string()).optional(),
+  body: z.record(z.string(), z.string()).optional(),
+});
+
+export const ModelLoadingSchema = z.object({
+  loading: z.enum(["required", "none"]),
+  autoLoad: z.enum(["always", "never"]).optional(),
+  resident: z.enum(["one", "many"]).optional(),
+  load: DeclaredCallSchema.optional(),
+  unload: DeclaredCallSchema.optional(),
+}).openapi("ModelLoading");
+
 export const ServiceSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
@@ -115,6 +142,8 @@ export const ServiceSchema = z.object({
   runner: ServiceRunnerSchema.optional(),
   ops: ServiceOpsSchema.optional(),
   lifecycle: ServiceLifecycleSchema.optional(),
+  provides: z.array(ProvisionSchema).optional().openapi({ description: "The APIs this service serves, each with how it departs from the API's spec" }),
+  models: ModelLoadingSchema.optional().openapi({ description: "Whether this service's models need loading, and how" }),
   state: ServiceStateSchema.optional(),
 }).openapi("Service");
 

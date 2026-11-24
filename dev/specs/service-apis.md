@@ -201,7 +201,9 @@ The caller's endpoint path, such as the dsh relay's `/dsh-voice/speech/<id>`, co
 
 **Failures.** Every adapter rejects a non-2xx answer with an error carrying the server's text: the body's `error` (string or `error.message`), or the raw body if it isn't JSON, prefixed by the status. The voice system shows that text and does not go live when a load fails.
 
-Each adapter is written from its pinned reference. Paths are the spec's, prefixed by the provision's `basePath` and then by the endpoint the caller holds, which may itself carry a path (the dsh relay's `/dsh-voice/speech/<id>`). An adapter never reads a service id or capability. It sends an extension's fields only when the provision declares that extension, and it always sends the parameters it depends on.
+Each adapter is written from its pinned reference. Paths follow the Paths rule above. An adapter never reads a service id or capability. It sends an extension's fields only when the provision declares that extension, it always sends the parameters it depends on, and it sends a parameter it only uses when present only when the provision neither omits it nor excludes it by `only`.
+
+**Omitted values count as restrictions.** Wherever an adapter or `select` reads which values a parameter accepts, a value named in `omits` (`value:<parameter>=<value>`) is removed, as `restricts` removes it, and an omitted `parameter:<name>` removes all its values.
 
 - **`openai.audio.speech`**, `synthesize`. The body is `model`, `input`, `voice` and `speed`, the serving's `requestParams` spread in first, and `response_format`.
   - **Format.** `response_format` is the first value of `restricts.response_format` that the caller can decode (mp3, aac, wav). Without a restriction it is the first of mp3, aac and wav. The adapter returns the format it asked for, and the playback engine decodes by it. If a restriction leaves no value the caller can decode, the adapter rejects before sending any request, with a message naming the formats the service accepts.
@@ -209,9 +211,9 @@ Each adapter is written from its pinned reference. Paths are the spec's, prefixe
   - **Streaming.** With `stream-flag` it sends `stream: true` when the caller wants progressive audio.
   - **Capability.** `renders-progressively` holds on `{ spec: true }` or on `stream-flag`.
   - **Uses when present:** `parameter:stream_format`, which the voice loop never needs.
-- **`openai.audio.transcriptions`**, `transcribe`. A multipart post of `file`, with `model` when the caller names one. It requires nothing beyond `parameter:file`, and returns `text`.
-- **`fluid.stt.stream`**, `transcribeStream`. This is `stt-socket.ts`, moved to the adapter's place with its behaviour unchanged. It sends `session` and `takeover` only when the caller asks for take-over.
-  - **Capabilities:** `client-endpointing` and `opus` on `{ spec: true }`, `takeover` on `{ part: "parameter:session" }`, `carries-variant` on `{ part: "parameter:chunkMs" }`, and `session-loads` on `{ spec: true }`.
+- **`openai.audio.transcriptions`**, `transcribe`. A multipart post of `file`, with `model` when the caller names one, and `response_format` always sent: the first of `json` and `verbose_json` the provision accepts. If it accepts neither, the adapter rejects before any request. It returns the answer's `text`.
+- **`fluid.stt.stream`**, `transcribeStream`. This is `stt-socket.ts`, moved to the adapter's place with its behaviour unchanged. It sends `session` whenever its provision holds `takeover`, and `takeover=1` only when the caller asks to take over.
+  - **Capabilities:** `client-endpointing` on `{ spec: true }`, `opus` on `{ part: "value:format=opus" }`, `takeover` on `{ part: "parameter:session" }`, `carries-variant` on `{ part: "parameter:chunkMs" }`, and `session-loads` on `{ spec: true }`.
 - **`deepgram.listen.live`**, `transcribeStream`, built in step T3.
   - **Connect.** It connects with `encoding` (`opus` or `linear16`), `sample_rate`, `channels=1`, `interim_results=true` and `endpointing=false`, plus `model` when named.
   - **Messages.** It sends `Finalize`, `KeepAlive` and `CloseStream`. Each `Results` is accumulated into the utterance so far, which goes out as a partial, and exactly one final is answered per `Finalize`.
@@ -257,7 +259,7 @@ Swift, in `services/fluid/`. The design's sections "Model loading" and "What the
 - an entry claims an API its build does not serve;
 - the build lacks a part of an API that the entry does not list in `omits` or exclude by `only`.
 
-Each server holds, in code, the list of APIs it serves and the parts of each that it lacks. The check is that list against the entry. `defaults` values are read from the entry, and the listen route's `endpointing` default comes from `provides[deepgram.listen.live].defaults.endpointing`. With none declared, the spec's default applies.
+Each server holds, in code, the list of APIs it serves, the parts of each that it lacks, and the extensions it implements for each. The check is that list against the entry: an entry claiming an extension the build does not implement is refused too. `defaults` values are read from the entry, and the listen route's `endpointing` default comes from `provides[deepgram.listen.live].defaults.endpointing`. With none declared, the spec's default applies.
 
 **Routes, by step.**
 
@@ -309,7 +311,7 @@ These checks are in a new `control/shared/src/provisions.ts`, called from `valid
 8. A `DeclaredCall` has a method, a path beginning with `/`, and no placeholder but `{model}`.
 9. A service Banter calls has a candidate for what it is called for:
    - a TTS provider: `synthesize`;
-   - a provider serving a `streaming` STT model: `transcribeStream`;
+   - a provider serving a `streaming` STT model: `transcribeStream` with `needs: [client-endpointing]`, as the engine selects it;
    - a provider serving a `batch` STT model: `transcribe`;
    - a provider serving a `both` model: either one.
    
@@ -386,7 +388,7 @@ Both fluid servers state `models: { loading: "required", autoLoad: "always", res
   - `openai.realtime`, with `only` the client and server messages in section 9 plus `mode:transcription`, extending `opus-input`, and omitting `parameter:audio.input.noise_reduction`, `parameter:audio.output.format`, `parameter:audio.output.voice`, `parameter:include`, `value:audio.input.format=audio/pcmu`, `value:audio.input.format=audio/pcma`, `value:audio.input.turn_detection=server_vad` and `value:audio.input.turn_detection=semantic_vad`.
 - **`fluid-tts`:**
   - `openai.audio.speech` declares `defaults: { response_format: "aac" }`, where the spec's default is mp3.
-  - `deepgram.speak`: omits every query parameter except `model`, `encoding`, `container`, `sample_rate` and `speed`; restricts `encoding` to `["aac", "linear16"]` and `container` to `["none", "wav"]`; extends `voice-param` and `cloning-reference`.
+  - `deepgram.speak`: omits every query parameter except `model`, `encoding`, `container`, `sample_rate` and `speed`; `defaults: { encoding: "aac" }`; restricts `encoding` to `["aac", "linear16"]` and `container` to `["none", "wav"]`; extends `voice-param` and `cloning-reference`.
   - `deepgram.speak.live`: restricts `encoding` to `["linear16"]`; extends `voice-param`, `cloning-reference` and `session-claim`.
   - `openai.realtime`, with `only` the messages in section 9 plus `mode:conversation`, extending `verbatim-speech`, and omitting `parameter:intent`, `parameter:audio.input.format`, `parameter:audio.input.transcription`, `parameter:audio.input.noise_reduction`, `parameter:audio.input.turn_detection` and `parameter:include`.
   - `fluid.tts.stream`.

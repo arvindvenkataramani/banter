@@ -390,7 +390,7 @@ describe("the registries the repo ships", () => {
     expect(sorted(of("fluid-tts").provides)).toEqual(sorted([
       { api: "openai.audio.speech", omits: ["parameter:instructions"], restricts: { response_format: ["aac", "wav", "pcm"] }, defaults: { response_format: "aac" }, extends: ["cloning-reference"] },
       { api: "triton.model-repository", omits: ["field:index.version"], extends: ["resident-slot"] },
-      { api: "deepgram.speak", omits: paramsExcept("deepgram.speak", ["model", "encoding", "container", "sample_rate", "speed"]), restricts: { encoding: ["aac", "linear16"], container: ["none", "wav"] }, extends: ["voice-param", "cloning-reference"] },
+      { api: "deepgram.speak", omits: paramsExcept("deepgram.speak", ["model", "encoding", "container", "sample_rate", "speed"]), defaults: { encoding: "aac" }, restricts: { encoding: ["aac", "linear16"], container: ["none", "wav"] }, extends: ["voice-param", "cloning-reference"] },
       { api: "deepgram.speak.live", restricts: { encoding: ["linear16"] }, extends: ["voice-param", "cloning-reference", "session-claim"] },
       { api: "openai.realtime", only: ["mode:conversation","client-message:session.update","client-message:response.create","client-message:response.cancel","server-message:session.created","server-message:session.updated","server-message:response.created","server-message:response.output_audio.delta","server-message:response.output_audio.done","server-message:response.done","server-message:error"], omits: ["parameter:intent","parameter:audio.input.format","parameter:audio.input.transcription","parameter:audio.input.noise_reduction","parameter:audio.input.turn_detection","parameter:include"], extends: ["verbatim-speech"] },
       { api: "fluid.tts.stream" },
