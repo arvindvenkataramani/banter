@@ -4,6 +4,7 @@
 // before the node starts.
 
 import { CHUNK_STRATEGIES, RESPONSE_FORMATS } from "../../../shared/types";
+import { validateProvisions } from "./provisions";
 import type {
   ChunkStrategy,
   Cloning,
@@ -64,7 +65,11 @@ const nonEmptyString = (v: unknown): v is string => typeof v === "string" && v.l
 const fail = (message: string): never => { throw new Error(`registry.json roster: ${message}`); };
 
 export function validateRoster(data: unknown, services: Service[]): NodeRoster {
-  if (data === undefined) return emptyRoster();
+  if (data === undefined) {
+    const empty = emptyRoster();
+    validateProvisions(empty, services);
+    return empty;
+  }
   if (!isObject(data)) return fail("must be an object");
   if (!isObject(data.providers)) fail("providers must be an object keyed by registry service id");
   if (!Array.isArray(data.voices)) fail("voices must be an array");
@@ -186,5 +191,6 @@ export function validateRoster(data: unknown, services: Service[]): NodeRoster {
     }
   }
 
+  validateProvisions(data as unknown as NodeRoster, services);
   return data as unknown as NodeRoster;
 }

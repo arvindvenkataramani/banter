@@ -1,0 +1,152 @@
+{
+  "apis": [
+    {
+      "id": "openai.audio.speech",
+      "name": "OpenAI speech synthesis",
+      "reference": {
+        "document": "github.com/openai/openai-openapi/openapi.yaml",
+        "revision": "373f26a9aec3608e3158f2a0d4b8ae49d13162a4",
+        "part": "createSpeech"
+      }
+    },
+    {
+      "id": "openai.audio.transcriptions",
+      "name": "OpenAI transcription",
+      "reference": {
+        "document": "github.com/openai/openai-openapi/openapi.yaml",
+        "revision": "373f26a9aec3608e3158f2a0d4b8ae49d13162a4",
+        "part": "createTranscription"
+      }
+    },
+    {
+      "id": "openai.realtime",
+      "name": "OpenAI Realtime",
+      "reference": {
+        "document": "developers.openai.com/api/reference/resources/realtime",
+        "revision": {
+          "read": "2026-11-24",
+          "sha256": {
+            "client-events": "bd09448d5c7048148616c895e965c3e280ed8b0763cee583a6e7bf0e2d158532",
+            "server-events": "e8a4ab74ee0776b94007a5d0a1db48586afb1e631f9370ac63b86433eba80ac4"
+          }
+        },
+        "part": "client-events and server-events"
+      }
+    },
+    {
+      "id": "deepgram.listen.prerecorded",
+      "name": "Deepgram pre-recorded transcription",
+      "reference": {
+        "document": "github.com/deepgram/deepgram-api-specs/openapi.yml",
+        "revision": "0ccc6f4680b3fe5b8f9002be6a78cd50e5b32116",
+        "part": "POST /v1/listen"
+      }
+    },
+    {
+      "id": "deepgram.listen.live",
+      "name": "Deepgram live transcription",
+      "reference": {
+        "document": "github.com/deepgram/deepgram-api-specs/asyncapi.yml",
+        "revision": "0ccc6f4680b3fe5b8f9002be6a78cd50e5b32116",
+        "part": "channel /v1/listen"
+      }
+    },
+    {
+      "id": "deepgram.speak",
+      "name": "Deepgram speech synthesis",
+      "reference": {
+        "document": "github.com/deepgram/deepgram-api-specs/openapi.yml",
+        "revision": "0ccc6f4680b3fe5b8f9002be6a78cd50e5b32116",
+        "part": "POST /v1/speak"
+      }
+    },
+    {
+      "id": "deepgram.speak.live",
+      "name": "Deepgram live speech synthesis",
+      "reference": {
+        "document": "github.com/deepgram/deepgram-api-specs/asyncapi.yml",
+        "revision": "0ccc6f4680b3fe5b8f9002be6a78cd50e5b32116",
+        "part": "channel /v1/speak"
+      }
+    },
+    {
+      "id": "fluid.stt.stream",
+      "name": "Fluid streaming transcription",
+      "reference": {
+        "document": "services/fluid/STT.md",
+        "revision": "in-repo",
+        "part": "Streaming"
+      }
+    },
+    {
+      "id": "fluid.tts.stream",
+      "name": "Fluid streaming synthesis",
+      "reference": {
+        "document": "services/fluid/TTS-STREAM.md",
+        "revision": "in-repo",
+        "part": "Protocol"
+      }
+    },
+    {
+      "id": "triton.model-repository",
+      "name": "Triton model repository extension",
+      "reference": {
+        "document": "github.com/triton-inference-server/server/docs/protocol/extension_model_repository.md",
+        "revision": "81794dd20032fc2504a40e6a3942ad9330ff437b",
+        "part": "index, load and unload"
+      }
+    }
+  ],
+  "extensions": [
+    {
+      "id": "session-claim",
+      "adds": "`session` and `takeover` query parameters at connect, and close codes 4001 to 4010 naming why a connection was refused or displaced",
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Streaming" }
+    },
+    {
+      "id": "cloning-reference",
+      "adds": "`ref_audio`, a path on the service's own machine, and `ref_text`",
+      "reference": { "document": "docs/reference/design/service-apis.md", "revision": "in-repo", "part": "cloning-reference" }
+    },
+    {
+      "id": "stream-flag",
+      "adds": "`stream: true` on a speech request asks for audio as it renders",
+      "reference": { "document": "docs/reference/design/service-apis.md", "revision": "in-repo", "part": "stream-flag" }
+    },
+    {
+      "id": "opus-input",
+      "adds": "on Realtime, an Opus input format: each `input_audio_buffer.append` carries one raw Opus packet, base64-encoded as the spec encodes PCM",
+      "reference": { "document": "docs/reference/design/service-apis.md", "revision": "in-repo", "part": "opus-input" }
+    },
+    {
+      "id": "voice-param",
+      "adds": "a `voice` parameter at connect, where the spec selects a voice through `model` alone",
+      "reference": { "document": "docs/reference/design/service-apis.md", "revision": "in-repo", "part": "voice-param" }
+    },
+    {
+      "id": "verbatim-speech",
+      "adds": "on Realtime, `response.create` speaks the text of its `input_text` parts as written and runs no model",
+      "reference": { "document": "docs/reference/design/service-apis.md", "revision": "in-repo", "part": "verbatim-speech" }
+    },
+    {
+      "id": "finalize-answered",
+      "adds": "every `Finalize` is answered by exactly one result marked as answering it, including an empty one",
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Streaming" }
+    },
+    {
+      "id": "endpointing-off",
+      "adds": "`endpointing=false` stops the server closing utterances on its own",
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "/v1/listen" }
+    },
+    {
+      "id": "opus-packets",
+      "adds": "with `encoding=opus`, each binary message is one raw Opus packet",
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Audio formats" }
+    },
+    {
+      "id": "resident-slot",
+      "adds": "on the model repository API: `mode` and `variant` as load parameters; a load of what is already resident changes nothing; a load replaces the one resident model; a load that would change the model, and an unload, are refused while a session holds it",
+      "reference": { "document": "services/fluid/STT.md", "revision": "in-repo", "part": "Models" }
+    }
+  ]
+}

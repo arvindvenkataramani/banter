@@ -222,29 +222,6 @@ export async function proxyShardEnabledToggle(
   }
 }
 
-export async function proxyShardInfo(
-  endpoint: string,
-  serviceId: string
-): Promise<{ ok: boolean; status?: number; data?: any; error?: string }> {
-  const url = `${endpoint}/api/services/${serviceId}/info`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    let data: any = null;
-    try { data = await res.json(); } catch { /* shard may return non-JSON on 500 */ }
-    if (!res.ok) {
-      return { ok: false, status: res.status, data, error: data?.error ?? `shard returned ${res.status}` };
-    }
-    return { ok: true, status: res.status, data };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function proxyShardCheck(
   endpoint: string,
   serviceId: string

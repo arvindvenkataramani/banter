@@ -72,20 +72,6 @@ export function createApp(deps: AppDeps) {
     return c.json({ ...svc, health, lastEvent, pending });
   });
 
-  // GET /api/services/:id/info — proxy to the service's /info endpoint
-  app.get("/api/services/:id/info", async (c) => {
-    const svc = registryState.services.find(s => s.id === c.req.param("id"));
-    if (!svc) return c.json({ error: "Service not found" }, 404);
-
-    try {
-      const res = await fetch(`${svc.network.endpoint}/info`);
-      const data = await res.json();
-      return c.json(data, res.status as any);
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 502);
-    }
-  });
-
   // GET /api/hosts
   app.get("/api/hosts", (c) => {
     return c.json(registryState.hosts);

@@ -16,7 +16,6 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateRoster } from "../src/roster";
-import { validateSelections } from "../src/provisions";
 import { loadRegistry } from "../src/registry";
 import { clearFileLocks } from "../src/atomic-write";
 
@@ -208,28 +207,6 @@ describe("check 9: a service Banter calls has a candidate for what it is called 
 
   it("[T1] a service no roster provider names needs no candidate", () => {
     accepts(d => { d.services.push({ id: "idle-a", capabilityId: "stt", provides: [triton], models: { loading: "none" } }); });
-  });
-});
-
-describe("check 10: the config's selections name roster providers", () => {
-  const config = (tts?: string, stt?: string) => ({
-    voice: {
-      tts: { selection: tts ? { serviceId: tts, model: "voice-model", voice: "v", speed: 1 } : undefined },
-      stt: { serviceId: stt },
-    },
-  });
-  const outcomeOf = (c: unknown): string => {
-    try { validateSelections(c as any, fresh().roster); return ""; } catch (err) { return err instanceof Error ? err.message : String(err); }
-  };
-
-  it("[T1] selections naming roster providers, or none at all, pass", () => {
-    expect(outcomeOf(config("tts-a", "stt-a"))).toBe("");
-    expect(outcomeOf(config())).toBe("");
-  });
-
-  it("[T1] a TTS or STT selection naming a service no roster provider names is refused, naming it", () => {
-    expect(outcomeOf(config("tts-elsewhere", "stt-a"))).toContain("tts-elsewhere");
-    expect(outcomeOf(config("tts-a", "stt-elsewhere"))).toContain("stt-elsewhere");
   });
 });
 

@@ -997,6 +997,172 @@
           "minimum": 1
         }
       }
+    },
+    "provision": {
+      "type": "object",
+      "description": "One API a service serves, and how the service departs from that API's spec. A provision with only `api` claims full conformance at the spec's own path.",
+      "required": [
+        "api"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "type": "string",
+          "description": "An API id from the catalog."
+        },
+        "basePath": {
+          "type": "string",
+          "pattern": "^/.*[^/]$",
+          "description": "Replaces the path part of the spec's own server address. Begins with / and does not end with one."
+        },
+        "omits": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Parts of the spec the service does not implement, as `<kind>:<name>` from the API's part index."
+        },
+        "only": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The parts of each kind it names that the service implements; every other part of those kinds is omitted."
+        },
+        "restricts": {
+          "type": "object",
+          "description": "Narrows a parameter to the values the service accepts, in its order of preference.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "description": "The value the service uses for a parameter a client leaves out, where that differs from the spec's default.",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "extends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Extension ids from the catalog that the service adds beyond the spec."
+        }
+      }
+    },
+    "declaredCall": {
+      "type": "object",
+      "description": "An explicit load or unload call of a runtime that publishes no spec for it. `{model}` in the path, a query value or a body value stands for the serving's key.",
+      "required": [
+        "method",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "modelLoading": {
+      "type": "object",
+      "description": "Whether a service's models need loading, what a request naming an unloaded model does, and how many models it holds.",
+      "required": [
+        "loading"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "loading": {
+          "enum": [
+            "required",
+            "none"
+          ],
+          "description": "`required` when a model must be resident before it can work; `none` when the service has nothing to load."
+        },
+        "autoLoad": {
+          "enum": [
+            "always",
+            "never"
+          ],
+          "description": "What a request naming a model that is not resident does. Stated when loading is `required`, absent when `none`."
+        },
+        "resident": {
+          "enum": [
+            "one",
+            "many"
+          ],
+          "description": "How many models the service holds. With `one` a load replaces what was resident. Stated when loading is `required`, absent when `none`."
+        },
+        "load": {
+          "$ref": "#/$defs/declaredCall"
+        },
+        "unload": {
+          "$ref": "#/$defs/declaredCall"
+        }
+      },
+      "if": {
+        "properties": {
+          "loading": {
+            "const": "required"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "autoLoad",
+          "resident"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "autoLoad"
+              ]
+            },
+            {
+              "required": [
+                "resident"
+              ]
+            }
+          ]
+        }
+      }
     }
   }
 }

@@ -112,29 +112,6 @@ export const getServiceById = createRoute({
   },
 });
 
-export const getServiceInfo = createRoute({
-  method: "get",
-  path: "/api/services/{id}/info",
-  tags: ["Services"],
-  summary: "Proxy to a service's /info endpoint",
-  request: {
-    params: z.object({ id: z.string().openapi({ description: "Service ID" }) }),
-  },
-  responses: {
-    200: {
-      description: "Service-specific info (shape varies by capability)",
-    },
-    404: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Service not found",
-    },
-    502: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Failed to reach service",
-    },
-  },
-});
-
 export const checkService = createRoute({
   method: "post",
   path: "/api/services/{id}/check",

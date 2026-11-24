@@ -5,7 +5,7 @@ import { emptyRoster } from "../../shared/src/roster";
 import { buildSpeechRequest } from "../../shared/src/speech-request";
 import { createApp } from "../../shared/src/api";
 import { startShardPollLoop } from "./shard-poller";
-import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardInfo, proxyShardPing, fetchShardService, reloadShard, resolveVoiceOnShard } from "./shard-client";
+import { proxyShardAction, proxyShardPatch, proxyShardEnabledToggle, proxyShardCheck, proxyShardPing, fetchShardService, reloadShard, resolveVoiceOnShard } from "./shard-client";
 import { registerGatewayConfig, registerVoiceConfig, registerVoiceDebug, registerConfigReload } from "./gateway-config";
 import { assembleRoster, type AssembledRoster } from "./roster-assembly";
 import * as cpRoutes from "./routes";
@@ -348,10 +348,6 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     routeAction(c, c.req.param("id"), (ep) => proxyShardCheck(ep, c.req.param("id")))
   );
 
-  app.get("/api/services/:id/info", (c) =>
-    routeAction(c, c.req.param("id"), (ep) => proxyShardInfo(ep, c.req.param("id")))
-  );
-
   // Gateway + voice config
   if (config) {
     registerGatewayConfig(app, config, configPath)
@@ -385,7 +381,6 @@ export async function createControlPlaneApp(deps: ControlPlaneAppDeps): Promise<
     cpRoutes.getHealth,
     cpRoutes.getServices,
     cpRoutes.getServiceById,
-    cpRoutes.getServiceInfo,
     cpRoutes.getEvents,
     cpRoutes.checkService,
     cpRoutes.startService,

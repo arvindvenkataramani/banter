@@ -534,17 +534,20 @@ export async function reloadRegistry(
     const freshModels = modelsById(freshRoster);
     const changedModels = new Set([...liveModels.keys(), ...freshModels.keys()].filter(id => liveModels.get(id) !== freshModels.get(id)));
     const voicesChanged = JSON.stringify(liveRoster.voices) !== JSON.stringify(freshRoster.voices);
+    const liveProvides = new Map(live.services.map(s => [s.id, JSON.stringify(s.provides)]));
     for (const svc of fresh.services) {
       const runner = svc.runner as { main?: string } | undefined;
       if (!runner?.main?.includes("{registry}")) continue;
       const servesChanged = [liveRoster, freshRoster].some(r => r.providers[svc.id]?.serves.some(s => changedModels.has(s.model)));
       const voicesReachIt = voicesChanged && svc.capabilityId === "tts" && freshRoster.providers[svc.id] !== undefined;
-      if (!servesChanged && !voicesReachIt) continue;
+      const providesChanged = liveProvides.has(svc.id) && liveProvides.get(svc.id) !== JSON.stringify(svc.provides);
+      if (!servesChanged && !voicesReachIt && !providesChanged) continue;
       if (warnings.some(w => w.kind === "provider-changed" && w.serviceId === svc.id)) continue;
+      const what = servesChanged ? "the roster's models" : voicesReachIt ? "the roster's voices" : "the provisions";
       warnings.push({
         kind: "provider-changed",
         serviceId: svc.id,
-        message: `the roster's ${servesChanged ? "models" : "voices"} changed — restart "${svc.id}" to pick up the edit`,
+        message: `${what} changed — restart "${svc.id}" to pick up the edit`,
       });
     }
 

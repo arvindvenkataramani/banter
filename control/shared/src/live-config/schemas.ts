@@ -19,6 +19,7 @@ const sttSchema = z.object({
   serviceId: z.string().optional(),
   model: z.string().optional(),
   preferStreaming: z.boolean().optional(),
+  encodings: z.array(z.enum(["opus", "pcm16"])).optional(),
   chunkMs: z.number().optional(),
   options: z.array(z.object({ serviceId: z.string(), name: z.string(), sessions: z.boolean().optional() })).optional(),
   maxRecordingMs: z.number().optional(),
@@ -58,6 +59,7 @@ const configSchema = z.object({
   voice: z.object({
     enabled: z.boolean().optional(),
     takeover: z.enum(["ask", "always"]).optional(),
+    preload: z.boolean().optional(),
     tts: z.object({
       selection: z.object({
         serviceId: z.string().optional(),
@@ -91,6 +93,43 @@ export const configSpec: FileSpec<PlatformConfig> = {
 
 const schemeEnum = z.enum(["http", "https"], {
   error: (issue) => `must be "http" or "https", got ${JSON.stringify(issue.input)}`,
+});
+
+const paramValue = z.union([z.string(), z.number(), z.boolean()]);
+
+// An unknown key anywhere in a provision or in models is fatal: a misspelt `omits` would otherwise claim full conformance.
+const provisionSchema = z.strictObject({
+  api: z.string(),
+  basePath: z.string().optional(),
+  omits: z.array(z.string()).optional(),
+  only: z.array(z.string()).optional(),
+  restricts: z.record(z.string(), z.array(paramValue)).optional(),
+  defaults: z.record(z.string(), paramValue).optional(),
+  extends: z.array(z.string()).optional(),
+});
+
+const declaredCall = z.strictObject({
+  method: z.enum(["GET", "POST", "PUT", "DELETE"]),
+  path: z.string(),
+  query: z.record(z.string(), z.string()).optional(),
+  body: z.record(z.string(), z.string()).optional(),
+});
+
+const modelLoading = z.strictObject({
+  loading: z.enum(["required", "none"]),
+  autoLoad: z.enum(["always", "never"]).optional(),
+  resident: z.enum(["one", "many"]).optional(),
+  load: declaredCall.optional(),
+  unload: declaredCall.optional(),
+}).superRefine((models, ctx) => {
+  for (const field of ["autoLoad", "resident"] as const) {
+    if (models.loading === "required" && models[field] === undefined) {
+      ctx.addIssue({ code: "custom", path: [field], message: `${field} is required when loading is "required"` });
+    }
+    if (models.loading === "none" && models[field] !== undefined) {
+      ctx.addIssue({ code: "custom", path: [field], message: `${field} must be absent when loading is "none"` });
+    }
+  }
 });
 
 const serviceSchema = z.object({
@@ -129,6 +168,8 @@ const serviceSchema = z.object({
       artifacts: z.array(z.object({ from: z.string(), to: z.string() })),
     }).optional(),
   }).optional(),
+  provides: z.array(provisionSchema).optional(),
+  models: modelLoading.optional(),
   lifecycle: z.object({
     loadStrategy: z.enum(["startup", "demand"]).optional(),
     autoStart: z.boolean().optional(),

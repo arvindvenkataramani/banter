@@ -68,20 +68,6 @@ Update service fields (endpoint, healthPath, etc.)
 
 ---
 
-### `GET` /api/services/{id}/info
-
-Proxy to a service's /info endpoint
-
-**Parameters:**
-- `id` (path) *(required)* — Service ID
-
-**Responses:**
-- **200** — Service-specific info (shape varies by capability)
-- **404** — Service not found → [Error](#error)
-- **502** — Failed to reach service → [Error](#error)
-
----
-
 ### `GET` /api/services
 
 List all services with health state

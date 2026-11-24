@@ -1,3 +1,5 @@
+import type { ModelLoading, Provision } from "./apis/types";
+
 export type HostRole = "control" | "worker";
 
 export interface Host {
@@ -112,6 +114,10 @@ export interface Service {
   runner?: ServiceRunner;  // How the platform manages this service
   ops?: ServiceOps;        // Runtime env config (workingDirectory, variables) for process runner
   lifecycle?: ServiceLifecycle;
+  /** The APIs this service serves, each with how it departs from the API's spec. */
+  provides?: Provision[];
+  /** Whether this service's models need loading, and how. */
+  models?: ModelLoading;
   state?: ServiceState;   // Runtime-only, never persisted to JSON
 }
 
@@ -187,33 +193,6 @@ export interface ServiceWithHealth extends Service {
   pending?: boolean; // A lifecycle request for this service is outstanding, queued or executing
 }
 
-
-// Capability-specific /info response types
-
-export interface TtsOperation {
-  path: string;         // e.g. "/v1/audio/speech"
-  method: string;       // "POST"
-  contentType: string;  // "application/json"
-  responseType: string; // "audio/wav"
-}
-
-export interface TtsVoiceInfo {
-  id: string;
-  name?: string;
-}
-
-export interface TtsModelInfo {
-  id: string;
-  sampleRate: number;
-  voices: TtsVoiceInfo[];
-}
-
-export interface TtsServiceInfo {
-  engine: string;
-  synth: TtsOperation;
-  stream?: TtsOperation;
-  models: TtsModelInfo[];
-}
 
 export const CHUNK_STRATEGIES = ['two-chunk', 'paragraph', 'sentence', 'greedy'] as const;
 export type ChunkStrategy = typeof CHUNK_STRATEGIES[number];

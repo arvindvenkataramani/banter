@@ -85,6 +85,32 @@
         "startupTime": 180000,
         "restartOnCrash": true,
         "maxRestarts": 3
+      },
+      "provides": [
+        {
+          "api": "openai.audio.transcriptions",
+          "omits": [
+            "parameter:languages",
+            "parameter:keywords",
+            "parameter:prompt",
+            "parameter:temperature",
+            "parameter:include",
+            "parameter:timestamp_granularities",
+            "parameter:stream",
+            "parameter:chunking_strategy",
+            "parameter:known_speaker_names",
+            "parameter:known_speaker_references"
+          ],
+          "restricts": {
+            "response_format": [
+              "json",
+              "text"
+            ]
+          }
+        }
+      ],
+      "models": {
+        "loading": "none"
       }
     },
     {
@@ -122,6 +148,39 @@
         "startupTime": 90000,
         "restartOnCrash": true,
         "maxRestarts": 3
+      },
+      "provides": [
+        {
+          "api": "openai.audio.speech",
+          "omits": [
+            "parameter:instructions",
+            "parameter:stream_format"
+          ],
+          "restricts": {
+            "response_format": [
+              "wav"
+            ]
+          }
+        }
+      ],
+      "models": {
+        "loading": "required",
+        "autoLoad": "always",
+        "resident": "one",
+        "load": {
+          "method": "POST",
+          "path": "/v1/models",
+          "query": {
+            "model_name": "{model}"
+          }
+        },
+        "unload": {
+          "method": "DELETE",
+          "path": "/v1/models",
+          "query": {
+            "model_name": "{model}"
+          }
+        }
       }
     }
   ],

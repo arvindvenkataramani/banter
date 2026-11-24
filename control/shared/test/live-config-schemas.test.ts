@@ -49,10 +49,12 @@ describe("voice preload and the encodings the browser may send", () => {
     return config;
   };
 
-  it("[T1] a config that states neither preloads, and offers Opus before 16-bit PCM", () => {
+  // Like the other optional voice settings, the defaults (preload on; opus before
+  // pcm16) belong to the readers, so a sync writes neither into a file that omits them.
+  it("[T1] a config that states neither is left without them", () => {
     const r = syncDocument(example(), configSpec) as { doc: any };
-    expect(r.doc.voice.preload).toBe(true);
-    expect(r.doc.voice.stt.encodings).toEqual(["opus", "pcm16"]);
+    expect("preload" in r.doc.voice).toBe(false);
+    expect("encodings" in r.doc.voice.stt).toBe(false);
   });
 
   it("[T1] keeps what a config states, in its order", () => {

@@ -314,7 +314,8 @@ These checks are in a new `control/shared/src/provisions.ts`, called from `valid
    - a provider serving a `both` model: either one.
    
    "Banter calls" means a roster provider names the service.
-10. **Selections.** `validateSelections(config, roster)` in `control/shared/src/provisions.ts` checks that `voice.tts.selection.serviceId` and `voice.stt.serviceId`, where set, each name a roster provider. The control plane calls it at startup after loading both files, which is fatal, and at a config or registry reload, which is refused and leaves the live files unchanged.
+
+The config's selections are not checked at load. A selection can name a provider on a shard, which the control plane's own roster doesn't hold until that shard is polled. The existing selection route keeps guarding them as it does now.
 
 No sync or repair rule writes `provides` or `models`.
 
