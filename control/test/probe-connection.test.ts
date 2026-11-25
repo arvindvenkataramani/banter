@@ -53,7 +53,7 @@ function startGateway(opts: { rejectConnect?: boolean } = {}) {
               type: "hello-ok",
               protocol: 4,
               policy: { tickIntervalMs: 15000 },
-              auth: { deviceToken: "dev-token", role: "operator", scopes: [] },
+              auth: { deviceToken: "example-device-token", role: "operator", scopes: [] },
             }),
           );
           ws.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload: {} }));
@@ -74,7 +74,7 @@ function connect(overrides: Record<string, unknown> = {}) {
   });
   conn = new ProbeConnection({
     url: `ws://localhost:${server.port}`,
-    token: "token-abc",
+    token: "example-token",
     identity,
     sink,
     displayName: "Banter probe",
@@ -184,6 +184,6 @@ describe("probe connection", () => {
     const out = entries().filter((e) => e.dir === "out");
     const connectEntry = out.find((e) => e.frame?.method === "connect");
     expect(connectEntry).toBeTruthy();
-    expect(JSON.stringify(connectEntry)).not.toContain("token-abc");
+    expect(JSON.stringify(connectEntry)).not.toContain("example-token");
   });
 });

@@ -120,11 +120,11 @@ describe("capture sink", () => {
       type: "req",
       id: "1",
       method: "connect",
-      params: { auth: { token: "super-secret-token" }, caps: ["tool-events"] },
+      params: { auth: { token: "example-secret-token" }, caps: ["tool-events"] },
     };
     sink.recordFrame("out", JSON.stringify(frame));
     const [entry] = entries();
-    expect(JSON.stringify(entry)).not.toContain("super-secret-token");
+    expect(JSON.stringify(entry)).not.toContain("example-secret-token");
     const captured = entry.frame as { params: { auth: unknown; caps: string[] } };
     expect(captured.params.auth).toEqual({ redacted: true });
     expect(captured.params.caps).toEqual(["tool-events"]);
@@ -134,12 +134,12 @@ describe("capture sink", () => {
     const frame = {
       type: "hello-ok",
       protocol: 4,
-      auth: { deviceToken: "live-device-token", role: "operator", deviceTokens: ["a", "b"] },
+      auth: { deviceToken: "example-device-token", role: "operator", deviceTokens: ["a", "b"] },
     };
     sink.recordFrame("in", JSON.stringify(frame));
     const [entry] = entries();
     const flat = JSON.stringify(entry);
-    expect(flat).not.toContain("live-device-token");
+    expect(flat).not.toContain("example-device-token");
     const captured = entry.frame as { auth: { role: string; deviceToken: unknown } };
     expect(captured.auth.role).toBe("operator");
     expect(captured.auth.deviceToken).toEqual({ redacted: true });

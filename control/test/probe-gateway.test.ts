@@ -23,13 +23,13 @@ describe("parseEnvFile", () => {
 });
 
 describe("resolveValue", () => {
-  const secrets = { TOKEN: "from-file" };
+  const secrets = { TOKEN: "example-from-file" };
 
   it.each([
-    ["environment wins over the secrets file", "${TOKEN}", { TOKEN: "from-env" }, "from-env"],
-    ["falls back to the secrets file", "${TOKEN}", {}, "from-file"],
+    ["environment wins over the secrets file", "${TOKEN}", { TOKEN: "example-from-env" }, "example-from-env"],
+    ["falls back to the secrets file", "${TOKEN}", {}, "example-from-file"],
     ["unset everywhere", "${MISSING}", {}, undefined],
-    ["a literal is returned as is", "literal-token", {}, "literal-token"],
+    ["a literal is returned as is", "example-literal-token", {}, "example-literal-token"],
     ["a non-string is undefined", undefined, {}, undefined],
   ])("%s", (_name, value, env, expected) => {
     expect(resolveValue(value, env, secrets)).toBe(expected);

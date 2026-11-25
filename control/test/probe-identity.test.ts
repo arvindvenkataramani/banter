@@ -43,7 +43,7 @@ describe("probe identity", () => {
     const identity = loadOrCreateIdentity(identityPath);
     const auth = signChallenge(identity, {
       nonce: "nonce-123",
-      token: "token-abc",
+      token: "example-token",
       clientId: "openclaw-probe",
       clientMode: "probe",
       role: "operator",
@@ -64,7 +64,7 @@ describe("probe identity", () => {
       "operator",
       "operator.read,operator.write",
       String(auth.signedAt),
-      "token-abc",
+      "example-token",
       "nonce-123",
       "linux",
       "server",
